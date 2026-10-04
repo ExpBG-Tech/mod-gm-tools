@@ -101,6 +101,40 @@ class EXPG_GarrisonGameplay : GenericEntity
   foreach (EXPG_GameplayActor saved : Originals)
    if (saved.Actor) PrintFormat("[EXPG GAMEPLAY ACTOR] phase=%1 original=%2 current=%3 group=%4 position=%5 post=%6 fixed=%7 cached=%8", Phase, saved.Id, saved.Actor.GetID(), saved.Actor.GetCharacterGroup(), saved.Actor.GetOrigin(), saved.Post, saved.Fixed, saved.Actor.EBG_IsSimulationCached());
  }
+ void ReportPlan(EXPG_BuildingPlan plan)
+ {
+  int entrances = 0, reachable = 0, detailed = 0;
+  foreach (EXPG_BuildingNode node : plan.Nodes)
+  {
+   if (node.Entrance) entrances++;
+   if (node.Reachable) reachable++;
+  }
+  PrintFormat("[EXPG PLAN] nodes=%1 slots=%2 bounds=%3..%4 origin=%5 entrances=%6 reachable=%7", plan.Nodes.Count(), plan.Slots.Count(), plan.Mins, plan.Maxs, plan.Origin, entrances, reachable);
+  for (int n = 0; n < plan.Nodes.Count(); n++)
+  {
+   EXPG_BuildingNode sample = plan.Nodes[n];
+   if (n < 128 || sample.Entrance || sample.Reachable || plan.Slots.Contains(n))
+    PrintFormat("[EXPG PLAN NODE] index=%1 position=%2 entrance=%3 reachable=%4 links=%5 score=%6 selected=%7", n, sample.Position, sample.Entrance, sample.Reachable, sample.Links.Count(), sample.Score, plan.Slots.Contains(n));
+   // Diagnose ground-level entry candidates without changing production state.
+   if (detailed >= 32 || Math.AbsFloat(sample.Position[1] - plan.Origin[1]) > 1) continue;
+   for (int side = 0; side < 4; side++)
+   {
+    vector outside = sample.Position + vector.FromYaw(side * 90 + plan.Angles[0]) * 2.25;
+    if (plan.Inside(outside)) continue;
+    detailed++;
+    float ground = GetGame().GetWorld().GetSurfaceY(outside[0], outside[2]);
+    outside[1] = ground + 0.05;
+    TraceBox body = new TraceBox();
+    body.Start = outside + "0 0.45 0"; body.End = sample.Position + "0 0.45 0";
+    body.Mins = "-0.23 0 -0.23"; body.Maxs = "0.23 1.35 0.23";
+    body.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+    float hit = GetGame().GetWorld().TraceMove(body, null);
+    string blocker;
+    if (body.TraceEnt) blocker = SCR_ResourceNameUtils.GetPrefabName(body.TraceEnt);
+    PrintFormat("[EXPG ENTRY TRACE] node=%1 side=%2 floorDelta=%3 bodyFraction=%4 entity=%5 prefab=%6 outside=%7", n, side, sample.Position[1] - ground, hit, body.TraceEnt, blocker, outside);
+   }
+  }
+ }
  override void EOnFrame(IEntity owner, float timeSlice)
  {
   if (Finished || Now() < Next) return; Next = Now() + 0.5;
@@ -122,12 +156,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    EXPG_BuildingPlan plan = Manager.FindPlan(Structure);
    if (!plan || !plan.Done) return;
-   PrintFormat("[EXPG PLAN] nodes=%1 slots=%2 bounds=%3..%4 origin=%5", plan.Nodes.Count(), plan.Slots.Count(), plan.Mins, plan.Maxs, plan.Origin);
-   for (int n = 0; n < Math.Min(plan.Nodes.Count(), 128); n++)
-   {
-    EXPG_BuildingNode sample = plan.Nodes[n];
-    PrintFormat("[EXPG PLAN NODE] index=%1 position=%2 entrance=%3 reachable=%4 links=%5 score=%6", n, sample.Position, sample.Entrance, sample.Reachable, sample.Links.Count(), sample.Score);
-   }
+   ReportPlan(plan);
    string reason;
    bool fits = Manager.CanFit(Structure, 4, reason);
    if (!Check(fits, "production building plan fits four: " + reason)) { Finish("unsafe building plan"); return; }
