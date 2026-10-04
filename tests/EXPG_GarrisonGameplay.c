@@ -110,13 +110,22 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (node.Reachable) reachable++;
   }
   PrintFormat("[EXPG PLAN] nodes=%1 slots=%2 bounds=%3..%4 origin=%5 entrances=%6 reachable=%7", plan.Nodes.Count(), plan.Slots.Count(), plan.Mins, plan.Maxs, plan.Origin, entrances, reachable);
+  array<IEntity> parts = {};
+  SCR_EntityHelper.GetHierarchyEntityList(plan.Structure, parts);
+  foreach (IEntity part : parts)
+  {
+   DoorComponent door = DoorComponent.Cast(part.FindComponent(DoorComponent));
+   if (!door) continue;
+   vector mins, maxs; part.GetBounds(mins, maxs);
+   PrintFormat("[EXPG DOOR] position=%1 center=%2 state=%3 navLink=%4 prefab=%5", part.GetOrigin(), part.CoordToParent((mins + maxs) * 0.5), door.GetNormalizedDoorState(), part.FindComponent(NavmeshCustomLinkComponent) != null, SCR_ResourceNameUtils.GetPrefabName(part));
+  }
   for (int n = 0; n < plan.Nodes.Count(); n++)
   {
    EXPG_BuildingNode sample = plan.Nodes[n];
    if (n < 128 || sample.Entrance || sample.Reachable || plan.Slots.Contains(n))
     PrintFormat("[EXPG PLAN NODE] index=%1 position=%2 entrance=%3 reachable=%4 links=%5 score=%6 selected=%7", n, sample.Position, sample.Entrance, sample.Reachable, sample.Links.Count(), sample.Score, plan.Slots.Contains(n));
    // Diagnose ground-level entry candidates without changing production state.
-   if (detailed >= 32 || Math.AbsFloat(sample.Position[1] - plan.Origin[1]) > 1) continue;
+   if (detailed >= 128 || Math.AbsFloat(sample.Position[1] - plan.Origin[1]) > 1) continue;
    for (int side = 0; side < 4; side++)
    {
     vector outside = sample.Position + vector.FromYaw(side * 90 + plan.Angles[0]) * 2.25;
