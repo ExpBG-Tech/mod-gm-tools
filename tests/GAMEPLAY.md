@@ -1,7 +1,9 @@
 # Native Garrison smoke fixture
 
-Status: prepared, **NOT RUN**. Source/parser checks cannot establish native compile
-or runtime behavior. The fixture itself is compiled by the diagnostic server.
+Status: native run **FAILED** on 2026-10-05 at building capacity: the planner
+accepted one slot for the requested four-person squad. No actors were spawned.
+Roster, post-hold, cache and Force Move checks were not reached. Diagnostic node
+logging was added after that run and awaits a rerun.
 
 After a successful indexed candidate build and explicit orchestrator slot handoff:
 

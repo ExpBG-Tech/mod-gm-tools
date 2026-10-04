@@ -13,7 +13,7 @@ class EXPG_GarrisonTest
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
    if (!actor || actor.GetCharacterGroup() != record.Group) { return false; }
    if (!record.Plan.Inside(actor.GetOrigin())) { return false; }
-   if (member.Fixed && vector.DistanceSq(actor.GetOrigin(), record.Plan.Nodes[member.Node].Position) > 0.16) { return false; }
+   if (member.Fixed && vector.DistanceSq(actor.GetOrigin(), record.Plan.Nodes[member.NodeIndex].Position) > 0.16) { return false; }
    live++;
   }
   bool passed = live == expectedAlive && agents.Count() == expectedAlive;

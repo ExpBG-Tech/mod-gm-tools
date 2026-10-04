@@ -13,7 +13,7 @@ class EXPG_GameplayActor
 class EXPG_GarrisonGameplayClass : GenericEntityClass {}
 class EXPG_GarrisonGameplay : GenericEntity
 {
- IEntity Building;
+ IEntity Structure;
  SCR_AIGroup Group;
  AIWaypoint ForceMove;
  EXPG_GarrisonManager Manager;
@@ -25,7 +25,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  bool Finished;
  vector Point = "4773.46 0 7094.57";
 
- void EXPG_GarrisonGameplay(IEntitySource source, IEntity parent) { SetEventMask(EntityEvent.INIT | EntityEvent.FRAME); }
+ void EXPG_GarrisonGameplay(IEntitySource src, IEntity parent) { SetEventMask(EntityEvent.INIT | EntityEvent.FRAME); }
  float Now() { return GetGame().GetWorld().GetWorldTime() * 0.001; }
  override void EOnInit(IEntity owner)
  {
@@ -114,20 +114,26 @@ class EXPG_GarrisonGameplay : GenericEntity
    Observers = ObserversSystem.Cast(GetGame().GetWorld().FindSystem(ObserversSystem));
    if (!Check(Manager && Observers && players.IsEmpty() && EBG_CacheZone.Zones.IsEmpty(), "isolated server with no connected players or Optimizer zones")) { Finish("setup"); return; }
    Observers.InsertObserverSP(ObserverKey, Point[0], Point[2], null);
-   Building = GetGame().SpawnEntityPrefab(Resource.Load("{EDBC0E94793BA9F1}Prefabs/Structures/Houses/Village/House_Village_E_1I01/House_Village_E_1I01.et"), GetGame().GetWorld(), Params(Point));
-   if (!Check(SCR_DestructibleBuildingEntity.Cast(Building) != null, "native enterable village house spawned")) { Finish("building"); return; }
-   Manager.Prepare(Building); Advance(1); return;
+   Structure = GetGame().SpawnEntityPrefab(Resource.Load("{EDBC0E94793BA9F1}Prefabs/Structures/Houses/Village/House_Village_E_1I01/House_Village_E_1I01.et"), GetGame().GetWorld(), Params(Point));
+   if (!Check(SCR_DestructibleBuildingEntity.Cast(Structure) != null, "native enterable village house spawned")) { Finish("building"); return; }
+   Manager.Prepare(Structure); Advance(1); return;
   }
   if (Phase == 1)
   {
-   EXPG_BuildingPlan plan = Manager.FindPlan(Building);
+   EXPG_BuildingPlan plan = Manager.FindPlan(Structure);
    if (!plan || !plan.Done) return;
+   PrintFormat("[EXPG PLAN] nodes=%1 slots=%2 bounds=%3..%4 origin=%5", plan.Nodes.Count(), plan.Slots.Count(), plan.Mins, plan.Maxs, plan.Origin);
+   for (int n = 0; n < Math.Min(plan.Nodes.Count(), 128); n++)
+   {
+    EXPG_BuildingNode sample = plan.Nodes[n];
+    PrintFormat("[EXPG PLAN NODE] index=%1 position=%2 entrance=%3 reachable=%4 links=%5 score=%6", n, sample.Position, sample.Entrance, sample.Reachable, sample.Links.Count(), sample.Score);
+   }
    string reason;
-   bool fits = Manager.CanFit(Building, 4, reason);
+   bool fits = Manager.CanFit(Structure, 4, reason);
    if (!Check(fits, "production building plan fits four: " + reason)) { Finish("unsafe building plan"); return; }
    Group = SCR_AIGroup.Cast(GetGame().SpawnEntityPrefab(Resource.Load("{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et"), GetGame().GetWorld(), Params(Point + "12 0 0", 0.3)));
-   if (!Check(Group && Manager.Adopt(Group, Building, 0), "native four-member fireteam adopted once")) { Finish("adopt"); return; }
-   Check(!Manager.Adopt(Group, Building, 0), "duplicate adoption refused");
+   if (!Check(Group && Manager.Adopt(Group, Structure, 0), "native four-member fireteam adopted once")) { Finish("adopt"); return; }
+   Check(!Manager.Adopt(Group, Structure, 0), "duplicate adoption refused");
    Advance(2); return;
   }
   if (Phase == 2)
@@ -140,7 +146,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    {
     EXPG_GameplayActor saved = new EXPG_GameplayActor(); saved.Actor = member.CacheMember.Entity;
     if (!Check(saved.Actor != null, "original actor exists")) { Finish("missing actor"); return; }
-    saved.Id = saved.Actor.GetID(); saved.Fixed = member.Fixed; saved.Post = Record.Plan.Nodes[member.Node].Position;
+    saved.Id = saved.Actor.GetID(); saved.Fixed = member.Fixed; saved.Post = Record.Plan.Nodes[member.NodeIndex].Position;
     saved.Presentation = saved.Actor.GetFlags() & (EntityFlags.VISIBLE | EntityFlags.TRACEABLE);
     if (!Check((saved.Presentation & EntityFlags.VISIBLE) != 0 && !saved.Actor.EBG_IsSimulationCached(), "original actor initially visible and uncached")) { Finish("initial presentation"); return; }
     if (saved.Fixed) FixedCount++;

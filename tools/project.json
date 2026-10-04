@@ -1,7 +1,7 @@
 {
   "addon": {
-    "name": "EXPBG_GM_Tools",
-    "source": "addon/EXPBG_GM_Tools",
+    "name": "Garrison",
+    "source": "addon/garrison",
     "dependencies": ["58D0FB3206B6F859", "F3B7C6FB18AB1F79"],
     "installedDependencies": {"F3B7C6FB18AB1F79": "EXPBGGMOptimizer_F3B7C6FB18AB1F79"},
     "runtimePaths": ["Configs", "PrefabsEditable", "UI", "Scripts/Game/EXPG"],

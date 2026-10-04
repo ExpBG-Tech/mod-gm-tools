@@ -1,7 +1,11 @@
 # EXPBG GM Tools validation gates
 
-Portable tooling passed on 2026-10-05. Native gates remain pending. Do not publish
-a broken or uncompiled candidate.
+Portable tooling and GitHub CI passed on 2026-10-05. Native Game script compile
+and the ResourceManager graph/ticket/settings/corridor contract fixture passed.
+Artwork import stalled. The real house fixture ran and failed placement capacity
+(1 safe slot for a requested four-person fireteam), before spawning actors.
+Actual gameplay acceptance remains open. Do not publish an
+unvalidated payload as a completed release.
 
 | Gate | Required evidence |
 | --- | --- |

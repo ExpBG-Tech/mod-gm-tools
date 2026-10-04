@@ -5,7 +5,7 @@ card identifies the Garrison feature; the wide Workshop banner identifies GM Too
 Both images were created with Codex's built-in image generation, using the existing
 EXPBG GM Optimizer card as a visual style reference. No GME artwork was used.
 
-Source PNGs are in `addon/EXPBG_GM_Tools/UI/Textures/EXPBG_Garrison/`:
+Source PNGs are in `addon/garrison/UI/Textures/EXPBG_Garrison/`:
 
 - `EXPG_Card.png`: square Garrison feature artwork.
 - `EXPG_Workshop.png`: wide GM Tools banner with a smaller Garrison subtitle.

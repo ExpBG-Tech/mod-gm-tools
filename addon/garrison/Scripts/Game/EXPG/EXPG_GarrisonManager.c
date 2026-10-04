@@ -2,7 +2,7 @@ class EXPG_GarrisonMember
 {
  ref EBG_CacheMember CacheMember;
  EXPG_BuildingPlan Plan;
- int Node;
+ int NodeIndex;
  bool Fixed;
  ref EXPG_PostControl Post;
  // Patrol controller is bound only after its native movement contract is checked.
@@ -24,7 +24,7 @@ class EXPG_GarrisonRecord
  bool Ready;
  bool ReleaseRequested;
  bool Finished;
- int PlayerId;
+ int CreatorId;
  int SafetyCursor;
  float Created;
  float ClearSince = -1;
@@ -58,11 +58,11 @@ class EXPG_GarrisonRecord
    EBG_CacheMember cache = member.CacheMember;
    if (cache.Dead || cache.WasPlayer) { continue; }
    if (!cache.Entity || cache.Entity.GetCharacterGroup() != Group) { return false; }
-   EXPG_BuildingNode node = Plan.Nodes[member.Node];
+   EXPG_BuildingNode node = Plan.Nodes[member.NodeIndex];
    if (member.Fixed)
    {
     if (member.Post) { continue; }
-    if (!Plan.ReserveNode(cache.Entity, member.Node)) { return false; }
+    if (!Plan.ReserveNode(cache.Entity, member.NodeIndex)) { return false; }
     member.Post = new EXPG_PostControl();
     if (!member.Post.Bind(cache.Entity, node.Position, node.Look)) { member.Post = null; return false; }
    }
@@ -70,7 +70,7 @@ class EXPG_GarrisonRecord
    {
     if (member.Patrol) { continue; }
     member.Patrol = new EXPG_PatrolControl();
-    if (!member.Patrol.Start(cache.Entity, Plan, member.Node)) { member.Patrol = null; return false; }
+    if (!member.Patrol.Start(cache.Entity, Plan, member.NodeIndex)) { member.Patrol = null; return false; }
    }
   }
   return true;
@@ -90,14 +90,6 @@ class EXPG_GarrisonRecord
  }
 }
 
-modded class SCR_AIGroup
-{
- [RplProp(), NonSerialized()] bool EXPG_Active;
- [RplProp(), NonSerialized()] float EXPG_WakeDistance = 300;
- [RplProp(), NonSerialized()] float EXPG_SleepDistance = 400;
- [RplProp(), NonSerialized()] int EXPG_CacheMode = 1; // 0 off, 1 Simulation; original actors and group retained.
- [RplProp(), NonSerialized()] string EXPG_Status;
-}
 
 // Use the published reservation seam; never toggle the user's EBG_Exclude flag
 // or weaken Optimizer's actor eligibility checks to obtain caching.
@@ -193,7 +185,7 @@ class EXPG_GarrisonManager
  {
   foreach (EXPG_BuildingPlan plan : m_Plans)
   {
-   if (plan.Building == building) { return plan; }
+   if (plan.Structure == building) { return plan; }
   }
   return null;
  }
@@ -241,18 +233,18 @@ class EXPG_GarrisonManager
   if (count < 1 || count > 32) { return false; }
   foreach (EXPG_GarrisonRecord record : m_Records)
   {
-   if (!record.Finished && record.Plan.Building == building) { reason = "This building already has a garrison"; return false; }
+   if (!record.Finished && record.Plan.Structure == building) { reason = "This building already has a garrison"; return false; }
   }
   Prepare(building);
   EXPG_BuildingPlan plan = FindPlan(building);
-  reason = "Building analysis is still running; choose the squad again shortly";
+  reason = "Structure analysis is still running; choose the squad again shortly";
   if (!plan || !plan.Done) { return false; }
   plan.LastUsed = Now();
-  if (!plan.Valid()) { reason = "Building changed; close and reopen Add Garrison"; return false; }
+  if (!plan.Valid()) { reason = "Structure changed; close and reopen Add Garrison"; return false; }
   if (!plan.Error.IsEmpty()) { reason = plan.Error; return false; }
-  reason = string.Format("Building fits %1 soldiers; choose a smaller squad", plan.Slots.Count());
+  reason = string.Format("Structure fits %1 soldiers; choose a smaller squad", plan.Slots.Count());
   if (count > plan.Slots.Count()) { return false; }
-  if (!plan.ValidateSlots(count)) { reason = "Building positions changed or are obstructed; remove the obstruction or choose another building"; return false; }
+  if (!plan.ValidateSlots(count)) { reason = "Structure positions changed or are obstructed; remove the obstruction or choose another building"; return false; }
   reason = "";
   return true;
  }
@@ -264,7 +256,7 @@ class EXPG_GarrisonManager
   if (!plan || !plan.Done || !plan.Valid() || !plan.Error.IsEmpty()) { return false; }
   foreach (EXPG_GarrisonRecord other : m_Records)
   {
-   if (!other.Finished && other.Plan.Building == building) { return false; }
+   if (!other.Finished && other.Plan.Structure == building) { return false; }
   }
   EBG_CacheManager optimizer = EBG_CacheManager.Instance;
   if (optimizer && (optimizer.FindGroup(group) || optimizer.IsReserved(group))) { return false; }
@@ -273,7 +265,7 @@ class EXPG_GarrisonManager
   EXPG_GarrisonRecord record = new EXPG_GarrisonRecord();
   record.Group = group;
   record.Plan = plan;
-  record.PlayerId = playerId;
+  record.CreatorId = playerId;
   record.Created = Now();
   group.EXPG_Active = true;
   group.GetOnWaypointAdded().Insert(record.OnWaypoint);
@@ -337,7 +329,7 @@ class EXPG_GarrisonManager
   // Analysis ran while the picker was open. Validate all selected places again
   // before moving anyone; ignore only this squad's original spawn positions.
   if (!record.Plan.ValidateSlots(agents.Count(), originals))
-  { record.Report("Building positions changed or are obstructed; retained as a normal squad"); record.ReleaseRequested = true; return false; }
+  { record.Report("Structure positions changed or are obstructed; retained as a normal squad"); record.ReleaseRequested = true; return false; }
   int index;
   foreach (AIAgent agent : agents)
   {
@@ -347,9 +339,9 @@ class EXPG_GarrisonManager
    member.CacheMember = new EBG_CacheMember();
    member.CacheMember.Id = index + 1;
    member.CacheMember.Entity = actor;
-   member.Node = record.Plan.Slots[index];
+   member.NodeIndex = record.Plan.Slots[index];
    member.Fixed = record.Plan.FixedSlots[index];
-   EXPG_BuildingNode node = record.Plan.Nodes[member.Node];
+   EXPG_BuildingNode node = record.Plan.Nodes[member.NodeIndex];
    vector transform[4];
    Math3D.AnglesToMatrix(Vector(node.Look.ToYaw(), 0, 0), transform);
    transform[3] = node.Position;
@@ -400,7 +392,7 @@ class EXPG_GarrisonManager
   return true;
  }
 
- protected void Sleep(EXPG_GarrisonRecord record)
+ protected void TrySleep(EXPG_GarrisonRecord record)
  {
   // CDF alone bypasses Optimizer's save-admission hook. Keep originals active
   // rather than let that path serialize suppressed presentation/AI state.
@@ -424,8 +416,8 @@ class EXPG_GarrisonManager
   if (!record.Members.IsEmpty())
   {
    EXPG_GarrisonMember check = record.Members[record.SafetyCursor++ % record.Members.Count()];
-   if (!check.CacheMember.Dead && !record.Plan.Supported(record.Plan.Nodes[check.Node].Position, 0.2, check.CacheMember.Entity))
-   { record.Report("Building position destroyed; releasing survivors"); record.ReleaseRequested = true; }
+   if (!check.CacheMember.Dead && !record.Plan.Supported(record.Plan.Nodes[check.NodeIndex].Position, 0.2, check.CacheMember.Entity))
+   { record.Report("Structure position destroyed; releasing survivors"); record.ReleaseRequested = true; }
   }
   if (record.Simulation)
   {
@@ -494,7 +486,7 @@ class EXPG_GarrisonManager
   if (record.ClearSince < 0) { record.ClearSince = Now(); }
   if (Now() - record.ClearSince < 30 || Now() < record.RetryAt) { return; }
   record.RetryAt = Now() + 5;
-  Sleep(record);
+  TrySleep(record);
  }
 
  protected void Pump()

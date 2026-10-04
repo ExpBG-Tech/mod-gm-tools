@@ -26,7 +26,7 @@ class EXPG_BuildingPlan
 {
  static const float GRID = 0.75;
  static const int MAX_NODES = 4096;
- IEntity Building;
+ IEntity Structure;
  vector Origin;
  vector Angles;
  vector Mins;
@@ -75,21 +75,21 @@ class EXPG_BuildingPlan
  {
   if (!owner || from < 0 || to < 0 || from >= Nodes.Count() || to >= Nodes.Count() || !Nodes[from].Reachable || !Nodes[to].Reachable) { return false; }
   ReleaseReservation(null);
-  EXPG_BuildingReservation owned;
+  EXPG_BuildingReservation existingReservation;
   foreach (EXPG_BuildingReservation reservation : m_Reservations)
   {
-   if (reservation.Owner == owner) { owned = reservation; continue; }
+   if (reservation.Owner == owner) { existingReservation = reservation; continue; }
    if (RoutesConflict(Nodes[from].Position, Nodes[to].Position, Nodes[reservation.From].Position, Nodes[reservation.To].Position)) { return false; }
   }
-  if (!owned)
+  if (!existingReservation)
   {
    if (m_Reservations.Count() >= 32) { return false; }
-   owned = new EXPG_BuildingReservation();
-   owned.Owner = owner;
-   m_Reservations.Insert(owned);
+   existingReservation = new EXPG_BuildingReservation();
+   existingReservation.Owner = owner;
+   m_Reservations.Insert(existingReservation);
   }
-  owned.From = from;
-  owned.To = to;
+  existingReservation.From = from;
+  existingReservation.To = to;
   return true;
  }
 
@@ -105,15 +105,15 @@ class EXPG_BuildingPlan
 
  void Begin(IEntity building)
  {
-  Building = building;
-  if (!building) { Fail("Building no longer exists"); return; }
+  Structure = building;
+  if (!building) { Fail("Structure no longer exists"); return; }
   Origin = building.GetOrigin();
   Angles = building.GetAngles();
   building.GetBounds(Mins, Maxs);
   m_Width = Math.Ceil((Maxs[0] - Mins[0]) / GRID);
   m_Depth = Math.Ceil((Maxs[2] - Mins[2]) / GRID);
   if (m_Width < 1 || m_Depth < 1 || m_Width * m_Depth > 2048 || Maxs[1] - Mins[1] > 40)
-  { Fail("Building exceeds the supported sampling bounds"); return; }
+  { Fail("Structure exceeds the supported sampling bounds"); return; }
   for (int i = 0; i < m_Width * m_Depth; i++) { Columns.Insert(new EXPG_BuildingColumn()); }
   array<Managed> sentinels = {};
   building.FindComponents(SCR_AISmartActionSentinelComponent, sentinels);
@@ -131,18 +131,18 @@ class EXPG_BuildingPlan
 
  bool Valid()
  {
-  return Building && vector.DistanceSq(Origin, Building.GetOrigin()) < 0.01 && vector.DistanceSq(Angles, Building.GetAngles()) < 0.01;
+  return Structure && vector.DistanceSq(Origin, Structure.GetOrigin()) < 0.01 && vector.DistanceSq(Angles, Structure.GetAngles()) < 0.01;
  }
 
  bool IsBuilding(IEntity entity)
  {
-  return entity && Building && entity.GetRootParent() == Building.GetRootParent();
+  return entity && Structure && entity.GetRootParent() == Structure.GetRootParent();
  }
 
  bool Inside(vector point, float margin = 0)
  {
-  if (!Building) { return false; }
-  vector local = Building.CoordToLocal(point);
+  if (!Structure) { return false; }
+  vector local = Structure.CoordToLocal(point);
   return local[0] >= Mins[0] + margin && local[0] <= Maxs[0] - margin && local[2] >= Mins[2] + margin && local[2] <= Maxs[2] - margin && local[1] >= Mins[1] - 0.1 && local[1] <= Maxs[1];
  }
 
@@ -232,7 +232,7 @@ class EXPG_BuildingPlan
  void Step(int work = 8)
  {
   if (Done) { return; }
-  if (!Valid()) { Fail("Building changed while its positions were being checked"); return; }
+  if (!Valid()) { Fail("Structure changed while its positions were being checked"); return; }
   for (int operation = 0; operation < work && !Done; operation++)
   {
    if (m_Phase == 0) { SampleColumn(); }
@@ -250,14 +250,14 @@ class EXPG_BuildingPlan
   int z = m_Column / m_Width;
   vector local = Vector(Mins[0] + (x + 0.5) * GRID, m_Height, Mins[2] + (z + 0.5) * GRID);
   TraceParam floor = new TraceParam();
-  floor.Start = Building.CoordToParent(local);
+  floor.Start = Structure.CoordToParent(local);
   local[1] = Mins[1] - 0.3;
-  floor.End = Building.CoordToParent(local);
+  floor.End = Structure.CoordToParent(local);
   floor.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
   float fraction = GetGame().GetWorld().TraceMove(floor, null);
   if (fraction >= 0.999) { NextColumn(); return; }
   vector point = vector.Lerp(floor.Start, floor.End, fraction);
-  m_Height = Building.CoordToLocal(point)[1] - 0.15;
+  m_Height = Structure.CoordToLocal(point)[1] - 0.15;
   if (m_Height <= Mins[1]) { NextColumn(); }
   if (!IsBuilding(floor.TraceEnt) || floor.TraceNorm[1] < 0.65) { return; }
   point[1] = point[1] + 0.05;
@@ -267,7 +267,7 @@ class EXPG_BuildingPlan
   ceiling.End = point + "0 12 0";
   ceiling.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
   if (GetGame().GetWorld().TraceMove(ceiling, null) >= 0.999 || !IsBuilding(ceiling.TraceEnt)) { return; }
-  if (Nodes.Count() >= MAX_NODES) { Fail("Building has too many interior samples"); return; }
+  if (Nodes.Count() >= MAX_NODES) { Fail("Structure has too many interior samples"); return; }
   EXPG_BuildingNode node = new EXPG_BuildingNode();
   node.Position = point;
   // Sample belongs to the column before NextColumn advanced it.

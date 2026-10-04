@@ -3,7 +3,9 @@
 Original Game Master tools by M.Pac and K.Edgar. The first feature is **Garrison**:
 one-squad building garrisons with individual guard posts and indoor patrols.
 
-Development candidate. Not yet compiled, gameplay verified, or published.
+Development candidate. Native compilation and scalar contracts pass. The real
+house fixture currently accepts only one placement, so four-person gameplay
+acceptance and Workshop publication remain blocked.
 
 Right-click a building, choose **Add Garrison**, and select an infantry squad.
 The intended behavior is one squad with individual fixed guard posts and indoor
