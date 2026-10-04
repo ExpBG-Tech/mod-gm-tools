@@ -1,7 +1,31 @@
 // Native fixture only; never ship in the production addon.
 // Run EXPG_BuildingPlanTest.Run() from a disposable Workbench test plugin.
+class EXPG_SlotSelectionFixture : EXPG_BuildingPlan
+{
+ void Select() { SelectSlots(); }
+}
+
 class EXPG_BuildingPlanTest
 {
+ // Rejecting a nearby candidate must not discard later, well-spaced candidates.
+ static bool SlotSelection()
+ {
+  EXPG_SlotSelectionFixture plan = new EXPG_SlotSelectionFixture();
+  array<vector> positions = {"0 0 0", "0.75 0 0", "1.5 0 0", "3 0 0"};
+  foreach (vector position : positions)
+  {
+   EXPG_BuildingNode node = new EXPG_BuildingNode();
+   node.Position = position;
+   node.Reachable = true;
+   plan.Nodes.Insert(node);
+  }
+  plan.Select();
+  bool passed = plan.Slots.Count() == 3;
+  if (passed) { passed = plan.Slots[0] == 0 && plan.Slots[1] == 2 && plan.Slots[2] == 3; }
+  PrintFormat("[EXPG SLOT RESULT] pass=%1 expected=3 actual=%2", passed, plan.Slots.Count());
+  return passed;
+ }
+
  // Native fixtures authored before reservation implementation. NOT RUN.
  static bool ReservationGeometry()
  {
@@ -58,6 +82,7 @@ class EXPG_BuildingPlanTest
   plan.MarkReachable();
   bool passed = plan.Nodes[0].Reachable && plan.Nodes[1].Reachable && plan.Nodes[2].Reachable;
   passed = passed && ReservationGeometry();
+  passed = SlotSelection() && passed;
   passed = passed && !plan.Nodes[3].Reachable && !plan.Nodes[4].Reachable;
   array<int> route = {};
   passed = passed && plan.Route(0, 2, route) && route.Count() == 3;
