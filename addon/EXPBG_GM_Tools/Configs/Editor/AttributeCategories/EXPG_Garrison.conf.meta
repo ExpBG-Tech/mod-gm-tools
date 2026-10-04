@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{9AA074A7EB574782}Configs/Editor/AttributeCategories/EXPG_Garrison.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

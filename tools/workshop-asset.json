@@ -1,0 +1,14 @@
+{
+  "id": "FC1402F65B2F4A45",
+  "name": "EXPBG GM Tools",
+  "type": "addon",
+  "platformCompatibility": 1,
+  "gameVersion": "1.8.0.13",
+  "minGameVersion": 1,
+  "private": false,
+  "unlisted": true,
+  "description": "# EXPBG GM Tools\nAuthors: M.Pac and K.Edgar | Version {{VERSION}}\n\nGame Master tools featuring Garrison: one-squad building garrisons with individual guard posts and indoor patrols. Requires EXPBG GM Optimizer. Development candidate; native acceptance and first publication pending.",
+  "summary": "Game Master tools featuring Garrison: one squad, individual guard posts and indoor patrols.",
+  "license": "Arma Public License Share Alike (APL-SA)",
+  "tags": ["EXPBG", "GAMEMASTER", "AI", "GARRISON"]
+}

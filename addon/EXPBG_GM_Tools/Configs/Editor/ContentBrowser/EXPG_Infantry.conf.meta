@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{A67E2D7288844EAF}Configs/Editor/ContentBrowser/EXPG_Infantry.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}
