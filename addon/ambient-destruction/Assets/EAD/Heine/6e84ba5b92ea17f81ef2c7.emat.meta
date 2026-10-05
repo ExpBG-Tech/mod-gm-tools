@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{EE41B776C6D911B6}Assets/EAD/Heine/6e84ba5b92ea17f81ef2c7.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

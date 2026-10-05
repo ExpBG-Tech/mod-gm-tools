@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{B76E7F1AF7A5D00C}Configs/Systems/Persistence/GameMode/GameMaster.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

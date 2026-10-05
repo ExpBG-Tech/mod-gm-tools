@@ -1,0 +1,28 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{F0C50CEECEB16029}Assets/Props/Wrecks/BMP1/BMP1_wreck_hull.xob"
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+ {
+  GenericEntity {
+   components {
+    MeshObject { Object "{BF3012179283F82A}Assets/Props/Wrecks/BMP1/BMP1_wreck_turret.xob" }
+    RigidBody { ModelGeometry 1 Static 1 }
+    Hierarchy { PivotID "Socket_BMP1_turret" }
+   }
+  }
+  GenericEntity {
+   components {
+    MeshObject { Object "{89D9973EDCFE543F}Assets/Props/Wrecks/BMP1/BMP1_wreck_door.xob" }
+    RigidBody { ModelGeometry 1 Static 1 }
+    Hierarchy { PivotID "Socket_BMP1_door" }
+   }
+   angles 0 175.5 0
+  }
+ }
+}

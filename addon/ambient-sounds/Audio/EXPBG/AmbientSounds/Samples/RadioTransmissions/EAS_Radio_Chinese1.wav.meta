@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{D09AD9571372488E}Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Chinese1.wav"
+ Configurations {
+  WAVResourceClass PC : "{F72B05D02F3F135E}Configs/System/ResourceTypes/PC/Sound.conf" {
+  }
+  WAVResourceClass HEADLESS : "{D63592CA950AF3A8}Configs/System/ResourceTypes/HEADLESS/Sound.conf" {
+  }
+ }
+}

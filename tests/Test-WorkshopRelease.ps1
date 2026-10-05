@@ -28,7 +28,7 @@ Rejects { Assert-WorkshopPackage $root }
 'payload' | Set-Content "$root/data.pak"
 'index' | Set-Content "$root/resourceDatabase.rdb"
 ('GameProject { GUID ' + $project.addon.id + ' }') | Set-Content "$root/$projectFile"
-Write-WorkshopManifest $root "$PSScriptRoot/../tools/workshop-asset.json" '0.1.15' 'A test release' (Join-Path $project.addon.sourcePath $project.addon.preview)
+Write-WorkshopManifest $root "$PSScriptRoot/../tools/workshop-asset.json" '0.1.15' 'A test release' $project.addon.previewPath
 $manifest = Get-Content "$root/manifest.json" -Raw | ConvertFrom-Json
 if ($manifest.asset.version -ne '0.1.15' -or $manifest.asset.changelog -ne 'A test release' -or $manifest.asset.description -match '\{\{VERSION\}\}') { throw 'Manifest release metadata was not substituted.' }
 Assert-WorkshopPackage $root
@@ -64,7 +64,7 @@ Assert-WorkshopPackage $root
 $plainProject = Get-Content "$root/$projectFile" -Raw
 $sourceTable = ' StringTableSource "{B703E765A4924711}Language/EXPBG_Localization.st"'
 ($plainProject + "`n" + $sourceTable) | Set-Content "$root/$projectFile"
-Write-WorkshopManifest $root "$PSScriptRoot/../tools/workshop-asset.json" '0.1.15' 'A test release' (Join-Path $project.addon.sourcePath $project.addon.preview)
+Write-WorkshopManifest $root "$PSScriptRoot/../tools/workshop-asset.json" '0.1.15' 'A test release' $project.addon.previewPath
 Rejects { Assert-WorkshopPackage $root }
 Rejects { Assert-WorkshopPackage $root -Published }
 $runtimeTable = ' StringTableRuntime "{D360279A89F44AB2}Language/EXPBG_Localization.en_us.conf"'
@@ -75,7 +75,7 @@ foreach ($newline in @("`n", "`r`n")) {
     if ([IO.File]::ReadAllText("$root/$projectFile") -cne $expected) { throw 'Stripping editor references changed runtime configuration.' }
     Remove-WorkshopSourceTableReferences "$root/$projectFile"
     if ([IO.File]::ReadAllText("$root/$projectFile") -cne $expected) { throw 'Stripping editor references is not idempotent.' }
-    Write-WorkshopManifest $root "$PSScriptRoot/../tools/workshop-asset.json" '0.1.15' 'A test release' (Join-Path $project.addon.sourcePath $project.addon.preview)
+    Write-WorkshopManifest $root "$PSScriptRoot/../tools/workshop-asset.json" '0.1.15' 'A test release' $project.addon.previewPath
     Assert-WorkshopPackage $root
 }
 [IO.File]::WriteAllText("$root/$projectFile", ($plainProject + "`n StringTableSource unquoted.st"))

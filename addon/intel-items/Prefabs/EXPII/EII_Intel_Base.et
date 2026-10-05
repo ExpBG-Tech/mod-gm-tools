@@ -1,0 +1,40 @@
+GenericEntity : "{C95E11C60810F432}Prefabs/Items/Core/Item_Base.et" {
+ ID "508AB2013EEE1E00"
+ components {
+  EII_IntelComponent "{E110000000000011}" {}
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
+    ItemDisplayName EII_InventoryUIInfo "{5222EB4D07D865FA}" {
+     Name "#EII-Intel_Name"
+     Description "Pick up and read intel in your inventory. Game Master can edit the title and text."
+    }
+    ItemPhysAttributes ItemPhysicalAttributes PhysicalAttributes { Weight 0.01 SizeSetupStrategy Manual }
+    m_Size SLOT_1x1
+    m_bStackable 0
+    m_bRefundable 0
+   }
+  }
+  MeshObject "{E110000000000012}" {}
+  RigidBody "{E110000000000013}" { Mass 0.01 ModelGeometry 1 }
+  ActionsManagerComponent "{508AB5952B584B2E}" {
+   ActionContexts {
+    UserActionContext "{508AC2ABEC97066C}" { Radius 0.65 }
+   }
+   additionalActions {
+    EII_ReadAction "{E110000000000014}" {
+     ParentContextList { "default" }
+     UIInfo SCR_ActionUIInfo { Name "Read intel" }
+    }
+   }
+  }
+  SCR_EditableEntityComponent "{E110000000000015}" : "{996046FE206C699A}Prefabs/Editor/Components/Default_SCR_EditableEntityComponent.ct" {
+   m_UIInfo SCR_EditableEntityUIInfo "{E110000000000016}" {
+    Name "#EII-IntelItems_Name"
+    Description "Lightweight editable intel."
+    m_Image "{38C2078B7B519EF1}UI/Textures/EXPII/EII_IntelItems.edds"
+    m_aAuthoredLabels { 1 120 157026 }
+   }
+   m_bAutoRegister ALWAYS
+  }
+ }
+}

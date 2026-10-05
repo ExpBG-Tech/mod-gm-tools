@@ -1,0 +1,36 @@
+EAS_TVModule {
+ ID "4CF02A5C81CC4127"
+ components {
+  MeshObject "{F789D892681141D7}" {
+   Object "{C5C0F74E1FA90A8D}Assets/Props/Furniture/TVset_01/TVset_01.xob"
+  }
+  RigidBody "{BEE3B9F5CA58432C}" {
+   ResponseIndex "SmallDestructible"
+   ModelGeometry 1
+   Static 1
+  }
+  SCR_EditableEntityComponent "{C8B27BF301D54250}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{EE011866A66042AE}" {
+    Name "#EAS-TV_Name"
+    Description "Emergency alert sound from a physical television. Configure volume, looping and the pause between repeats."
+    Icon "{1018B005A47862BF}UI/Textures/EditorPreviews/Auto/Props/Furniture/E_TVSet_01.edds"
+    m_Image "{1018B005A47862BF}UI/Textures/EditorPreviews/Auto/Props/Furniture/E_TVSet_01.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{7DE82F61729F408D}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{14FD4026099E4E65}" {}
+ }
+ Recording 0
+ Volume 20
+ Enabled 0
+ Loop 1
+ PauseSeconds 120
+ Range 30
+}

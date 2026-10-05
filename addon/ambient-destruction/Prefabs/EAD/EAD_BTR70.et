@@ -1,0 +1,11 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{8346688939232FB1}Assets/Vehicles/Wheeled/BTR70/BTR_70_wreck.xob"
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

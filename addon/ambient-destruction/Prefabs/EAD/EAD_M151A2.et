@@ -1,0 +1,11 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{565AA9DF658E08F5}Assets/Vehicles/Wheeled/M151A2/m151a2_wreck.xob"
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{FC2AA5E8073276D4}Audio/EXPBG/AmbientSounds/EAS_Gain.sig"
+ Configurations {
+  AudioSignalResourceClass PC {}
+  AudioSignalResourceClass HEADLESS : PC {}
+ }
+}

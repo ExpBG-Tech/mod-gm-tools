@@ -1,0 +1,6 @@
+MatPBRBasic {
+ Color 0.468 0.468 0.468 1
+ BCRMap "{DB6E39CBC4A5B013}Assets/EAD/Heine/69bc25461b5a30786b1b4.edds"
+ OpacityMap "{DB6E39CBC4A5B013}Assets/EAD/Heine/69bc25461b5a30786b1b4.edds"
+ NMOMap "{383B9C35E47FC095}Assets/EAD/Heine/24e2dd93b78b3195ed.edds"
+}

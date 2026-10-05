@@ -21,7 +21,7 @@ try {
     'payload' | Set-Content "$prepared/data.pak"
     'index' | Set-Content "$prepared/resourceDatabase.rdb"
     ('GameProject { GUID ' + $settings.addon.id + ' }') | Set-Content "$prepared/${projectFile}"
-    Write-WorkshopManifest $prepared "$repo/tools/workshop-asset.json" '0.0.13' 'The release note.' (Join-Path $settings.addon.sourcePath $settings.addon.preview) $settings.addon.name
+    Write-WorkshopManifest $prepared "$repo/tools/workshop-asset.json" '0.0.13' 'The release note.' $settings.addon.previewPath $settings.addon.name
     $preparedHashes = @{}
     foreach ($file in Get-ChildItem -LiteralPath $prepared -File) { $preparedHashes[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash }
     Copy-Item -Path "$prepared/*" -Destination $actual

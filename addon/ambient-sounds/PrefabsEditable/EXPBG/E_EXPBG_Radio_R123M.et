@@ -1,0 +1,33 @@
+EAS_RadioModule {
+ ID "A97F5A6AAA8265AC"
+ components {
+  MeshObject "{026EAA80AB45C0C6}" {
+   Object "{DBE3AEFE90AC25D0}Assets/Props/Military/Radios/RadioStation_R123M_01.xob"
+  }
+  RigidBody "{9D167431E63215AD}" { ResponseIndex "SmallDestructible" ModelGeometry 1 Static 1 }
+
+  SCR_EditableEntityComponent "{C235077A1CCB8C28}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{B634DA977334F738}" {
+    Name "#EAS-RadioR123M_Name"
+    Description "Physical radio. Enabled, Recording, Volume and Loop are controlled by Game Master."
+    Icon "{5ACEE55EDDB9867D}UI/Textures/EditorPreviews/Auto/Props/Military/Radios/E_RadioStation_R123M_01.edds"
+    m_Image "{5ACEE55EDDB9867D}UI/Textures/EditorPreviews/Auto/Props/Military/Radios/E_RadioStation_R123M_01.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_RADIO
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{876FFDAC3DAEE3B7}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{1F3E45EB953F3FA6}" {
+  }
+ }
+ Recording 3
+ Volume 20
+ Enabled 0
+}

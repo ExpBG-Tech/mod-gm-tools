@@ -1,0 +1,11 @@
+MetaFileClass {
+ Name "{39BE2B7569C94215}PrefabsEditable/EXPBG/Crowd/E_EXPBG_Crowd.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass XBOX_ONE : PC {}
+  EntityTemplateResourceClass XBOX_SERIES : PC {}
+  EntityTemplateResourceClass PS4 : PC {}
+  EntityTemplateResourceClass PS5 : PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

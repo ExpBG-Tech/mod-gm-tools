@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{7FA3A0886728435A}Configs/Systems/Persistence/Configuration/EXPAS/RadioModule.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

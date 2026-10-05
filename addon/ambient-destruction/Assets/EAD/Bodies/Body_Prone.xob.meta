@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{2088F0A9F95C45D7}Assets/EAD/Bodies/Body_Prone.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

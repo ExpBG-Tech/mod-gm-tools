@@ -1,0 +1,6 @@
+MatPBRBasic {
+ Color 0.558 0.558 0.558 1
+ BCRMap "{0F6CA1871A2F2757}EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_BaseColor.edds"
+ OpacityMap "{0F6CA1871A2F2757}EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_BaseColor.edds"
+ NMOMap "{D402C8EAAE144C65}EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_NormalOpenGL.edds"
+}

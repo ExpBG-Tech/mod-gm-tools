@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{E110000000000030}Audio/EXPII/EII_Startup.acp"
+ Configurations {
+  AudioProjectResourceClass PC {}
+  AudioProjectResourceClass HEADLESS : PC {}
+ }
+}

@@ -1,0 +1,17 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{B882EB36B1EE8807}Assets/EAD/Heine/6d178e014a5201de.xob"
+   Materials {
+    MaterialAssignClass {
+     SourceMaterial "zhiguli_gray"
+     AssignedMaterial "{C0DD8B83BCCCDBAF}Assets/EAD/Heine/7cef80ad113b3d96b7725f4d241.emat"
+    }
+   }
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

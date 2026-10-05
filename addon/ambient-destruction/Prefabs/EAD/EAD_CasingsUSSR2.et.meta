@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{F00C9D3DB6116124}Prefabs/EAD/EAD_CasingsUSSR2.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

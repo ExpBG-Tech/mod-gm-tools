@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{D402C8EAAE144C65}EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_NormalOpenGL.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{7E8D916D8F449094}PrefabsEditable/EXPII/EII_ManualSoviet.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

@@ -10,6 +10,8 @@ function Assert-RelativePath([string]$Path) {
 if ($config -isnot [System.Collections.IDictionary] -or $config.addon -isnot [System.Collections.IDictionary]) { throw 'Project configuration requires an addon object.' }
 if ($asset.id -cnotmatch '^[A-F0-9]{16}$' -or !$asset.name -or $asset.unlisted -isnot [bool] -or $asset.private -isnot [bool]) { throw 'Workshop metadata requires an item GUID, name and explicit visibility.' }
 $config.addon.id = $asset.id
+# A pack assembles its module folders (tools/pack.json) into one engine project.
+$config.addon.assembled = Test-Path -LiteralPath (Join-Path $repoPath 'tools/pack.json') -PathType Leaf
 $entries = @($config.addon)
 if ($config.companion) { $entries += $config.companion }
 $ids = @{}
@@ -35,6 +37,12 @@ foreach ($entry in $entries) {
  }
 }
 Assert-RelativePath $config.addon.preview
+# The preview path is relative to the engine project; in a pack it lives in one module folder.
+$config.addon.previewPath = Join-Path $config.addon.sourcePath $config.addon.preview
+if ($config.addon.assembled) {
+ $found = @(Get-ChildItem -LiteralPath $config.addon.sourcePath -Directory | ForEach-Object { Join-Path $_.FullName $config.addon.preview } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+ if ($found.Count -eq 1) { $config.addon.previewPath = $found[0] }
+}
 if ($config.companion -and ($config.companion.source -eq $config.addon.source -or $config.companion.id -ceq $config.addon.id)) { throw 'The companion must have its own source and identity.' }
 if ($config.legacyPublishWorkflows -isnot [array] -or @($config.legacyPublishWorkflows | Where-Object { $_ -notmatch '^[A-Za-z0-9_-]+\.ya?ml$' }).Count) { throw 'Legacy workflows must be an explicit array of workflow filenames (empty for new repositories).' }
 $config.asset = $asset

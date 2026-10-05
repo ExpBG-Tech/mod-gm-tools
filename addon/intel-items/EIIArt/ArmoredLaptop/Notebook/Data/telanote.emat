@@ -1,0 +1,9 @@
+MatPBRBasic {
+ Emissive 0.051 0.051 0.051 0
+ EmissiveLV 3.254
+ EmissiveMap "{1635C1219215B625}EIIArt/ArmoredLaptop/Notebook/Data/loginsenha_BCR.edds"
+ BCRMap "{1635C1219215B625}EIIArt/ArmoredLaptop/Notebook/Data/loginsenha_BCR.edds"
+ GlobalMapsUVTransform MatUVTransform "{6646FCDA275114DD}" {
+  Rotation 180
+ }
+}

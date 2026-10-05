@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CA1A000000000014}Configs/Editor/AttributeCategories/EXPAC_Traffic.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

@@ -1,0 +1,49 @@
+EAS_AmbientModule {
+ ID "8712F832816E4FE7"
+ components {
+  SCR_EditableEntityComponent "{D4B6C2DB5D124419}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{56CA2A1A3BA34993}" {
+    Name "#EAS-War_Name"
+    Description "Manually placed ambient battle sounds. Configure this module in Game Master or World Editor."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{EEB3B9AECAEB416C}UI/Textures/EXPBG/EAS_War_Card.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM 157026 EAS_WAR_EFFECTS EAS_WAR_MIX
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{D3D910209AE44DB0}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{B61D16872D934DC3}" {
+  }
+ }
+ Mode -1
+ Intensity 0
+ Spread 200
+ Range 1500
+ Volume 50
+ Minutes 0
+ Enabled 0
+ DebugEnabled 0
+ GunshotsEnabled 1
+ GunshotsSet 0
+ ExplosionsEnabled 1
+ ExplosionsSet 0
+ JetsEnabled 0
+ JetSelection 2
+ PremixedEnabled 0
+ PremixedSelection 0
+ GunshotsVolume -1
+ ExplosionsVolume -1
+ JetsVolume -1
+ PremixedVolume -1
+ GunshotsFrequency -1
+ ExplosionsFrequency -1
+ JetsFrequency -1
+}

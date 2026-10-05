@@ -1,0 +1,22 @@
+MatPBRMulti {
+ VFXMap "{28724AD5A1D70271}Assets/_SharedData/Damage/ST_Clothes_DMG_Blood_MASK.edds"
+ NormalPower 1.698
+ GlobalNMOMap "{96EF3CD8C8E643BA}Assets/_SharedData/Dirt/ST_Mud_01_NMO.edds"
+ DirtOpacity 2.34
+ DirtLayerSharpness 0.289
+ DirtColor 0.131 0.131 0.131 1
+ DirtRoughness 0.482
+ DirtBCRMap "{08F15E9AD2DE7E86}Assets/_SharedData/Damage/ST_Clothes_DMG_Blood_BCR.edds"
+ Enabled_2 1
+ BCR_2 "{9C3CAA60271F16C5}Assets/Characters/Uniforms/Shirt_CottonShirt_01/Data/Shirt_CottonShirt_01_Deflated_V1_Dirty_BCR.edds"
+ CombineMode_2 1
+ MaskOffset_2 1
+ Color_1 0.545 0.517 0.445 1
+ BCR_1 "{794A8F488BA2687E}Assets/_SharedData/Fabric/ST_Fabric_Rough01_1m_BCR.edds"
+ NMO_1 "{419234DA52D53AE0}Assets/_SharedData/Fabric/ST_Fabric_Rough01_1m_NMO.edds"
+ UVTransform_1 MatUVTransform "{68DD16890CAFE525}" {
+  TilingU 2
+  TilingV 2
+ }
+ Roughness_1 1.672
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{EAD1000000000020}Prefabs/EAD/EAD_BricksSmall.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

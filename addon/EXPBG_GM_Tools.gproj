@@ -1,0 +1,63 @@
+GameProject {
+ ID "EXPBG_GM_Tools"
+ GUID "FC1402F65B2F4A45"
+ TITLE "EXPBG GM Tools"
+ Dependencies {
+  "58D0FB3206B6F859"
+ }
+ Configurations {
+  GameProjectConfig PC {
+   WidgetManagerSettings WidgetManagerSettings "{AC4BE58770485E02}" {
+    StringTables {
+     StringTableDefinition "{AE0B7C856A014122}" {
+      StringTableSource "{B703E765A4924711}Language/EXPBG_Localization.st"
+      Languages {
+       LanguageDefinition "{AF72E63043284714}" {
+        Code "en_us"
+        StringTableRuntime "{D360279A89F44AB2}Language/EXPBG_Localization.en_us.conf"
+       }
+      }
+     }
+     StringTableDefinition "{4574B23D339A25E4}" {
+      StringTableSource "{1CB675FFDD813119}Language/EII_Localization.st"
+      Languages {
+       LanguageDefinition "{D6DBA8A33915C6A2}" {
+        Code "en_us"
+        StringTableRuntime "{746D6509475DA0C8}Language/EII_Localization.en_us.conf"
+       }
+      }
+     }
+     StringTableDefinition "{C53250AB6CE44ADC}" {
+      StringTableSource "{3D7583A02DEC4C2A}Language/EAC_Localization.st"
+      Languages {
+       LanguageDefinition "{FB0D017A6D4B4733}" {
+        Code "en_us"
+        StringTableRuntime "{B86C52D986FA4B9A}Language/EAC_Localization.en_us.conf"
+       }
+      }
+     }
+     StringTableDefinition "{28133500062D4A5D}" {
+      StringTableSource "{8DED8C9B801E4A2E}Language/EAD_Localization.st"
+      Languages {
+       LanguageDefinition "{F76E701492494B07}" {
+        Code "en_us"
+        StringTableRuntime "{A43196AF76E64E63}Language/EAD_Localization.en_us.conf"
+       }
+      }
+     }
+     StringTableDefinition "{327BDE8883984C14}" {
+      StringTableSource "{ADF00D5BB6AF4AC4}Language/EAS_Localization.st"
+      Languages {
+       LanguageDefinition "{77744DBF17EF4A19}" {
+        Code "en_us"
+        StringTableRuntime "{93A306479D9D49A3}Language/EAS_Localization.en_us.conf"
+       }
+      }
+     }
+    }
+   }
+  }
+  GameProjectConfig HEADLESS {
+  }
+ }
+}

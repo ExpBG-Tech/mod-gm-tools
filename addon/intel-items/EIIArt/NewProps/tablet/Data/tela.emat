@@ -1,0 +1,8 @@
+MatPBRBasic {
+ Color 0.578 0.578 0.578 1
+ Emissive 0.05 0.05 0.05 0
+ EmissiveLV 2
+ EmissiveMap "{24357D2BF1844A9F}EIIArt/NewProps/tablet/Data/large_digital_tablet_screen_standing_Mat_BaseColor.edds"
+ BCRMap "{24357D2BF1844A9F}EIIArt/NewProps/tablet/Data/large_digital_tablet_screen_standing_Mat_BaseColor.edds"
+ OpacityMap "{24357D2BF1844A9F}EIIArt/NewProps/tablet/Data/large_digital_tablet_screen_standing_Mat_BaseColor.edds"
+}

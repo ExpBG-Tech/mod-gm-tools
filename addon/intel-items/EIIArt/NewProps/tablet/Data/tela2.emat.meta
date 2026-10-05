@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{038F689E62A9A662}EIIArt/NewProps/tablet/Data/tela2.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

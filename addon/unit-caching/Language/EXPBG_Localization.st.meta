@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{B703E765A4924711}Language/EXPBG_Localization.st"
+ Configurations {
+  StringTableResourceClass PC {
+  }
+  StringTableResourceClass HEADLESS : PC {
+  }
+ }
+}

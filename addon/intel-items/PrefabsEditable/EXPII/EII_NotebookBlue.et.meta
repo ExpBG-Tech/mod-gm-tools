@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{23BD5CC4A9B2CC83}PrefabsEditable/EXPII/EII_NotebookBlue.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

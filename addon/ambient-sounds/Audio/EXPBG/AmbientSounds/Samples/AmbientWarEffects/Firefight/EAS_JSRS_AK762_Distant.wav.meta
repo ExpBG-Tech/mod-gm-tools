@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{C4260E2BF5A146CA}Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_AK762_Distant.wav"
+ Configurations {
+  WAVResourceClass PC : "{F72B05D02F3F135E}Configs/System/ResourceTypes/PC/Sound.conf" {
+  }
+  WAVResourceClass HEADLESS : "{D63592CA950AF3A8}Configs/System/ResourceTypes/HEADLESS/Sound.conf" {
+  }
+ }
+}

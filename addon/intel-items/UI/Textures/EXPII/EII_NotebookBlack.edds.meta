@@ -1,0 +1,21 @@
+MetaFileClass {
+ Name "{F87F15DE5EB9E75B}UI/Textures/EXPII/EII_NotebookBlack.edds"
+ Configurations {
+  PNGResourceClass PC : "{3549C665CAA9A8EA}Configs/System/ResourceTypes/PC/TextureUI.conf" {
+   MaxSize "512"
+   Conversion None
+  }
+  PNGResourceClass HEADLESS : "{E604D15366D985DF}Configs/System/ResourceTypes/HEADLESS/TextureUI.conf" {
+   MaxSize "512"
+   Conversion None
+  }
+  PNGResourceClass XBOX_ONE : PC {
+  }
+  PNGResourceClass XBOX_SERIES : PC {
+  }
+  PNGResourceClass PS4 : PC {
+  }
+  PNGResourceClass PS5 : PC {
+  }
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AD7BFEBC039FA87F}EIIArt/NewProps/tablet/Data/note.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

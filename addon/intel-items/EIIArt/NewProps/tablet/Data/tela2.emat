@@ -1,0 +1,12 @@
+MatPBRBasic {
+ Color 0.578 0.578 0.578 1
+ Emissive 0.05 0.05 0.05 0
+ EmissiveLV 2
+ EmissiveMap "{058E51724D775F36}EIIArt/NewProps/tablet/Data/taliba.edds"
+ BCRMap "{058E51724D775F36}EIIArt/NewProps/tablet/Data/taliba.edds"
+ OpacityMap "{058E51724D775F36}EIIArt/NewProps/tablet/Data/taliba.edds"
+ GlobalMapsUVTransform MatUVTransform "{65C31C6DC0545382}" {
+  OffsetU 0.306
+  Rotation 270
+ }
+}

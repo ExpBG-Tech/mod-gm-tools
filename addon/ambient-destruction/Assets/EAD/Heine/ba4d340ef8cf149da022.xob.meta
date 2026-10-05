@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{43021B9C1A9A58F1}Assets/EAD/Heine/ba4d340ef8cf149da022.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

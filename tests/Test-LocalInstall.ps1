@@ -23,7 +23,7 @@ foreach ($entry in @($settings.addon) + @($settings.companion | Where-Object { $
  if ((Test-Path "$($second.installedAddon)/stale.txt") -or !(Test-Path "$($second.backup)/stale.txt")) { throw 'Replacement must remove stale files and retain backup.' }
  if (!(Test-Path "$addons/OtherAddon/keep.txt")) { throw 'Another addon was changed.' }
  $rejected = $false
- try { & $install -Source $source -AddonsDirectory (Split-Path $entry.sourcePath -Parent) -AddonName $entry.name | Out-Null } catch { $rejected = $true }
+ try { & $install -Source $source -AddonsDirectory $entry.sourcePath -AddonName $entry.name | Out-Null } catch { $rejected = $true }
  if (!$rejected) { throw 'Editable source destination was not rejected.' }
  $before = (Get-FileHash "$($second.installedAddon)/$($entry.project)").Hash
  Remove-Item -LiteralPath "$source/resourceDatabase.rdb"

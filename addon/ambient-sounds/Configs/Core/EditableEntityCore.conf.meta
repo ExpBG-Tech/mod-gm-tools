@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{DE17AC501F0CD5EB}Configs/Core/EditableEntityCore.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

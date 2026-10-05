@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{0F6CA1871A2F2757}EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_BaseColor.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

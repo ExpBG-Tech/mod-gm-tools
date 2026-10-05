@@ -1,0 +1,17 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{3BC3782A8C86093E}Assets/EAD/Heine/2702e4826142.xob"
+   Materials {
+    MaterialAssignClass {
+     SourceMaterial "obe_w"
+     AssignedMaterial "{968B29D257FB292E}Assets/EAD/Heine/febf42dfc40ad6a0684944.emat"
+    }
+   }
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

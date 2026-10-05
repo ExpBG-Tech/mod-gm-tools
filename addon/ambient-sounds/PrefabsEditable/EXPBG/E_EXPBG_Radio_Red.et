@@ -1,0 +1,33 @@
+EAS_RadioModule {
+ ID "3A094F074EF847AE"
+ components {
+  MeshObject "{F47D149DFFEB4D7D}" {
+   Object "{16B8DF2B48A440A2}Assets/Props/Civilian/RadioSmall_01/RadioSmall_01.xob"
+  }
+  RigidBody "{3D323952E22F4C4D}" { ResponseIndex "TinyDestructible" Static 1 }
+
+  SCR_EditableEntityComponent "{409F57594D074A6C}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{2CA7FA5DBABB4D69}" {
+    Name "#EAS-RadioRed_Name"
+    Description "Physical radio. Enabled, Recording, Volume and Loop are controlled by Game Master."
+    Icon "{F8FC85311B0396F2}UI/Textures/EditorPreviews/Auto/Props/Civilian/E_RadioSmall_01_red.edds"
+    m_Image "{F8FC85311B0396F2}UI/Textures/EditorPreviews/Auto/Props/Civilian/E_RadioSmall_01_red.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_RADIO
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{03099A7EF3FA4E4E}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{13D4FA08539E4045}" {
+  }
+ }
+ Recording 0
+ Volume 15
+ Enabled 0
+}

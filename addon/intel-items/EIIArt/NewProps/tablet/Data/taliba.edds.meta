@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{058E51724D775F36}EIIArt/NewProps/tablet/Data/taliba.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

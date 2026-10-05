@@ -1,0 +1,24 @@
+EBG_OptimizerController {
+ ID "B462AC315D90C9CF"
+ components {
+  SCR_EditableEntityComponent "{B462AC315D90CAF1}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{B462AC315D90C93E}" {
+    Name "#EXPBG-OptimizerController_Name"
+    Description "#EXPBG-OptimizerController_Description"
+    Icon "{E88BE3041B425E39}UI/Textures/EXPBG_GM_Optimizer/EBG_CacheBadge_UI.edds"
+    m_Image "{E6544F207CEDFD3A}UI/Textures/EXPBG/EXPBG_CacheZone_Preview_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM
+     157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{B462AC315D90C998}" {
+  }
+  Hierarchy "{B462AC315D90C9AA}" {
+  }
+ }
+}

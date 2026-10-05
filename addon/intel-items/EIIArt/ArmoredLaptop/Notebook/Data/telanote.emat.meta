@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{B907531F4FFF11AF}EIIArt/ArmoredLaptop/Notebook/Data/telanote.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

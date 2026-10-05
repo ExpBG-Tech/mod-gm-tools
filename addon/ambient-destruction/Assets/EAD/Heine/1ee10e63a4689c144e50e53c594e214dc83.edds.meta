@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{D1A746E627CF8302}Assets/EAD/Heine/1ee10e63a4689c144e50e53c594e214dc83.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

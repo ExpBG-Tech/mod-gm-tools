@@ -1,0 +1,13 @@
+GenericEntity {
+ ID "EAD1000000000021"
+ components {
+  MeshObject "{EAD1000000000021}" {
+   Object "{6897408B15070038}Assets/Props/Construction/BrickPileOld_01/BrickPileOld_01_Medium.xob"
+  }
+  RigidBody "{EAD2000000000021}" {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+ Flags 0x403 0
+}

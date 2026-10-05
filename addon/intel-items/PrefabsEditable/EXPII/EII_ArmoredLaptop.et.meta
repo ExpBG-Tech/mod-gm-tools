@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{46DA23F715D50DAB}PrefabsEditable/EXPII/EII_ArmoredLaptop.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

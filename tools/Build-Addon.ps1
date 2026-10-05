@@ -17,7 +17,8 @@ $source = $entry.sourcePath
 $addonName = $entry.name
 New-Item -ItemType Directory -Path $build | Out-Null
 $frozen = Join-Path $build $addonName
-Copy-Item -LiteralPath $source -Destination $frozen -Recurse
+if ($entry.assembled -and !$Companion) { & (Join-Path $PSScriptRoot 'Assemble-Pack.ps1') -Destination $frozen | Out-Null }
+else { Copy-Item -LiteralPath $source -Destination $frozen -Recurse }
 $output = Join-Path $build 'PC'
 $profile = Join-Path $build 'profile-data'
 New-Item -ItemType Directory -Path $output,$profile | Out-Null

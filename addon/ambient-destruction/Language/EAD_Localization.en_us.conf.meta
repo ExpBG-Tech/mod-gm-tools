@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{A43196AF76E64E63}Language/EAD_Localization.en_us.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

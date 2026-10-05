@@ -1,0 +1,11 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{2B497BB5A895A71F}Assets/Props/Garbage/Tires/TirePile_01/TirePile_01_small.xob"
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

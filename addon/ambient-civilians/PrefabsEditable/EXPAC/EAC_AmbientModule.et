@@ -1,0 +1,24 @@
+EAC_AmbientModule {
+ ID "CA1A000000000001"
+ components {
+  SCR_EditableEntityComponent "{CA1A000000000002}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{CA1A000000000003}" {
+    Name "#EAC-AmbientModule_Name"
+    Description "Civilian population within this module's radius, with player-distance activation and caching. Place one controller."
+    Icon "{CA1A00000000B001}UI/Textures/EXPAC/EAC_CivilianMarker_UI.edds"
+    m_Image "{44F92BC0B72D0966}UI/Textures/EXPAC/EAC_AmbientCivilians_Preview_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM
+     157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{CA1A000000000004}" {
+  }
+  Hierarchy "{CA1A000000000005}" {
+  }
+ }
+}

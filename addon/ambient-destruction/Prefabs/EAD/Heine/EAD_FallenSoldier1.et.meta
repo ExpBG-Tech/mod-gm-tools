@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{D549CFD37D33D3EE}Prefabs/EAD/Heine/EAD_FallenSoldier1.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

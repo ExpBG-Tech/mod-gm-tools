@@ -1,0 +1,24 @@
+EBG_CacheZone {
+ ID "6A4E988DBC2EC9CF"
+ components {
+  SCR_EditableEntityComponent "{6A4E988DBC2ECAF1}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{6A4E988DBC2EC93E}" {
+    Name "#EXPBG-CacheZone_Name"
+    Description "#EXPBG-CacheZone_Description"
+    Icon "{E88BE3041B425E39}UI/Textures/EXPBG_GM_Optimizer/EBG_CacheBadge_UI.edds"
+    m_Image "{E6544F207CEDFD3A}UI/Textures/EXPBG/EXPBG_CacheZone_Preview_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM
+     157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{6A4E988DBC2EC998}" {
+  }
+  Hierarchy "{6A4E988DBC2EC9AA}" {
+  }
+ }
+}

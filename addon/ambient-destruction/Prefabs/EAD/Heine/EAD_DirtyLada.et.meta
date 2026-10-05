@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{1163EFB2757499BC}Prefabs/EAD/Heine/EAD_DirtyLada.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

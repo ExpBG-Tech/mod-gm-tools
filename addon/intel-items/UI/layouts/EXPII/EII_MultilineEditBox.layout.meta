@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{C56674A860306F15}UI/layouts/EXPII/EII_MultilineEditBox.layout"
+ Configurations {
+  LayoutResourceClass PC {}
+  LayoutResourceClass HEADLESS : PC {}
+ }
+}

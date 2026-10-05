@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{45BECE2ED7C54809}Configs/Systems/Persistence/Configuration/EXPAS/TVModule.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

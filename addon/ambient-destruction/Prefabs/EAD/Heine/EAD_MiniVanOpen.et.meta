@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{3EED27F4EA2EE9DC}Prefabs/EAD/Heine/EAD_MiniVanOpen.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

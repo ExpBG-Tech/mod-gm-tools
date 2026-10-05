@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{16FA863EAB484FD0}Assets/EAD/Bodies/Data/E_Body_Shirt_02.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

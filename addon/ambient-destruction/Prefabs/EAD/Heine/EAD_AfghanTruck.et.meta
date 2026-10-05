@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{9FEE5B0B3A26BDE5}Prefabs/EAD/Heine/EAD_AfghanTruck.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

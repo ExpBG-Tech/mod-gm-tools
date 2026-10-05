@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{84D17403E894BB4A}EIIArt/ArmoredLaptop/Notebook/Data/laptop_normal.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

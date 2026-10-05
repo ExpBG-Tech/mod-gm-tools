@@ -1,0 +1,11 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{80D7899DEC3FC5BB}Assets/Props/Garbage/Military/Ammo/GarbageAmmo_01/GarbageAmmunition_US_02.xob"
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

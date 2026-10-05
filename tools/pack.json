@@ -1,0 +1,95 @@
+{
+  "project": "EXPBG_GM_Tools.gproj",
+  "modules": [
+    {
+      "name": "garrison",
+      "title": "Garrison",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
+    },
+    {
+      "name": "unit-caching",
+      "title": "Unit Caching",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gamemaster-optimizer",
+        "commit": "1ae137de34e1a30bdc7164c179b50e0a34d25c76",
+        "version": "0.1.31",
+        "project": "EXPBG_GM_Optimizer",
+        "workshopId": "F3B7C6FB18AB1F79",
+        "formerTitle": "EXPBG GM Optimizer"
+      }
+    },
+    {
+      "name": "intel-items",
+      "title": "Intel Items",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-intel-items",
+        "commit": "aa08748de50e4b35839bed650951d3b00ff302f3",
+        "version": "0.0.4",
+        "project": "EXPBG_Intel_Items",
+        "workshopId": "E110000000000001"
+      }
+    },
+    {
+      "name": "ambient-civilians",
+      "title": "Ambient Civilians",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-ambient-civilians",
+        "commit": "777f15f1d21d96783bc547cbb8d6f886db4af550",
+        "version": "0.0.23",
+        "project": "EXPBG_Ambient_Civilians",
+        "workshopId": "A9C45E82D6710B3F"
+      }
+    },
+    {
+      "name": "ambient-destruction",
+      "title": "Ambient Destruction",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-ambient-destruction",
+        "commit": "2d4eb24dab15d9ba9e6ff067e6d0cacbc536e0a9",
+        "version": "0.0.9",
+        "project": "EXPBGAmbientDestruction",
+        "workshopId": "E2A47D19C8B6503F"
+      }
+    },
+    {
+      "name": "ambient-sounds",
+      "title": "Ambient Sounds",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-ambient-sounds",
+        "commit": "1afeea88f1aed417f9d218050888e220f7346725",
+        "version": "0.2.9",
+        "project": "EXPBG_Ambient_Sounds",
+        "workshopId": "A93E9F6271894A3C"
+      }
+    },
+    {
+      "name": "persistent-battlefield",
+      "title": "Persistent Battlefield",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-persistent-battlefield",
+        "commit": "6c2ad2472a049b1f4c411724d992dc2d9560b093",
+        "version": "1.0.5",
+        "project": "EXPBGPersistentBattlefield",
+        "workshopId": "6A32DB878B264D05"
+      }
+    }
+  ],
+  "merge": [
+    "Configs/Editor/AttributeLists/Edit.conf",
+    "Configs/Editor/PlaceableEntities/Systems/Systems.conf",
+    "Configs/Systems/Persistence/GameMode/GameMaster.conf"
+  ],
+  "relocate": {
+    "ambient-sounds/UI/Textures/EXPBG/EXPBG_Workshop_Banner.png": "UI/Textures/EXPBG/EXPBG_Ambient_Sounds_Workshop_Banner.png",
+    "ambient-civilians/license.txt": "Licenses/EXPBG_Ambient_Civilians_license.txt",
+    "ambient-sounds/license.txt": "Licenses/EXPBG_Ambient_Sounds_license.txt"
+  },
+  "cdfCompanionReserved": {
+    "id": "07BC942D90324CD9",
+    "name": "EXPBG GM Tools CDF Compatibility",
+    "note": "Reserved identity checked by Unit Caching and Garrison save guards. Not yet built or published; the standalone CDF companions require the standalone mods and cannot be combined with this pack."
+  }
+}

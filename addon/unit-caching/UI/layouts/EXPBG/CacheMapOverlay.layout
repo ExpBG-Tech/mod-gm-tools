@@ -1,0 +1,26 @@
+CanvasWidgetClass {
+ Name "EXPBGCacheMapOverlay"
+ Slot FrameWidgetSlot {
+  Anchor 0 0 1 1
+  PositionX 0
+  OffsetLeft 0
+  PositionY 0
+  OffsetTop 0
+  SizeX 0
+  OffsetRight 0
+  SizeY 0
+  OffsetBottom 0
+ }
+ "Z Order" 30
+ "Is Enabled" 0
+ Color 1 1 1 1
+ SizeInUnits 1920 1080
+ Clear 1
+ ClearColor 0 0 0 0
+ FontProperties {
+  FontProperties {
+   Font "{3E7733BAC8C831F6}UI/Fonts/RobotoCondensed/RobotoCondensed_Regular.fnt"
+   OutlineSize 1
+  }
+ }
+}

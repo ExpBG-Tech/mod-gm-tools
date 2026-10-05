@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{535EE3F2E7B444DD}Assets/EAD/Bodies/Data/E_Body_MLOD.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

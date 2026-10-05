@@ -1,0 +1,26 @@
+Arma Public License Share Alike (APL-SA)
+
+Copyright (c) 2026 ExpBG Tech. Authors: M.Pac and K.Edgar.
+
+Beginning with version 0.0.15, ExpBG's original code, artwork and contributions
+are licensed under the Arma Public License Share Alike (APL-SA):
+https://www.bohemia.net/en/licenses/arma-public-license-share-alike
+Full license text:
+https://old.bohemia.net/community/licenses/arma-public-license-share-alike
+
+Attribution: credit ExpBG Tech and identify modifications. Noncommercial,
+Arma-only use; adaptations of the covered work must use the same license.
+The linked full license controls; this summary does not replace its terms.
+Covered material is supplied AS IS without warranties; see license section 5.
+Previously granted licenses for earlier versions remain unaffected.
+
+Third-party material is excluded from this relicensing:
+EAC_Northcom_*.wav remains under the Arma Public License (APL),
+https://www.bohemia.net/en/licenses/arma-public-license,
+with attribution to Your401kPlan's Northcom Ambient Voices 1.0.8:
+https://reforger.armaplatform.com/workshop/69493AAB5216A58E
+Those fourteen files were renamed and gain-normalized by ExpBG Tech; they are
+for noncommercial Arma use and supplied AS IS without warranties (APL section 5).
+Other bundled recordings retain their Mixkit/Pixabay terms. Full source and
+processing details are in docs/AUDIO-SOURCES.md and the packaged audio notice.
+Upstream copyright, attribution and license notices continue to apply.

@@ -1,0 +1,7 @@
+SCR_ChimeraCharacter {
+ ID "520EC961A090B1EE"
+ components {
+  EXPBG_CharacterWeaponSafetyComponent "{6A32DB878B264D06}" {
+  }
+ }
+}

@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{D1E6BAB8BD1E4C92}Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_JSRS_Grenade_Far.wav"
+ Configurations {
+  WAVResourceClass PC : "{F72B05D02F3F135E}Configs/System/ResourceTypes/PC/Sound.conf" {
+  }
+  WAVResourceClass HEADLESS : "{D63592CA950AF3A8}Configs/System/ResourceTypes/HEADLESS/Sound.conf" {
+  }
+ }
+}

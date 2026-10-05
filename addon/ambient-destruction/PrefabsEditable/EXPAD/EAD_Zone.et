@@ -1,0 +1,19 @@
+EAD_Zone {
+ ID "EAD1000000000011"
+ components {
+  SCR_EditableEntityComponent "{EAD1000000000012}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{EAD1000000000014}" {
+    Name "#EAD-Zone_Name"
+    Description "Permanent building destruction with cached static wreckage and bodies. Multiple zones share one budget."
+    Icon "{0C130F25C664C396}UI/Textures/Editor/ContentBrowser/ContentBrowser_Trait_Destructible.edds"
+    m_Image "{EAD1000000000030}UI/Textures/EXPAD/EAD_Zone_UI.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM 157026 }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{EAD1000000000015}" {}
+  Hierarchy "{EAD1000000000016}" {}
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{EAD1000000000013}Configs/Editor/AttributeCategories/EXPAD_Destruction.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

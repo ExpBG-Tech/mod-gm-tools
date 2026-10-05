@@ -4,9 +4,16 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $settings = & "$PSScriptRoot/Get-ProjectConfig.ps1"
 $runtimeCount = 0
+$assembledRoots = @()
+try {
 foreach ($entry in @($settings.addon) + @($settings.companion | Where-Object { $_ })) {
 $addon = $entry.sourcePath
-$allowed = '.c','.conf','.edds','.emat','.et','.gproj','.layout','.meta','.png','.st'
+if ($entry.assembled -and $entry -eq $settings.addon) {
+ $addon = Join-Path ([IO.Path]::GetTempPath()) ('expbg-pack-' + [guid]::NewGuid().ToString('N') + '/' + $entry.name)
+ & (Join-Path $PSScriptRoot 'Assemble-Pack.ps1') -Destination $addon | Out-Null
+ $assembledRoots += Split-Path -Parent $addon
+}
+$allowed = '.acp','.c','.conf','.edds','.emat','.et','.gproj','.layout','.md','.meta','.png','.sig','.st','.txt','.wav','.xob'
 $runtime = @(Get-ChildItem -LiteralPath $addon -Recurse -File | Where-Object Name -ne 'resourceDatabase.rdb')
 $runtimeCount += $runtime.Count
 if ((Get-Item -LiteralPath $addon).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Addon source cannot be linked.' }
@@ -37,6 +44,7 @@ foreach ($meta in $runtime | Where-Object Extension -eq '.meta') {
  $metadataIds[$guid] = $meta.Name
 }
 }
+} finally { foreach ($temporary in $assembledRoots) { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue } }
 $version = (Get-Content -LiteralPath (Join-Path $repo 'VERSION') -Raw).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION must contain a three-part release version.' }
 $files = @(& git -C $repo ls-files --cached --others --exclude-standard | Sort-Object -Unique)

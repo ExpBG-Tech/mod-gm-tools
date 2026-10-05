@@ -1,0 +1,23 @@
+GenericEntity : "{ABFBD4D99E493460}Prefabs/EXPII/EII_Intel_Base.et" {
+ ID "508AB2013EEE1E00"
+ components {
+  EII_IntelComponent "{E110000000000011}" { m_bComputer 0 }
+  MeshObject "{E110000000000012}" { Object "{789311902B5FF0FF}Assets/Props/Civilian/Notebook_01/Notebook_01_Single.xob"
+   Materials {
+    MaterialAssignClass "{7C3CC66ED0E723CD}" { SourceMaterial "Notebook_01" AssignedMaterial "{E66EF8E8FBE826DC}Assets/Props/Civilian/Notebook_01/Data/Notebook_01_MarbleBlack.emat" }
+    MaterialAssignClass "{FCCDAED450AE4D3D}" { SourceMaterial "Palette" AssignedMaterial "{FF12EFFE3CE3B723}Assets/Props/Civilian/Notebook_01/Data/Notebook_01_MarbleBlack_MLOD.emat" }
+   } }
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
+    ItemDisplayName EII_InventoryUIInfo "{5222EB4D07D865FA}" { Name "#EII-NotebookBlack_InventoryName" }
+   }
+  }
+  SCR_EditableEntityComponent "{E110000000000015}" {
+   m_UIInfo SCR_EditableEntityUIInfo "{E110000000000016}" {
+    Name "#EII-NotebookBlack_Name"
+    m_Image "{F87F15DE5EB9E75B}UI/Textures/EXPII/EII_NotebookBlack.edds"
+    m_aAuthoredLabels { 1 120 157026 }
+   }
+  }
+ }
+}

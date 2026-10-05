@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{8E9D3B77D4BBAA6A}Configs/EXPII/Intel.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

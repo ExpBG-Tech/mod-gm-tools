@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{2DF0F8F056184F28}Configs/Editor/AttributeCategories/EXPAS_Crowd.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

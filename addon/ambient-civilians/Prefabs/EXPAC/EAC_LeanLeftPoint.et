@@ -1,0 +1,28 @@
+EAC_ActivityPoint {
+ ID "CA1A000000000091"
+ components {
+  SCR_AISmartActionSentinelComponent "{CA1A000000000092}" {
+   m_vLookPosition 0 0 1
+   m_eLoiterAnimation LEAN_LEFT
+  }
+  ActionsManagerComponent "{CA1A000000000093}" {
+   ActionContexts {
+    UserActionContext "{CA1A000000000094}" {
+     ContextName "default"
+     Position PointInfo "{CA1A000000000095}" {
+     }
+    }
+   }
+   additionalActions {
+    EAC_ActivityAction "{CA1A000000000096}" {
+     ParentContextList {
+      "default"
+     }
+    }
+   }
+  }
+  RplComponent "{CA1A000000000097}" {
+   RuntimeOnly 1
+  }
+ }
+}

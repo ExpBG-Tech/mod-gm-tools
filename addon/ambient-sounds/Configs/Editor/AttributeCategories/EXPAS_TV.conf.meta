@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{81244DDDC78041AB}Configs/Editor/AttributeCategories/EXPAS_TV.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

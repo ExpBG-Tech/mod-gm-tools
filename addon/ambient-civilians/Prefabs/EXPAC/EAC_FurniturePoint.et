@@ -1,0 +1,15 @@
+EAC_ActivityPoint : "{CA1A000000000060}Prefabs/EXPAC/EAC_LoiterPoint.et" {
+ ID "C61573B2EA0F4081"
+ components {
+  SCR_AISmartActionSentinelComponent "{CA1A000000000062}" {
+   m_eLoiterAnimation CUSTOM
+  }
+  ActionsManagerComponent "{CA1A000000000063}" {
+   additionalActions {
+    EAC_ActivityAction "{CA1A000000000066}" {
+     m_bExistingFurniture 1
+    }
+   }
+  }
+ }
+}

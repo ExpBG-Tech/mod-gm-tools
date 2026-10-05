@@ -1,0 +1,29 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{2088F0A9F95C45D7}Assets/EAD/Bodies/Body_Prone.xob"
+   Materials {
+    MaterialAssignClass {
+     SourceMaterial "Body_Face"
+     AssignedMaterial "{7450451A579A47A5}Assets/EAD/Bodies/Data/E_Body_Burned.emat"
+    }
+    MaterialAssignClass {
+     SourceMaterial "Body_Shirt"
+     AssignedMaterial "{7450451A579A47A5}Assets/EAD/Bodies/Data/E_Body_Burned.emat"
+    }
+    MaterialAssignClass {
+     SourceMaterial "Body_Pants"
+     AssignedMaterial "{7450451A579A47A5}Assets/EAD/Bodies/Data/E_Body_Burned.emat"
+    }
+    MaterialAssignClass {
+     SourceMaterial "Body_MLOD"
+     AssignedMaterial "{7450451A579A47A5}Assets/EAD/Bodies/Data/E_Body_Burned.emat"
+    }
+   }
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

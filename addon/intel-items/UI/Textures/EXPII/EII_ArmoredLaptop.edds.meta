@@ -1,0 +1,21 @@
+MetaFileClass {
+ Name "{5974E456ED5AED06}UI/Textures/EXPII/EII_ArmoredLaptop.edds"
+ Configurations {
+  PNGResourceClass PC : "{3549C665CAA9A8EA}Configs/System/ResourceTypes/PC/TextureUI.conf" {
+   MaxSize "512"
+   Conversion None
+  }
+  PNGResourceClass HEADLESS : "{E604D15366D985DF}Configs/System/ResourceTypes/HEADLESS/TextureUI.conf" {
+   MaxSize "512"
+   Conversion None
+  }
+  PNGResourceClass XBOX_ONE : PC {
+  }
+  PNGResourceClass XBOX_SERIES : PC {
+  }
+  PNGResourceClass PS4 : PC {
+  }
+  PNGResourceClass PS5 : PC {
+  }
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{EAD1000000000010}PrefabsEditable/EXPAD/EAD_Zone.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

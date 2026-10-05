@@ -1,0 +1,17 @@
+MetaFileClass {
+ Name "{A6D8B8B1608D4C9B}Configs/Editor/AttributeCategories/EXPAS_Ambient.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass XBOX_ONE : PC {
+  }
+  CONFResourceClass XBOX_SERIES : PC {
+  }
+  CONFResourceClass PS4 : PC {
+  }
+  CONFResourceClass PS5 : PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{6478A45C7F1B4350}Assets/EAD/Bodies/Body_Leaning.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

@@ -1,0 +1,5 @@
+MatPBRBasic {
+ Color 0.521 0.521 0.521 1
+ BCRMap "{979758F28DF241B7}Assets/EAD/Heine/174a2cf0b788dad78399a622e9527.edds"
+ NMOMap "{44863140F98D5519}Assets/EAD/Heine/da13838a9909a1cef3df5c45e963f7cc.edds"
+}

@@ -1,0 +1,58 @@
+MatPBRMulti {
+ RoughnessScale 1.143
+ UVSrcGlobalMaps "UV set 2"
+ MaskMap "{529E2C58BC4BB0D1}Assets/Props/Industrial/CargoContainer_01/Data/CargoContainer_01_MASK.edds"
+ VFXMap "{38C328814597CAB0}Assets/Props/Industrial/CargoContainer_01/Data/CargoContainer_01_VFX.edds"
+ GlobalNMOUVTransform MatUVTransform "{52AC7E44B35CC716}" {
+ }
+ UVSrcGlobNormal "UV set 2"
+ DirtOpacity 0.95
+ DirtLayerSharpness 0.49
+ DirtColor 0.339 0.339 0.339 1
+ DirtRoughness 0.929
+ DirtBCRMap "{9A86792573FC7E6A}Assets/_SharedData/GrungeSurface/ST_Dirt_01_BCR.edds"
+ DirtMaskMap "{A074608E879A25CB}Assets/_SharedData/DetailMask/ST_Dirt_01_Mask1.edds"
+ Enabled_4 1
+ Color_4 0.125 0.102 0.078 1
+ BCR_4 "{C5EEAF752073C75C}Assets/_SharedData/Metal/ST_Metal_Rust_Coarse01_1m_BCR.edds"
+ NMO_4 "{FD3614E7F90495C2}Assets/_SharedData/Metal/ST_Metal_Rust_Coarse01_1m_NMO.edds"
+ MaskSharpness_4 7.5
+ MaskOffset_4 0.16
+ Mask_4 "{2563D86FF583B1EF}Assets/_SharedData/DetailMask/ST_Metal_Rust_01_Mask1.edds"
+ UVTransform_4 MatUVTransform "{52AC7E518B229FFA}" {
+  TilingU 2
+  TilingV 2
+ }
+ Enabled_3 1
+ Color_3 0.059 0.055 0.047 1
+ BCR_3 "{BB440784A103CB06}Assets/_SharedData/Metal/ST_MetalPaint_Coated_1m_BCR.edds"
+ NMO_3 "{0470164F98BC8DD2}Assets/_SharedData/Metal/ST_MetalBare_01_NMO.edds"
+ MaskSharpness_3 2.448
+ MaskOffset_3 0.012
+ Mask_3 "{AF3EED70E19D46AB}Assets/_SharedData/DetailMask/ST_Scratches_02_MASK1.edds"
+ UVTransform_3 MatUVTransform "{52AC7E4FC7976B95}" {
+  TilingU 3
+  TilingV 3
+ }
+ Enabled_2 1
+ Color_2 0.043 0.043 0.043 1
+ BCR_2 "{BB440784A103CB06}Assets/_SharedData/Metal/ST_MetalPaint_Coated_1m_BCR.edds"
+ NMO_2 "{839CBC1678749998}Assets/_SharedData/Metal/ST_MetalPaint_Coated_1m_NMO.edds"
+ MaskSharpness_2 0.939
+ MaskOffset_2 0.261
+ Mask_2 "{A074608E879A25CB}Assets/_SharedData/DetailMask/ST_Dirt_01_Mask1.edds"
+ UVTransform_2 MatUVTransform "{52AC7E441D7784F8}" {
+  TilingU 2
+  TilingV 2
+ }
+ Metalness_2 0
+ Color_1 0.071 0.071 0.071 1
+ BCR_1 "{884C38B4DD0DD84A}Assets/_SharedData/Metal/ST_Metal_Worn_01_BCR.edds"
+ NMO_1 "{839CBC1678749998}Assets/_SharedData/Metal/ST_MetalPaint_Coated_1m_NMO.edds"
+ UVTransform_1 MatUVTransform "{52AC7E464938AABD}" {
+  TilingU 2
+  TilingV 2
+ }
+ DetNormal_1 2
+ Roughness_1 1.2
+}

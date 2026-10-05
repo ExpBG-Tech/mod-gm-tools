@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{927186ED2C764ED2}Audio/EXPBG/AmbientSounds/EXPBG_Radio.acp"
+ Configurations {
+  AudioProjectResourceClass PC {}
+  AudioProjectResourceClass HEADLESS : PC {}
+ }
+}

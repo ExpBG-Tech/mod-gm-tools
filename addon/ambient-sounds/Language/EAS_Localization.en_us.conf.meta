@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{93A306479D9D49A3}Language/EAS_Localization.en_us.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

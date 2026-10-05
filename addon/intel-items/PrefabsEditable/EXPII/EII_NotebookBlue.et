@@ -1,0 +1,19 @@
+GenericEntity : "{ABFBD4D99E493460}Prefabs/EXPII/EII_Intel_Base.et" {
+ ID "508AB2013EEE1E00"
+ components {
+  EII_IntelComponent "{E110000000000011}" { m_bComputer 0 }
+  MeshObject "{E110000000000012}" { Object "{789311902B5FF0FF}Assets/Props/Civilian/Notebook_01/Notebook_01_Single.xob" }
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
+    ItemDisplayName EII_InventoryUIInfo "{5222EB4D07D865FA}" { Name "#EII-NotebookBlue_InventoryName" }
+   }
+  }
+  SCR_EditableEntityComponent "{E110000000000015}" {
+   m_UIInfo SCR_EditableEntityUIInfo "{E110000000000016}" {
+    Name "#EII-NotebookBlue_Name"
+    m_Image "{697A17366E954336}UI/Textures/EXPII/EII_NotebookBlue.edds"
+    m_aAuthoredLabels { 1 120 157026 }
+   }
+  }
+ }
+}

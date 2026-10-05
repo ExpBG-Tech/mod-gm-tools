@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CA1A00000A000027}Sounds/EXPAC/Samples/EAC_Laugh_03.wav"
+ Configurations {
+  WAVResourceClass PC : "{F72B05D02F3F135E}Configs/System/ResourceTypes/PC/Sound.conf" {
+  }
+  WAVResourceClass HEADLESS : "{D63592CA950AF3A8}Configs/System/ResourceTypes/HEADLESS/Sound.conf" {
+  }
+ }
+}

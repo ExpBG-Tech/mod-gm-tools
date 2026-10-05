@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{08A3C017FC7B16A7}EIIArt/NewProps/tablet/tablet.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{C9FEF711C6965091}EIIArt/ArmoredLaptop/Notebook/Data/notebook.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

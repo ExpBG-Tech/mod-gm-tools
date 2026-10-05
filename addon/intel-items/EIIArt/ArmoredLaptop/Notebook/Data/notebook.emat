@@ -1,0 +1,7 @@
+MatPBRBasic {
+ Emissive 0.051 0.051 0.051 0
+ EmissiveLV 6.902
+ EmissiveMap "{2FDEF75CB4CA4A08}EIIArt/ArmoredLaptop/Notebook/Data/laptop_emissive.edds"
+ BCRMap "{C36E8BB6232EDCF4}EIIArt/ArmoredLaptop/Notebook/Data/laptop_BCR.edds"
+ NMOMap "{84D17403E894BB4A}EIIArt/ArmoredLaptop/Notebook/Data/laptop_normal.edds"
+}

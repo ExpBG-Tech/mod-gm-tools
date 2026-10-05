@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CA1A00000A000000}Sounds/EXPAC/EAC_CivilianSounds.acp"
+ Configurations {
+  AudioProjectResourceClass PC {
+  }
+  AudioProjectResourceClass HEADLESS : PC {
+  }
+ }
+}

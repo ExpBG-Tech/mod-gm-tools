@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{3D7583A02DEC4C2A}Language/EAC_Localization.st"
+ Configurations {
+  StringTableResourceClass PC {
+  }
+  StringTableResourceClass HEADLESS : PC {
+  }
+ }
+}

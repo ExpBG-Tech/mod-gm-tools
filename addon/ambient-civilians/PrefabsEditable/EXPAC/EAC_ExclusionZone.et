@@ -1,0 +1,37 @@
+EAC_ExclusionZone {
+ ID "CA1A000000000021"
+ components {
+  SCR_EditableEntityComponent "{CA1A000000000022}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{CA1A000000000023}" {
+    Name "#EAC-ExclusionZone_Name"
+    Description "Optional local no-go marker. Blocks civilian population and optionally transit within its radius. Configure the population in the single Ambient Civilians controller."
+    Icon "{CA1A00000000B001}UI/Textures/EXPAC/EAC_CivilianMarker_UI.edds"
+    m_Image "{CA1A00000000B002}UI/Textures/EXPAC/EAC_NoCivilianZone_Preview_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM
+     157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{CA1A000000000024}" {
+  }
+  Hierarchy "{CA1A000000000025}" {
+  }
+  EAC_ExclusionAreaComponent "{CA1A000000000027}" {
+   m_eShape ELLIPSE
+   m_fHeight 30
+   m_vResolution 48
+   m_bFollowTerrain 0
+   m_bStretchMaterial 0
+   m_Material "{E65E61D1541003E2}Assets/Editor/VirtualArea/VirtualArea.emat"
+   m_bActiveEveryFrameOnInit 0
+   m_bHideInWorkbench 1
+  }
+  EAC_ExclusionVisibilityComponent "{CA1A000000000028}" {
+   m_State RENDERED
+  }
+ }
+}

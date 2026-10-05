@@ -9,6 +9,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Stage from a Git checkout with a commit so the
 $source = $project.addon.sourcePath
 $destination = Join-Path $repo ('artifacts/' + $Name)
 if (Test-Path -LiteralPath $destination) { throw 'Use a new stage name; never overwrite a prior artifact.' }
+if ($project.addon.assembled -and !$Companion) {
+ $source = Join-Path $destination ('Assembled/' + $project.addon.name)
+ & (Join-Path $PSScriptRoot 'Assemble-Pack.ps1') -Destination $source | Out-Null
+}
 $stage = Join-Path $destination ('Stage/' + $project.addon.name)
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 $manifest = @(foreach ($file in Get-ChildItem -LiteralPath $source -Recurse -File | Where-Object Name -ne 'resourceDatabase.rdb' | Sort-Object FullName) {

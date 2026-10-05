@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{FEAE1C80A24642A9}Configs/Editor/AttributeCategories/EXPAS_Radio.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

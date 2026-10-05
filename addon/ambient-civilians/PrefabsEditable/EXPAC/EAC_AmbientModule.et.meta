@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CA1A000000000010}PrefabsEditable/EXPAC/EAC_AmbientModule.et"
+ Configurations {
+  EntityTemplateResourceClass PC {
+  }
+  EntityTemplateResourceClass HEADLESS : PC {
+  }
+ }
+}

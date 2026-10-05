@@ -1,0 +1,19 @@
+GenericEntity : "{ABFBD4D99E493460}Prefabs/EXPII/EII_Intel_Base.et" {
+ ID "508AB2013EEE1E00"
+ components {
+  EII_IntelComponent "{E110000000000011}" { m_bComputer 0 }
+  MeshObject "{E110000000000012}" { Object "{7911F0FC89C55C52}Assets/Props/Military/Manuals/Manual_Soviet_01/Manual_Soviet_01.xob" }
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
+    ItemDisplayName EII_InventoryUIInfo "{5222EB4D07D865FA}" { Name "#EII-ManualSoviet_InventoryName" }
+   }
+  }
+  SCR_EditableEntityComponent "{E110000000000015}" {
+   m_UIInfo SCR_EditableEntityUIInfo "{E110000000000016}" {
+    Name "#EII-ManualSoviet_Name"
+    m_Image "{CB9C4B58F37BEDD2}UI/Textures/EXPII/EII_ManualSoviet.edds"
+    m_aAuthoredLabels { 1 120 157026 }
+   }
+  }
+ }
+}

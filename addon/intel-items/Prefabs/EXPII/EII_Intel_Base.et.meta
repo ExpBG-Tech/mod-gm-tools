@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{ABFBD4D99E493460}Prefabs/EXPII/EII_Intel_Base.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

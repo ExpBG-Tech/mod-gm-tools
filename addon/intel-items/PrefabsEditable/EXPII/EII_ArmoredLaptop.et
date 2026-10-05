@@ -1,0 +1,19 @@
+GenericEntity : "{ABFBD4D99E493460}Prefabs/EXPII/EII_Intel_Base.et" {
+ ID "508AB2013EEE1E00"
+ components {
+  EII_IntelComponent "{E110000000000011}" { m_bComputer 1 }
+  MeshObject "{E110000000000012}" { Object "{9427C74B777DD605}EIIArt/ArmoredLaptop/Notebook/Military_laptop.xob" }
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
+    ItemDisplayName EII_InventoryUIInfo "{5222EB4D07D865FA}" { Name "#EII-ArmoredLaptop_InventoryName" }
+   }
+  }
+  SCR_EditableEntityComponent "{E110000000000015}" {
+   m_UIInfo SCR_EditableEntityUIInfo "{E110000000000016}" {
+    Name "#EII-ArmoredLaptop_Name"
+    m_Image "{5974E456ED5AED06}UI/Textures/EXPII/EII_ArmoredLaptop.edds"
+    m_aAuthoredLabels { 1 120 157026 }
+   }
+  }
+ }
+}

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{9427C74B777DD605}EIIArt/ArmoredLaptop/Notebook/Military_laptop.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

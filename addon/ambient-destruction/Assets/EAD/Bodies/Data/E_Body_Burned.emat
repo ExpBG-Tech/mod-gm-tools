@@ -1,0 +1,18 @@
+MatPBRMulti {
+ VFXMap "{DE18086A9CA88FBA}Assets/_SharedData/DetailMask/ST_Dirt_04_Mask1.edds"
+ NormalPower 2.036
+ GlobalNMOMap "{96EF3CD8C8E643BA}Assets/_SharedData/Dirt/ST_Mud_01_NMO.edds"
+ DirtOpacity 3
+ DirtLayerSharpness 0.458
+ DirtColor 0.047 0.047 0.047 1
+ DirtRoughness 1.166
+ DirtBCRMap "{08F15E9AD2DE7E86}Assets/_SharedData/Damage/ST_Clothes_DMG_Blood_BCR.edds"
+ Color_1 0.433 0.433 0.433 1
+ BCR_1 "{D608FA6C45C55A6F}Assets/_SharedData/Dirt/ST_Dirt02_BCR.edds"
+ NMO_1 "{EED041FE9CB208F1}Assets/_SharedData/Dirt/ST_Dirt02_NMO.edds"
+ UVTransform_1 MatUVTransform "{68DD16890CAFE525}" {
+  TilingU 4
+  TilingV 4
+ }
+ DetNormal_1 1.929
+}

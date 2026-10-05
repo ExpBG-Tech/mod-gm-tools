@@ -1,0 +1,30 @@
+GenericEntity : "{ABFBD4D99E493460}Prefabs/EXPII/EII_Intel_Base.et" {
+ ID "508AB2013EEE1E00"
+ components {
+  EII_IntelComponent "{E110000000000011}" { m_bComputer 1 }
+  RigidBody "{E110000000000013}" {
+   ModelGeometry 0
+   Geometries {
+    PhysicsBoxGeometry EII_TabletBody {
+     LayerPreset "ItemFireView"
+     Offset 0 0.1603 -0.02815
+     Extents 0.434 0.3203 0.3697
+    }
+   }
+  }
+  MeshObject "{E110000000000012}" { Object "{08A3C017FC7B16A7}EIIArt/NewProps/tablet/tablet.xob"
+   Materials { MaterialAssignClass "{93AB398A37E28DD2}" { SourceMaterial "tela" AssignedMaterial "{038F689E62A9A662}EIIArt/NewProps/tablet/Data/tela2.emat" } } }
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
+    ItemDisplayName EII_InventoryUIInfo "{5222EB4D07D865FA}" { Name "#EII-Tablet2_InventoryName" }
+   }
+  }
+  SCR_EditableEntityComponent "{E110000000000015}" {
+   m_UIInfo SCR_EditableEntityUIInfo "{E110000000000016}" {
+    Name "#EII-Tablet2_Name"
+    m_Image "{01EF576D88BFC4F1}UI/Textures/EXPII/EII_Tablet2.edds"
+    m_aAuthoredLabels { 1 120 157026 }
+   }
+  }
+ }
+}

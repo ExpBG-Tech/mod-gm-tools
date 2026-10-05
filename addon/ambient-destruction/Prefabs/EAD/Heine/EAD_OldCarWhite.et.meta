@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{5B56AA2EC193791D}Prefabs/EAD/Heine/EAD_OldCarWhite.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

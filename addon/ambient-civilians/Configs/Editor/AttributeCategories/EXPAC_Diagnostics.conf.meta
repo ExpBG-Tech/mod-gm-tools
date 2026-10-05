@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CA1A000000000015}Configs/Editor/AttributeCategories/EXPAC_Diagnostics.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

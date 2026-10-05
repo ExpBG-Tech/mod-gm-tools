@@ -1,0 +1,17 @@
+MetaFileClass {
+ Name "{0BBA58BEB8DF96C7}Configs/Editor/AttributeCategories/EXPBG_Cache.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass XBOX_ONE : PC {
+  }
+  CONFResourceClass XBOX_SERIES : PC {
+  }
+  CONFResourceClass PS4 : PC {
+  }
+  CONFResourceClass PS5 : PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

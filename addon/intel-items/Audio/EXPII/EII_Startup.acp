@@ -1,0 +1,30 @@
+AudioClass {
+ sounds {
+  SoundClass { id 10240009 name "SOUND_EII_STARTUP" version 5
+   ins { ConnectionsClass connections { id 64 links { ConnectionClass connection { id 10241042 port 65 } } } }
+   pi { 2 0 } outState 2059 outStatePort 79879
+  }
+ }
+ mixers {
+  MixerClass { id 2059 name "SFX output" version 4 res "{B764D803219C775E}Sounds/FinalMix.afm"
+   ins { ConnectionsClass connections { id 79879 links { ConnectionClass connection { id 10240009 port 65 } } } }
+   pi { 8192 0 } path "{B764D803219C775E}Sounds/FinalMix.afm" inputs { "WPN_Handling" "WPN_Shots" "WPN_Explosions" "WNP_BulletHits" "CHAR" "ENV_AMB_2D" "VEH_Animations" "Impacts" "Dialog" "ENV_Doors" "VEH_Engine" "VEH_Tires" "VON" "SFX" "SFX_Reverb_OBSOLETE" "VON_Reverb_Small" "Dialog_Reverb" "Impacts_EXT" "ENV_AMB_3D" "WPN_SonicCracks" "CHAR_Gear" "PA" "SFX_Reverb_Exterior" "ENV_AMB_3D_Reverb_Exterior" "SFX_Direct" "SFX_Reverb_Small" "SFX_Reverb_Medium" "SFX_Reverb_Large" "WPN_Shots_Player" "Dialog_Reverb_Small" "Dialog_Reverb_Medium" "Dialog_Reverb_Large" "WPN_TravelingProjectile" "Dialog_Delay_Exterior" "SFX_Reverb_InCabin" "VON_Reverb_Medium" "VON_Reverb_Large" }
+  }
+ }
+ shaders {
+  ShaderClass { id 10241042 name "Laptop positional startup" version 5
+   ins {
+    ConnectionsClass connections { id 0 links { ConnectionClass connection { id 3100 port 65 } } }
+    ConnectionsClass connections { id 1 links { ConnectionClass connection { id 1034259 port 65 } } }
+    ConnectionsClass connections { id 2 links { ConnectionClass connection { id 4117 port 65 } } }
+    ConnectionsClass connections { id 64 links { ConnectionClass connection { id 5120004 port 65 } } }
+   }
+   pi { 7 0 }
+  }
+ }
+ amplitudes { AmplitudeClass { id 1034259 name "10m falloff" version 5 curve Logarithm innerRange 1 outerRange 10 } }
+ frequency { FrequencyClass { id 4117 name "Distance air absorption" version 5 dynamicUpdate 1 enableDistanceAtt 1 type AirAbsorption filterStrength 0.5 terrainEffects 1 } }
+ banks_local { BankLocalClass { id 5120004 name "EII Startup" version 7 Selection SequenceFromFirst Samples { AudioBankSampleClass Sample { Filename "{2CA89FDC0700F13D}Audio/EXPII/EII_Startup.wav" } } } }
+ spatialities { SpatialityClass { id 3100 name "World 3D" version 5 spatialFactor 1 } }
+ version 1
+}

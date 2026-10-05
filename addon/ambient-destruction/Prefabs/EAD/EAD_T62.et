@@ -1,0 +1,20 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{CB616193C10DD426}Assets/Props/Wrecks/T62/T62_wreck_hull.xob"
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+ {
+  GenericEntity {
+   components {
+    MeshObject { Object "{0B653FA023B6E4E1}Assets/Props/Wrecks/T62/T62_wreck_turret.xob" }
+    RigidBody { ModelGeometry 1 Static 1 }
+    Hierarchy { PivotID "Socket_T62_turret" }
+   }
+  }
+ }
+}

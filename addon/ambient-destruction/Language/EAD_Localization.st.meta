@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{8DED8C9B801E4A2E}Language/EAD_Localization.st"
+ Configurations {
+  StringTableResourceClass PC {
+  }
+  StringTableResourceClass HEADLESS : PC {
+  }
+ }
+}

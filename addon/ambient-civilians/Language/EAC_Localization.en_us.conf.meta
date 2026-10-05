@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{B86C52D986FA4B9A}Language/EAC_Localization.en_us.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

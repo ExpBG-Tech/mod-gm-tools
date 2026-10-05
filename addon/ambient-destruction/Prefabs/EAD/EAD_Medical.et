@@ -1,0 +1,11 @@
+GenericEntity {
+ components {
+  MeshObject {
+   Object "{9B7E67FDAAD5E559}Assets/Props/Garbage/Medical/GarbageMedical_01/GarbageMedicalUS_02.xob"
+  }
+  RigidBody {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+}

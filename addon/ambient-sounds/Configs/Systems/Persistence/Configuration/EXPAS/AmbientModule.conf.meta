@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CE9825D2D58F4B6C}Configs/Systems/Persistence/Configuration/EXPAS/AmbientModule.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

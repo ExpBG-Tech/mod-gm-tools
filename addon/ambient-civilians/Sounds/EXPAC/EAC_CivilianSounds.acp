@@ -1,0 +1,1323 @@
+AudioClass {
+ sounds {
+  SoundClass "5129" {
+   id 5129
+   name "SOUND_EAC_COUGH"
+   version 5
+   tl 0 0
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "6162:65" {
+       id 6162
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "8201" {
+   id 8201
+   name "SOUND_EAC_THROAT"
+   version 5
+   tl 0 160
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "9234:65" {
+       id 9234
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "11273" {
+   id 11273
+   name "SOUND_EAC_SNEEZE"
+   version 5
+   tl 0 320
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "12306:65" {
+       id 12306
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "14345" {
+   id 14345
+   name "SOUND_EAC_NOSE"
+   version 5
+   tl 0 480
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "15378:65" {
+       id 15378
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "17417" {
+   id 17417
+   name "SOUND_EAC_YAWN"
+   version 5
+   tl 0 640
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "18450:65" {
+       id 18450
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "20489" {
+   id 20489
+   name "SOUND_EAC_SIGH"
+   version 5
+   tl 0 800
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "21522:65" {
+       id 21522
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "23561" {
+   id 23561
+   name "SOUND_EAC_HICCUP"
+   version 5
+   tl 0 960
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "24594:65" {
+       id 24594
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "26633" {
+   id 26633
+   name "SOUND_EAC_BURP"
+   version 5
+   tl 0 1120
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "27666:65" {
+       id 27666
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "29705" {
+   id 29705
+   name "SOUND_EAC_HUM"
+   version 5
+   tl 0 1280
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "30738:65" {
+       id 30738
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "32777" {
+   id 32777
+   name "SOUND_EAC_WHISTLE"
+   version 5
+   tl 0 1440
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "33810:65" {
+       id 33810
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+  SoundClass "35849" {
+   id 35849
+   name "SOUND_EAC_LAUGH"
+   version 5
+   tl 0 1600
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "1036:1" {
+       id 1036
+       port 1
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "36882:65" {
+       id 36882
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    1 0
+   }
+   varName "Props"
+   varResource "{A60F08955792B575}Sounds/_SharedData/Variables/GlobalVariables.conf"
+   outState 4107
+   outStatePort 79879
+  }
+ }
+ mixers {
+  MixerClass "4107" {
+   id 4107
+   name "OutputState"
+   version 4
+   tl 512 0
+   res "{B764D803219C775E}Sounds/FinalMix.afm"
+   ins {
+    ConnectionsClass "con:79879" {
+     id 79879
+     links {
+      ConnectionClass "5129:65" {
+       id 5129
+       port 65
+      }
+      ConnectionClass "8201:65" {
+       id 8201
+       port 65
+      }
+      ConnectionClass "11273:65" {
+       id 11273
+       port 65
+      }
+      ConnectionClass "14345:65" {
+       id 14345
+       port 65
+      }
+      ConnectionClass "17417:65" {
+       id 17417
+       port 65
+      }
+      ConnectionClass "20489:65" {
+       id 20489
+       port 65
+      }
+      ConnectionClass "23561:65" {
+       id 23561
+       port 65
+      }
+      ConnectionClass "26633:65" {
+       id 26633
+       port 65
+      }
+      ConnectionClass "29705:65" {
+       id 29705
+       port 65
+      }
+      ConnectionClass "32777:65" {
+       id 32777
+       port 65
+      }
+      ConnectionClass "35849:65" {
+       id 35849
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    8192 0
+   }
+   path "{B764D803219C775E}Sounds/FinalMix.afm"
+   inputs {
+    "WPN_Handling" "WPN_Shots" "WPN_Explosions" "WNP_BulletHits" "CHAR" "ENV_AMB_2D" "VEH_Animations" "Impacts" "Dialog" "ENV_Doors" "VEH_Engine" "VEH_Tires" "VON" "SFX" "SFX_Reverb_OBSOLETE" "VON_Reverb_Small" "Dialog_Reverb" "Impacts_EXT" "ENV_AMB_3D" "WPN_SonicCracks" "CHAR_Gear" "PA" "SFX_Reverb_Exterior" "ENV_AMB_3D_Reverb_Exterior" "SFX_Direct" "SFX_Reverb_Small" "SFX_Reverb_Medium" "SFX_Reverb_Large" "WPN_Shots_Player" "Dialog_Reverb_Small" "Dialog_Reverb_Medium" "Dialog_Reverb_Large" "WPN_TravelingProjectile" "Dialog_Delay_Exterior" "SFX_Reverb_InCabin" "VON_Reverb_Medium" "VON_Reverb_Large"
+   }
+  }
+ }
+ constants {
+  ConstantClass "1036" {
+   id 1036
+   name "Constant"
+   version 5
+   tl 0 -80
+   "Constant values" {
+    IOPConstantsValueClass Trigger {
+     Key "Trigger"
+     Value 1
+     Port 1
+    }
+   }
+  }
+ }
+ shaders {
+  ShaderClass "6162" {
+   id 6162
+   name "Shader Cough"
+   version 5
+   tl -256 0
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "7172:65" {
+       id 7172
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "9234" {
+   id 9234
+   name "Shader Throat"
+   version 5
+   tl -256 160
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "10244:65" {
+       id 10244
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "12306" {
+   id 12306
+   name "Shader Sneeze"
+   version 5
+   tl -256 320
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "13316:65" {
+       id 13316
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "15378" {
+   id 15378
+   name "Shader Nose"
+   version 5
+   tl -256 480
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "16388:65" {
+       id 16388
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "18450" {
+   id 18450
+   name "Shader Yawn"
+   version 5
+   tl -256 640
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "19460:65" {
+       id 19460
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "21522" {
+   id 21522
+   name "Shader Sigh"
+   version 5
+   tl -256 800
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "22532:65" {
+       id 22532
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "24594" {
+   id 24594
+   name "Shader Hiccup"
+   version 5
+   tl -256 960
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "25604:65" {
+       id 25604
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "27666" {
+   id 27666
+   name "Shader Burp"
+   version 5
+   tl -256 1120
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "28676:65" {
+       id 28676
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "30738" {
+   id 30738
+   name "Shader Hum"
+   version 5
+   tl -256 1280
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "31748:65" {
+       id 31748
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "33810" {
+   id 33810
+   name "Shader Whistle"
+   version 5
+   tl -256 1440
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "34820:65" {
+       id 34820
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+  ShaderClass "36882" {
+   id 36882
+   name "Shader Laugh"
+   version 5
+   tl -256 1600
+   ins {
+    ConnectionsClass "con:0" {
+     id 0
+     links {
+      ConnectionClass "2076:65" {
+       id 2076
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:1" {
+     id 1
+     links {
+      ConnectionClass "3091:65" {
+       id 3091
+       port 65
+      }
+     }
+    }
+    ConnectionsClass "con:64" {
+     id 64
+     links {
+      ConnectionClass "37892:65" {
+       id 37892
+       port 65
+      }
+     }
+    }
+   }
+   pi {
+    3 0
+   }
+  }
+ }
+ amplitudes {
+  AmplitudeClass "3091" : "{D6921F7062BE7960}Sounds/_SharedData/Configs/Amplitude/_SharedData/Amplitude_-60LUFS_to_-55LUFS.conf" {
+   id 3091
+   version 5
+   tl -256 -112
+   parent "{D6921F7062BE7960}Sounds/_SharedData/Configs/Amplitude/_SharedData/Amplitude_-60LUFS_to_-55LUFS.conf"
+  }
+ }
+ banks_local {
+  BankLocalClass "7172" {
+   id 7172
+   name "Cough"
+   version 7
+   tl -512 0
+   Volume -3
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Cough_01.wav" {
+     Filename "{CA1A00000A000001}Sounds/EXPAC/Samples/EAC_Cough_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Cough_02.wav" {
+     Filename "{CA1A00000A000002}Sounds/EXPAC/Samples/EAC_Cough_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Cough_03.wav" {
+     Filename "{CA1A00000A000003}Sounds/EXPAC/Samples/EAC_Cough_03.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Cough_04.wav" {
+     Filename "{CA1A00000A000004}Sounds/EXPAC/Samples/EAC_Cough_04.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Cough_05.wav" {
+     Filename "{CA1A00000A000005}Sounds/EXPAC/Samples/EAC_Cough_05.wav"
+     Probability 100
+     Index 4
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Cough_06.wav" {
+     Filename "{CA1A00000A000006}Sounds/EXPAC/Samples/EAC_Cough_06.wav"
+     Probability 100
+     Index 5
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Cough_07.wav" {
+     Filename "{CA1A00000A000007}Sounds/EXPAC/Samples/EAC_Cough_07.wav"
+     Probability 100
+     Index 6
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Cough_08.wav" {
+     Filename "{CA1A00000A000008}Sounds/EXPAC/Samples/EAC_Cough_08.wav"
+     Probability 100
+     Index 7
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "10244" {
+   id 10244
+   name "Throat"
+   version 7
+   tl -512 160
+   Volume -5
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Throat_01.wav" {
+     Filename "{CA1A00000A000009}Sounds/EXPAC/Samples/EAC_Throat_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Throat_02.wav" {
+     Filename "{CA1A00000A00000A}Sounds/EXPAC/Samples/EAC_Throat_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Throat_03.wav" {
+     Filename "{CA1A00000A00000B}Sounds/EXPAC/Samples/EAC_Throat_03.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_ClearThroat_01.wav" {
+     Filename "{CA1A00000A000031}Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_01.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_ClearThroat_02.wav" {
+     Filename "{CA1A00000A000032}Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_02.wav"
+     Probability 100
+     Index 4
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_ClearThroat_03.wav" {
+     Filename "{CA1A00000A000033}Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_03.wav"
+     Probability 100
+     Index 5
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_ClearThroat_04.wav" {
+     Filename "{CA1A00000A000034}Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_04.wav"
+     Probability 100
+     Index 6
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "13316" {
+   id 13316
+   name "Sneeze"
+   version 7
+   tl -512 320
+   Volume -2
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Sneeze_01.wav" {
+     Filename "{CA1A00000A00000C}Sounds/EXPAC/Samples/EAC_Sneeze_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Sneeze_02.wav" {
+     Filename "{CA1A00000A00000D}Sounds/EXPAC/Samples/EAC_Sneeze_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "16388" {
+   id 16388
+   name "Nose"
+   version 7
+   tl -512 480
+   Volume -6
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Nose_01.wav" {
+     Filename "{CA1A00000A00000E}Sounds/EXPAC/Samples/EAC_Nose_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Nose_02.wav" {
+     Filename "{CA1A00000A00000F}Sounds/EXPAC/Samples/EAC_Nose_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Sniff_01.wav" {
+     Filename "{CA1A00000A000037}Sounds/EXPAC/Samples/EAC_Northcom_Sniff_01.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Sniff_02.wav" {
+     Filename "{CA1A00000A000038}Sounds/EXPAC/Samples/EAC_Northcom_Sniff_02.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Sniff_03.wav" {
+     Filename "{CA1A00000A000039}Sounds/EXPAC/Samples/EAC_Northcom_Sniff_03.wav"
+     Probability 100
+     Index 4
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "19460" {
+   id 19460
+   name "Yawn"
+   version 7
+   tl -512 640
+   Volume -5
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Yawn_01.wav" {
+     Filename "{CA1A00000A000010}Sounds/EXPAC/Samples/EAC_Yawn_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Yawn_02.wav" {
+     Filename "{CA1A00000A000011}Sounds/EXPAC/Samples/EAC_Yawn_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Yawn_01.wav" {
+     Filename "{CA1A00000A00003D}Sounds/EXPAC/Samples/EAC_Northcom_Yawn_01.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Yawn_02.wav" {
+     Filename "{CA1A00000A00003E}Sounds/EXPAC/Samples/EAC_Northcom_Yawn_02.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "22532" {
+   id 22532
+   name "Sigh"
+   version 7
+   tl -512 800
+   Volume -7
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Sigh_01.wav" {
+     Filename "{CA1A00000A000012}Sounds/EXPAC/Samples/EAC_Sigh_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Sigh_02.wav" {
+     Filename "{CA1A00000A000013}Sounds/EXPAC/Samples/EAC_Sigh_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "25604" {
+   id 25604
+   name "Hiccup"
+   version 7
+   tl -512 960
+   Volume -6
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Hiccup_01.wav" {
+     Filename "{CA1A00000A000015}Sounds/EXPAC/Samples/EAC_Hiccup_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Hiccup_02.wav" {
+     Filename "{CA1A00000A000016}Sounds/EXPAC/Samples/EAC_Hiccup_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Hiccup_03.wav" {
+     Filename "{CA1A00000A000017}Sounds/EXPAC/Samples/EAC_Hiccup_03.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Hiccup_04.wav" {
+     Filename "{CA1A00000A000018}Sounds/EXPAC/Samples/EAC_Hiccup_04.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "28676" {
+   id 28676
+   name "Burp"
+   version 7
+   tl -512 1120
+   Volume -6
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Burp_01.wav" {
+     Filename "{CA1A00000A000019}Sounds/EXPAC/Samples/EAC_Burp_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Burp_02.wav" {
+     Filename "{CA1A00000A00001A}Sounds/EXPAC/Samples/EAC_Burp_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "31748" {
+   id 31748
+   name "Hum"
+   version 7
+   tl -512 1280
+   Volume -8
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Hum_01.wav" {
+     Filename "{CA1A00000A00001B}Sounds/EXPAC/Samples/EAC_Hum_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Hum_02.wav" {
+     Filename "{CA1A00000A00001C}Sounds/EXPAC/Samples/EAC_Hum_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Hum_01.wav" {
+     Filename "{CA1A00000A000035}Sounds/EXPAC/Samples/EAC_Northcom_Hum_01.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Hum_02.wav" {
+     Filename "{CA1A00000A000036}Sounds/EXPAC/Samples/EAC_Northcom_Hum_02.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "34820" {
+   id 34820
+   name "Whistle"
+   version 7
+   tl -512 1440
+   Volume -7
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Whistle_01.wav" {
+     Filename "{CA1A00000A00001D}Sounds/EXPAC/Samples/EAC_Whistle_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Whistle_02.wav" {
+     Filename "{CA1A00000A00001E}Sounds/EXPAC/Samples/EAC_Whistle_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Whistle_03.wav" {
+     Filename "{CA1A00000A00001F}Sounds/EXPAC/Samples/EAC_Whistle_03.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Whistle_04.wav" {
+     Filename "{CA1A00000A000020}Sounds/EXPAC/Samples/EAC_Whistle_04.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Whistle_05.wav" {
+     Filename "{CA1A00000A000021}Sounds/EXPAC/Samples/EAC_Whistle_05.wav"
+     Probability 100
+     Index 4
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Whistle_06.wav" {
+     Filename "{CA1A00000A000022}Sounds/EXPAC/Samples/EAC_Whistle_06.wav"
+     Probability 100
+     Index 5
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Whistle_07.wav" {
+     Filename "{CA1A00000A000023}Sounds/EXPAC/Samples/EAC_Whistle_07.wav"
+     Probability 100
+     Index 6
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Whistle_08.wav" {
+     Filename "{CA1A00000A000024}Sounds/EXPAC/Samples/EAC_Whistle_08.wav"
+     Probability 100
+     Index 7
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Whistle_01.wav" {
+     Filename "{CA1A00000A00003A}Sounds/EXPAC/Samples/EAC_Northcom_Whistle_01.wav"
+     Probability 100
+     Index 8
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Whistle_02.wav" {
+     Filename "{CA1A00000A00003B}Sounds/EXPAC/Samples/EAC_Northcom_Whistle_02.wav"
+     Probability 100
+     Index 9
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Northcom_Whistle_03.wav" {
+     Filename "{CA1A00000A00003C}Sounds/EXPAC/Samples/EAC_Northcom_Whistle_03.wav"
+     Probability 100
+     Index 10
+     SampleMetadata ""
+    }
+   }
+  }
+  BankLocalClass "37892" {
+   id 37892
+   name "Laugh"
+   version 7
+   tl -512 1600
+   Volume -4
+   "Pitch variance" 0.05
+   Samples {
+    AudioBankSampleClass "EAC_Laugh_01.wav" {
+     Filename "{CA1A00000A000025}Sounds/EXPAC/Samples/EAC_Laugh_01.wav"
+     Probability 100
+     Index 0
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Laugh_02.wav" {
+     Filename "{CA1A00000A000026}Sounds/EXPAC/Samples/EAC_Laugh_02.wav"
+     Probability 100
+     Index 1
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Laugh_03.wav" {
+     Filename "{CA1A00000A000027}Sounds/EXPAC/Samples/EAC_Laugh_03.wav"
+     Probability 100
+     Index 2
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Laugh_04.wav" {
+     Filename "{CA1A00000A000028}Sounds/EXPAC/Samples/EAC_Laugh_04.wav"
+     Probability 100
+     Index 3
+     SampleMetadata ""
+    }
+    AudioBankSampleClass "EAC_Laugh_05.wav" {
+     Filename "{CA1A00000A000029}Sounds/EXPAC/Samples/EAC_Laugh_05.wav"
+     Probability 100
+     Index 4
+     SampleMetadata ""
+    }
+   }
+  }
+ }
+ spatialities {
+  SpatialityClass "2076" {
+   id 2076
+   name "Spatiality 3D"
+   version 5
+   tl -256 -192
+   spatialFactor 1
+  }
+ }
+ version 1
+}

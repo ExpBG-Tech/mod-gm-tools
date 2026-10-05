@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{746D6509475DA0C8}Language/EII_Localization.en_us.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

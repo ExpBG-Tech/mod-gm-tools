@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{DBEC4D5170634E86}Configs/Systems/Persistence/Configuration/EXPBG/CacheZone.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

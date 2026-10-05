@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{C36E8BB6232EDCF4}EIIArt/ArmoredLaptop/Notebook/Data/laptop_BCR.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

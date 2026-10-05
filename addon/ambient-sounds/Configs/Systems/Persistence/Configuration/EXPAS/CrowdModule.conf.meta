@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{394A4796D8124B15}Configs/Systems/Persistence/Configuration/EXPAS/CrowdModule.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CA1A000000000090}Prefabs/EXPAC/EAC_LeanLeftPoint.et"
+ Configurations {
+  EntityTemplateResourceClass PC {
+  }
+  EntityTemplateResourceClass HEADLESS : PC {
+  }
+ }
+}

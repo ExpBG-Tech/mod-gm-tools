@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{1635C1219215B625}EIIArt/ArmoredLaptop/Notebook/Data/loginsenha_BCR.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

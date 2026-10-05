@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{7450451A579A47A5}Assets/EAD/Bodies/Data/E_Body_Burned.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

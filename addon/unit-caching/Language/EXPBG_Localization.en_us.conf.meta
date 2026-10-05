@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{D360279A89F44AB2}Language/EXPBG_Localization.en_us.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

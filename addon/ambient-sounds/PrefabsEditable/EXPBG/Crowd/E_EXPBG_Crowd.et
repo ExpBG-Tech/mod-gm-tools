@@ -1,0 +1,28 @@
+EAS_CrowdModule {
+ ID "A6F45798B0EA4B20"
+ components {
+  SCR_EditableEntityComponent "{55E0A80A104443E2}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{DD6A9E773051417A}" {
+    Name "#EAS-Crowd_Name"
+    Description "Local crowd ambience. Choose a crowd recording, volume and audible distance."
+    Icon "{2AD36DB5D2C07CB7}UI/Textures/Editor/ContentBrowser/ContentBrowser_Type_Group.edds"
+    m_Image "{7AC98B75C4D54967}UI/Textures/EXPBG/EAS_Crowd_Card.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM 157026 EAS_CROWD }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{88CBB106C85043FE}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{AD04CE8CB77B49B6}" {}
+ }
+ Recording 1
+ Volume 25
+ Enabled 0
+ Loop 1
+ PauseSeconds 1
+ Range 40
+}

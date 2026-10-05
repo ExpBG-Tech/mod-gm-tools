@@ -1,0 +1,13 @@
+GenericEntity {
+ ID "EAD1000000000022"
+ components {
+  MeshObject "{EAD1000000000022}" {
+   Object "{1B0AC1EDCE65D592}Assets/Vehicles/Wheeled/BRDM2/BRDM2_wreck_static.xob"
+  }
+  RigidBody "{EAD2000000000022}" {
+   ModelGeometry 1
+   Static 1
+  }
+ }
+ Flags 0x403 0
+}
