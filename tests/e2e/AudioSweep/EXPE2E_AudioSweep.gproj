@@ -1,0 +1,15 @@
+GameProject {
+ ID "EXPE2E_AudioSweep"
+ GUID "228DA96BB406DEA8"
+ TITLE "EXPBG GM Tools e2e audio sweep (test only, never publish)"
+ Dependencies {
+  "58D0FB3206B6F859"
+  "FC1402F65B2F4A45"
+ }
+ Configurations {
+  GameProjectConfig PC {
+  }
+  GameProjectConfig HEADLESS {
+  }
+ }
+}
