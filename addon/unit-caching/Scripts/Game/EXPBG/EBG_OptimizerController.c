@@ -10,6 +10,8 @@ class EBG_OptimizerControl
  static int DisabledZones;
  static bool Disabling;
  static string Message;
+ // Player id of the GM whose controller command is executing (logging only).
+ static int ActingPlayer;
  protected static string s_LastReport;
  protected static string s_LastBlocked;
  protected static ref array<EBG_CacheZone> s_PreparedZones = {};
@@ -63,13 +65,21 @@ class EBG_OptimizerControl
   if (!Replication.IsServer()) return;
   if (!EBG_CacheManager.IsPortableWorldReady() || EBG_CacheSnapshot.Loading)
   {
-   if (action >= 1 && action <= 3) Print(string.Format("[EBG GLOBAL] Command %1 dropped: worldReady=%2 snapshotLoading=%3", action, EBG_CacheManager.IsPortableWorldReady(), EBG_CacheSnapshot.Loading), LogLevel.WARNING);
+   if (action >= 1 && action <= 4) Print(string.Format("[EBG GLOBAL] Command %1 dropped: worldReady=%2 snapshotLoading=%3", action, EBG_CacheManager.IsPortableWorldReady(), EBG_CacheSnapshot.Loading), LogLevel.WARNING);
    return;
   }
   EBG_CacheManager manager = EBG_CacheManager.Get();
   if (action == 3)
   {
    manager.RestoreAllForSave();
+   Poll(manager);
+   return;
+  }
+  if (action == 4)
+  {
+   // Explicit operator escape for recovery holds; see EBG_CacheManager.ReleaseBlocked.
+   int released = manager.ReleaseBlocked(ActingPlayer);
+   Print(string.Format("[EBG GLOBAL] Release blocked groups: %1 released by player %2", released, ActingPlayer), LogLevel.WARNING);
    Poll(manager);
    return;
   }
@@ -294,7 +304,9 @@ class EBG_GlobalActionAttribute : EBG_CacheAttribute
   if (!editable || !EBG_OptimizerController.Cast(editable.GetOwner())) return;
   SCR_EditorManagerEntity editor = manager.GetManager();
   if (!editor || editor.GetPlayerID() != playerID || editor.IsLimited() || editor.GetCurrentMode() != EEditorMode.EDIT) return;
+  EBG_OptimizerControl.ActingPlayer = playerID;
   EBG_OptimizerControl.Execute(var.GetFloat());
+  EBG_OptimizerControl.ActingPlayer = 0;
  }
 }
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]

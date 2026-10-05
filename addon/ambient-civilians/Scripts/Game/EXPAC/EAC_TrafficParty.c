@@ -65,6 +65,10 @@ class EAC_TrafficParty
  // visibility remove it, instead of the module disc treating "out of town" as an
  // exclusion that deletes the car in front of a player at the boundary.
  bool Departed;
+ // Set while the car this director spawned is bound to the record, cleared when
+ // the director deletes it itself. A bound car that is gone without that was
+ // removed by someone else (vanilla vehicle garbage collection, a Game Master).
+ bool HadCar;
  ResourceName CarPrefab;
  IEntity Car;
  SCR_AIGroup Group;

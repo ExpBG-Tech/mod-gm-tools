@@ -131,17 +131,26 @@ class EBG_CacheVisuals
  protected static bool HadAccess;
  // Native ADMINISTRATOR means currently logged in (BanCommands permission).
  // Listed admin identities, elected SESSION_ADMINISTRATOR and GAME_MASTER do
- // not satisfy this gate. Never infer login from editor permissions alone.
+ // not satisfy this gate. Only the testing monitor and GM identity detail use it.
  static bool LoggedInAdmin(int playerId)
  {
   if (!GetGame() || playerId <= 0) return false;
   PlayerManager players = GetGame().GetPlayerManager();
   return players && players.IsPlayerConnected(playerId) && players.HasPlayerRole(playerId, EPlayerRole.ADMINISTRATOR);
  }
+ static bool LocalAdmin()
+ {
+  if (!GetGame() || !GetGame().GetPlayerController()) return false;
+  return LoggedInAdmin(GetGame().GetPlayerController().GetPlayerId());
+ }
+ // Zone icons and overlays: any Game Master, voted or admin, with the full editor
+ // open in Edit mode. The editor owner checks below are the permission.
  static bool AuthorizedEditor(SCR_EditorManagerEntity editor)
  {
   if (EBG_CacheManager.Unloading || !GetGame() || !GetGame().InPlayMode() || !editor) return false;
-  if (!LoggedInAdmin(editor.GetPlayerID()) || !editor.IsOpened() || editor.IsLimited() || !editor.HasMode(EEditorMode.EDIT) || editor.GetCurrentMode() != EEditorMode.EDIT) return false;
+  PlayerManager players = GetGame().GetPlayerManager();
+  if (editor.GetPlayerID() <= 0 || !players || !players.IsPlayerConnected(editor.GetPlayerID())) return false;
+  if (!editor.IsOpened() || editor.IsLimited() || !editor.HasMode(EEditorMode.EDIT) || editor.GetCurrentMode() != EEditorMode.EDIT) return false;
   if (Replication.IsServer())
   {
    SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
@@ -708,7 +717,7 @@ class EBG_CacheMapModule : SCR_MapModuleBase
    float labelX = Math.Max(24, Math.Min(x + 6, width - columns * 10 - 24));
    float labelY = Math.Max(160, Math.Min(y, height - 170));
    string label = group.Label;
-   if (group.Zone.DebugMessages == 2) label = string.Format("DEBUG group=%1 zone=%2 | %3", Math.Round(group.Bounds[2]), group.Zone.GetID(), label);
+   if (group.Zone.DebugMessages == 2 && EBG_CacheVisuals.LocalAdmin()) label = string.Format("DEBUG group=%1 zone=%2 | %3", Math.Round(group.Bounds[2]), group.Zone.GetID(), label);
    int rows = WrappedText(label, labelX, labelY, columns);
    vector origin = group.Zone.GetOrigin();
    WrappedText(string.Format("Owner zone @ %1, %2 | units Y %3 to %4", Math.Round(origin[0]), Math.Round(origin[2]), Math.Round(group.Bounds[0]), Math.Round(group.Bounds[1])), labelX, labelY + rows * 17, columns);

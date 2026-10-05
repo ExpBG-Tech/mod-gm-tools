@@ -147,6 +147,16 @@ class EBG_CacheManager
  protected int m_RecoveryCursor;
  protected ref map<EBG_CacheZone, ref EBG_ZoneProtection> m_Protection = new map<EBG_CacheZone, ref EBG_ZoneProtection>();
  ref EBG_CacheRegroup Regroup = new EBG_CacheRegroup();
+ // Shared wake budget: restored characters per second across all cache zones. A
+ // full bucket admits one ordinary squad at once, so a single group still wakes
+ // immediately; groups woken in the same moment follow over successive ticks.
+ // Fixed in code: a GM setting would change the saved zone settings format.
+ static const float WAKE_BUDGET_RATE = 4;
+ static const float WAKE_BUDGET_BURST = 12;
+ protected float m_WakeBudget = WAKE_BUDGET_BURST;
+ protected float m_WakeBudgetAt = -1;
+ protected int m_WakeDeferredId;
+ protected float m_WakeDeferredLog;
  static void ShutdownForWorldCleanup()
  {
   if (GetGame())
@@ -216,6 +226,27 @@ class EBG_CacheManager
   return Get();
  }
  float Now() { return GetGame().GetWorld().GetWorldTime() * 0.001; }
+ // Urgent restores (changed cached state, deleted module) always pass and still pay.
+ bool TakeWakeBudget(int characters, bool urgent = false)
+ {
+  float now = Now();
+  if (m_WakeBudgetAt >= 0) m_WakeBudget = Math.Min(WAKE_BUDGET_BURST, m_WakeBudget + (now - m_WakeBudgetAt) * WAKE_BUDGET_RATE);
+  m_WakeBudgetAt = now;
+  int cost = characters;
+  if (cost < 1) cost = 1;
+  // A group larger than the bucket waits for a full bucket, then borrows the rest.
+  if (!urgent && m_WakeBudget < Math.Min(cost, WAKE_BUDGET_BURST)) return false;
+  m_WakeBudget -= cost;
+  return true;
+ }
+ void ReportWakeDeferred(EBG_CacheGroup record, int characters)
+ {
+  if (!record || !record.Zone || record.Zone.DebugMessages == 0) return;
+  float now = Now();
+  if (record.Id == m_WakeDeferredId && now < m_WakeDeferredLog) return;
+  m_WakeDeferredId = record.Id; m_WakeDeferredLog = now + 5;
+  PrintFormat("[EBG WAKE BUDGET] group=%1 zone=%2 waits: %3 characters, budget %4 of %5 (%6 per second)", record.Id, record.Zone.GetID(), characters, Math.Floor(m_WakeBudget), WAKE_BUDGET_BURST, WAKE_BUDGET_RATE);
+ }
  // Disk records recreate the original logical roster, including absent casualties.
  // This stages references only; cleanup commits listeners after complete mapping.
  // Diagnostics only: candidate names and proximity never authorize a rebind.
@@ -453,6 +484,62 @@ class EBG_CacheManager
   else record.Recovery = reason;
   record.DebugStatus(Now());
   return complete;
+ }
+ // Operator escape for recovery holds (controller action "Release blocked
+ // groups"). Never automatic and never a save bypass: each held record is handed
+ // back to normal AI. No restored survivor is spawned twice, no casualty is
+ // refilled and no AI is deleted. One server log line per record.
+ int ReleaseBlocked(int playerId)
+ {
+  int released;
+  for (int i = Records.Count() - 1; i >= 0; i--)
+  {
+   EBG_CacheGroup record = Records[i];
+   if (record.Recovery == "" && record.PersistenceIssue == "") continue;
+   int id = record.Id;
+   vector anchor = record.Anchor;
+   string held = record.Recovery + record.PersistenceIssue;
+   string where = "deleted module";
+   if (record.Zone) where = string.Format("module @ %1", record.Zone.GetOrigin());
+   string outcome = ReleaseBlockedRecord(record, i);
+   if (!outcome.StartsWith("Refused")) released++;
+   PrintFormat("[EBG RECOVERY RELEASE] group=%1 anchor=%2 zone='%3' held='%4' outcome='%5' player=%6", id, anchor, where, held, outcome, playerId);
+  }
+  return released;
+ }
+ protected string ReleaseBlockedRecord(EBG_CacheGroup record, int index)
+ {
+  if (record.PersistentScalarRollbackPending) return "Refused: native scalar rollback is still pending; run Prepare for save to retry it";
+  if (record.Simulation)
+  {
+   // Restore what can be restored once more, then stop waiting for the rest.
+   string restoreReason;
+   EBG_SimulationCache.Restore(record.Simulation, restoreReason);
+   foreach (EBG_SimulationAgent cached : record.Simulation.Members)
+    if (cached.Devices) cached.Devices.Discard();
+   record.Simulation = null; record.Recovery = ""; record.RecoveryNextAttempt = 0; record.WakeRequested = false;
+   record.ClearSince = -1; record.ActiveSince = Now();
+   return "Simulation state released; the original AI stay awake (" + restoreReason + ")";
+  }
+  if (record.Full)
+  {
+   EBG_PrefabFullCache full = EBG_PrefabFullCache.Cast(record.Full);
+   if (!full) return "Refused: unsupported Full transaction type";
+   if (full.GetState() != EBG_FullGroupPhase.FAILED) return "Refused: the Full transition is still in progress";
+   full.BeginLenientRelease();
+   record.Recovery = ""; record.RecoveryRetryRequested = true; record.WakeRequested = true;
+   return "Full restore resumes without waiting for the blocking check; survivors already respawned are kept";
+  }
+  if (record.PersistenceIssue != "")
+  {
+   // Saved ownership could not be verified after loading. The AI are native and
+   // awake; forget the unverified record instead of holding every save.
+   if (EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.ReleaseGroup(record);
+   Records.Remove(index);
+   return "Unverified saved ownership forgotten; the AI stay as an ordinary group";
+  }
+  record.Recovery = "";
+  return "Recovery note cleared; no cached state remained";
  }
  bool RestoreZone(EBG_CacheZone zone, bool recover = false)
  {
@@ -809,6 +896,11 @@ class EBG_CacheManager
   return false;
  }
  void InvalidateProtection() { m_Protection.Clear(); }
+ static bool NativeSaveBusy()
+ {
+  SaveGameManager saving = GetGame().GetSaveGameManager();
+  return saving && saving.IsBusy();
+ }
  protected void CountBlocked(EBG_CacheZone zone, EBG_CacheGroup record)
  {
   zone.SkippedCount++;
@@ -881,18 +973,34 @@ class EBG_CacheManager
   InvalidateProtection();
   float now = Now();
   // Restore before admitting sleep work; at most one normal transition per tick.
+  // Urgent restores first, then the cached group nearest a player, within the
+  // shared wake budget. A deferred wake does not hold other work this tick.
   bool transitioned;
+  EBG_CacheGroup waking;
+  float wakeScore;
+  bool wakeUrgent;
   foreach (EBG_CacheGroup dormant : Records)
   {
    if (!dormant.Simulation || !dormant.Simulation.Suspended) continue;
    EBG_CacheZone owner = dormant.Zone;
-   bool wake = dormant.WakeRequested || dormant.ReleaseRequested || !owner || !owner.Enabled || owner.Editing || owner.HasPendingSettings() || owner.Mode != 0 || dormant.Reason != "";
+   bool urgent = !owner || dormant.Reason != "";
+   bool wake = urgent || dormant.WakeRequested || dormant.ReleaseRequested || !owner.Enabled || owner.Editing || owner.HasPendingSettings() || owner.Mode != 0;
    if (owner && IsProtected(dormant, false)) wake = true;
-   if (wake && !transitioned)
+   if (!wake) continue;
+   float score = EBG_CacheFullCoordinator.Priority(this, dormant);
+   if (urgent) score = -2;
+   if (waking && score >= wakeScore) continue;
+   waking = dormant; wakeScore = score; wakeUrgent = urgent;
+  }
+  if (waking)
+  {
+   int wakeCost = waking.Simulation.Members.Count();
+   if (TakeWakeBudget(wakeCost, wakeUrgent))
    {
-    RestoreRecord(dormant);
+    RestoreRecord(waking);
     transitioned = true;
    }
+   else ReportWakeDeferred(waking, wakeCost);
   }
   // This scan tick gives urgent Simulation wakes priority. Between scans the
   // lightweight pump advances at most one serialized Full request per call.
@@ -1011,7 +1119,9 @@ class EBG_CacheManager
    if (record.Alive == 0) continue;
    if (zone.Mode == 0)
    {
-    if (transitioned) continue;
+    // Native saves may run while zones are enabled. Do not hide AI mid-save;
+    // Full captures already wait through the save gate.
+    if (transitioned || NativeSaveBusy()) continue;
     string reason;
     record.Simulation = EBG_SimulationCache.Suspend(record.Group, reason);
     record.Reason = reason;

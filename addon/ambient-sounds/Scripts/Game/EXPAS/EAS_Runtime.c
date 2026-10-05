@@ -7,6 +7,9 @@ class EAS_Voice
  int Range;
  float End;
  bool Fading;
+ // Diagnostics only: release lines report elapsed time against the clip length.
+ float Started;
+ float Duration;
 }
 
 // One bounded service per local world. Dedicated processes execute only scheduling.
@@ -243,7 +246,10 @@ class EAS_Runtime
   transform[3] = position;
   array<string> names = {"EAS_Gain"};
   array<float> values = {gain};
+  // call_ms in the play line attributes a first-use hitch to the native call (#9).
+  int callStarted = System.GetTickCount();
   AudioHandle handle = AudioSystem.PlayEvent(EAS_Bank.PROJECT, clip.EventName + "_R" + range.ToString(), transform, names, values);
+  int callMs = System.GetTickCount(callStarted);
   if (handle == AudioHandle.Invalid)
   {
    int attempts = module.FailedClip(index, now);
@@ -256,6 +262,7 @@ class EAS_Runtime
   module.ClipStarted(index);
   voice.Owner = module; voice.Handle = handle; voice.Category = clip.Category;
   voice.Position = position; voice.Range = range;
+  voice.Started = now; voice.Duration = clip.Duration;
   // Native propagation can defer arrival. Keep the owned handle through its tail.
   voice.End = now + EAS_Logic.VoiceLifetime(clip.Duration, range);
   m_Voices.Insert(voice);
@@ -266,7 +273,7 @@ class EAS_Runtime
   if (m_Diagnostics) m_Diagnostics.Starts++;
   if (EAS_Diagnostics.Enabled(module))
   {
-   EAS_Diagnostics.Event("play", module, string.Format("runtime=war clip=%1 event=%2_R%3 handle=%4 position=%5 range=%3 gain=%6 voices=%7", index, clip.EventName, range, handle, position, gain, m_Voices.Count()));
+   EAS_Diagnostics.Event("play", module, string.Format("runtime=war clip=%1 event=%2_R%3 handle=%4 position=%5 range=%3 gain=%6 voices=%7 call_ms=%8", index, clip.EventName, range, handle, position, gain, m_Voices.Count(), callMs));
   }
   if (clip.Category == 3) module.MixStarted();
  }
@@ -308,7 +315,9 @@ class EAS_Runtime
    {
     string reason = "finished";
     if (voice.Fading) reason = "fade-complete";
-    EAS_Diagnostics.Event("release", voice.Owner, string.Format("runtime=war handle=%1 reason=%2 voices_remaining=%3", voice.Handle, reason, m_Voices.Count() - 1));
+    // "finished" covers native completion and the lifetime deadline; elapsed below
+    // duration with no prior fade means the native query ended the voice early (#10).
+    EAS_Diagnostics.Event("release", voice.Owner, string.Format("runtime=war handle=%1 reason=%2 voices_remaining=%3 elapsed=%4 duration=%5 distance=%6 range=%7", voice.Handle, reason, m_Voices.Count() - 1, now - voice.Started, voice.Duration, AudioSystem.GetDistance(voice.Position), voice.Range));
    }
    m_Voices.Remove(i);
   }
@@ -416,6 +425,10 @@ class EAS_Runtime
   // IsOpened retains the previous state while the native editor closes.
   // Require its actual camera too, so an owned GM role cannot draw in player view.
   if (!workspace || m_DebugModules.IsEmpty() || !editor || editor.IsLimited() || !editor.IsOpened() || editor.IsInTransition() || editor.IsModeChangeRequested() || editor.GetCurrentMode() != EEditorMode.EDIT || !camera || !cameras || cameras.CurrentCamera() != camera || (mapEntity && mapEntity.IsOpen())) { ClearDebug(); return; }
+  // The entity browser, attribute windows and pause menu take focus from the
+  // editor menu; the overlay must not cover them (the legend sat on the browser
+  // Filters). It returns at the next poll once the editor menu has focus again.
+  if (EditorMenuCovered()) { ClearDebug(); return; }
   float width = workspace.DPIUnscale(workspace.GetWidth());
   float height = workspace.DPIUnscale(workspace.GetHeight());
   if (!m_DebugCanvas || !m_DebugLegend)
@@ -430,6 +443,7 @@ class EAS_Runtime
    m_DebugEditor = editor;
    m_DebugEditor.GetOnDeactivate().Insert(ClearDebug);
    m_DebugEditor.GetOnClosed().Insert(ClearDebug);
+   SCR_MenuHelper.GetOnMenuFocusLost().Insert(OnDebugMenuFocusLost);
    m_DebugLegend = TextWidget.Cast(workspace.CreateWidgetInWorkspace(WidgetType.TextWidgetTypeID, 0, 0, LEGEND_WIDTH, LEGEND_HEIGHT,
     WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.NOFOCUS | WidgetFlags.NO_LOCALIZATION, null, 20));
    if (!m_DebugLegend) { ClearDebug(); return; }
@@ -513,12 +527,28 @@ class EAS_Runtime
   {
    m_DebugEditor.GetOnDeactivate().Remove(ClearDebug);
    m_DebugEditor.GetOnClosed().Remove(ClearDebug);
+   SCR_MenuHelper.GetOnMenuFocusLost().Remove(OnDebugMenuFocusLost);
   }
   m_DebugEditor = null;
   if (m_DebugCanvas) m_DebugCanvas.RemoveFromHierarchy();
   if (m_DebugLegend) m_DebugLegend.RemoveFromHierarchy();
   m_DebugCanvas = null; m_DebugLegend = null;
   m_DebugCommands.Clear(); m_DebugLines.Clear();
+ }
+
+ // A dialog or menu opening over the editor hides the overlay at once instead of
+ // at the next 0.5 s poll.
+ protected void OnDebugMenuFocusLost(ChimeraMenuBase menu)
+ {
+  ClearDebug();
+ }
+
+ protected static bool EditorMenuCovered()
+ {
+  SCR_MenuEditorComponent menuEditor = SCR_MenuEditorComponent.Cast(SCR_MenuEditorComponent.GetInstance(SCR_MenuEditorComponent));
+  if (!menuEditor) return false;
+  EditorMenuBase editorMenu = menuEditor.GetMenu();
+  return editorMenu && !editorMenu.IsFocused();
  }
 
  protected void Shutdown()

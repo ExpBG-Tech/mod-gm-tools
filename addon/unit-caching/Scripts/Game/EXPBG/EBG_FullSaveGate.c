@@ -22,9 +22,9 @@ class EBG_FullSaveGate
   if (SCR_AIGroupSerializer.EBG_HasPendingMemberCallbacks()) return "Not ready to save: native group callbacks need recovery. Restore ALL after original member identity and ownership are valid.";
   if (s_Fault) return "Full save protection requires attention: " + s_Reason;
   if (s_Held && s_RestoreRequested) return "Not ready to save: restoring every cache zone. Wait for recovery to finish before any native or CDF save.";
-  // Shown only while Full groups are actually absent. The native permission itself stays
-  // withheld until Prepare for save releases it (unchanged); the "Before saving mission"
-  // action already requires that before any native save.
+  // Shown only while Full groups are actually absent. The native permission stays
+  // withheld while any cache or recovery state remains; Poll returns it once every
+  // group is awake again, or through Prepare for save.
   if (s_Held && HasAbsentFullGroups(EBG_CacheManager.Instance)) return "Native saves are paused while Full groups are absent. The matching CDF companion can save stable cached groups. Other saves require restoring ALL caches.";
   if (s_Held) return "";
   return s_Reason;
@@ -129,12 +129,16 @@ class EBG_FullSaveGate
   if (!SupportedRuntime(reason)) { Fault(reason); return; }
   if (GetGame().GetSaveGameManager() != s_Manager || !s_Manager || !s_Manager.IsSavingEnabled() || s_Manager.GetEnabledSaveTypes() != s_SaveTypes || s_Manager.IsSavingAllowed())
   { Fault("Native saving policy changed; automatic permission release refused"); return; }
-  if (!s_RestoreRequested || HasRecoveryState(manager)) return;
+  if (HasRecoveryState(manager)) return;
+  // Nothing is cached, pending or in recovery: native saves need no hold. The
+  // next Full capture takes the permission again before deleting any AI, and
+  // waits while a save is busy (TryAcquire). Prepare for save keeps its path.
+  if (!s_RestoreRequested) { ReleasePermission(""); return; }
   // New captures must remain held while native queued requests drain and the GM
   // saves. Root's Restore-for-Editing hold persists until an explicit Enable.
   foreach (EBG_CacheZone zone : EBG_CacheZone.Zones)
    if (zone && zone.Enabled && !zone.Editing) return;
-  ReleasePermission();
+  ReleasePermission("All caches restored. Native saving is available; keep zones held for editing until the save completes.");
  }
 
  // Only for an entirely aborted pre-deletion attempt, after original policy and
@@ -146,15 +150,15 @@ class EBG_FullSaveGate
   if (!SupportedRuntime(reason)) { Fault(reason); return; }
   if (GetGame().GetSaveGameManager() != s_Manager || !s_Manager || !s_Manager.IsSavingEnabled() || s_Manager.GetEnabledSaveTypes() != s_SaveTypes || s_Manager.IsSavingAllowed())
   { Fault("Native saving policy changed during capture rollback"); return; }
-  ReleasePermission();
+  ReleasePermission("All caches restored. Native saving is available; keep zones held for editing until the save completes.");
  }
 
- protected static void ReleasePermission()
+ protected static void ReleasePermission(string reason)
  {
   s_Manager.SetSavingAllowed(true);
   if (!s_Manager.IsSavingAllowed()) { Fault("Native saving permission did not acknowledge release"); return; }
   s_Held = false; s_RestoreRequested = false; s_Manager = null;
-  s_Reason = "All caches restored. Native saving is available; keep zones held for editing until the save completes.";
+  s_Reason = reason;
  }
 
  protected static void Fault(string reason)

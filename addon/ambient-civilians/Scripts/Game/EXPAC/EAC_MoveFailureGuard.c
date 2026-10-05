@@ -338,6 +338,25 @@ class EAC_MoveFailureGuard
   return false;
  }
 
+ // The last native move result `group` reported and where, or -1 when none is
+ // pending. Read-only: nothing is consumed, so an owner's TakeFailure is
+ // unaffected. One bounded registry pass, made only for the rare traffic stop
+ // line of a crew that left a moving car (EAC_TrafficDirector, DRIVE phase).
+ static int PeekResult(SCR_AIGroup group, out vector location)
+ {
+  location = vector.Zero;
+  if (!Replication.IsServer() || !group) return -1;
+  CheckWorld();
+  foreach (EAC_MoveFailureGuard guard : s_Guards)
+  {
+   if (guard.m_Group != group) continue;
+   location = guard.m_FailedLocation;
+   if (!guard.m_Pending) return -1;
+   return guard.m_FailedResult;
+  }
+  return -1;
+ }
+
  static int GuardCount() { CheckWorld(); return s_Guards.Count(); }
  static int RetiredCount() { CheckWorld(); return s_Retired.Count(); }
  static int FiredCount() { CheckWorld(); return s_Fired; }

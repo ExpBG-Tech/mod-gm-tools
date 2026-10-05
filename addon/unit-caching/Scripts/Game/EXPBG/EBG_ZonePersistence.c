@@ -8,6 +8,14 @@ modded class EBG_CacheZone
  protected bool m_EBG_SettingsLoadHold;
  protected bool m_EBG_ResumeAfterLoad;
  protected string m_EBG_SettingsHoldReason;
+ // Hold watchdog: one diagnostic line naming the closed gate after 10 s. Only a
+ // native registration that never completes is released, after 60 s, the same way
+ // as a mission without native saving; tracking starts once persistence is active.
+ static const float EBG_HOLD_REPORT_SECONDS = 10;
+ static const float EBG_HOLD_RELEASE_SECONDS = 60;
+ protected float m_EBG_HoldArmedAt = -1;
+ protected bool m_EBG_HoldReported;
+ protected bool m_EBG_TrackingDeferred;
  bool EBG_HasSettingsLoadHold() { return m_EBG_SettingsLoadHold;
  }
  string EBG_SettingsLoadReason() { return m_EBG_SettingsHoldReason; }
@@ -71,6 +79,8 @@ modded class EBG_CacheZone
   // The authority scheduler registers after finalization, even when this zone
   // receives no entity FRAME events on a dedicated server.
   m_EBG_RegistrationPending = true;
+  m_EBG_HoldArmedAt = GetGame().GetWorld().GetWorldTime() * 0.001;
+  m_EBG_HoldReported = false;
   EBG_CacheManager.Get();
  }
  protected void EBG_TryPersistentRegistration()
@@ -117,6 +127,7 @@ modded class EBG_CacheZone
  }
  void EBG_UpdateSettingsLoad()
  {
+  if (m_EBG_TrackingDeferred) EBG_TryDeferredTracking();
   if (!m_EBG_RegistrationPending && !m_EBG_SessionAttributes) return;
   EBG_TryPersistentRegistration();
   if (Replication.IsServer() && m_EBG_SessionAttributes && !EBG_CacheSnapshot.Loading)
@@ -124,6 +135,61 @@ modded class EBG_CacheZone
    EBG_FlushSavedAttributes();
    ApplyPendingSettings();
   }
+  EBG_WatchSettingsHold();
+ }
+ // Diagnostics only, except the bounded registration release below.
+ protected string EBG_SettingsHoldGate(out bool releasable)
+ {
+  releasable = false;
+  if (m_EBG_RegistrationPending)
+  {
+   string state = "none";
+   SCR_PersistenceSystem persistence = SCR_PersistenceSystem.GetByEntityWorld(this);
+   if (persistence) state = typename.EnumToString(EPersistenceSystemState, persistence.GetState());
+   releasable = EBG_CacheManager.IsPortableWorldReady();
+   return "native persistence registration pending (state " + state + ")";
+  }
+  if (!EBG_CacheManager.IsPortableWorldReady()) return "world not ready: game mode not running or a transition is pending";
+  if (HasRestoringRecords()) return "cached groups of this zone are still restoring";
+  if (!m_EBG_ResumeAfterLoad) return "hold has no resume request; switch the zone off and on";
+  if (!m_EBG_SessionAttributes && !EBG_MissionPersistence.Ready(EBG_CacheManager.Get())) return "native mission metadata binding pending";
+  return "saved settings batch still settling";
+ }
+ protected void EBG_WatchSettingsHold()
+ {
+  if (!Replication.IsServer() || EBG_CacheSnapshot.Loading || m_EBG_HoldArmedAt < 0) return;
+  if (!m_EBG_RegistrationPending && !m_EBG_SettingsLoadHold) { m_EBG_HoldArmedAt = -1; return; }
+  float held = GetGame().GetWorld().GetWorldTime() * 0.001 - m_EBG_HoldArmedAt;
+  if (held < EBG_HOLD_REPORT_SECONDS) return;
+  bool releasable;
+  string gate = EBG_SettingsHoldGate(releasable);
+  if (!m_EBG_HoldReported)
+  {
+   m_EBG_HoldReported = true;
+   Print(string.Format("[EBG SETTINGS HOLD] zone=%1 position=%2 held=%3 s gate='%4' reason='%5' pendingKeys=%6 sessionAttributes=%7", GetID(), GetOrigin(), Math.Round(held), gate, m_EBG_SettingsHoldReason, m_PendingKeys.Count(), m_EBG_SessionAttributes), LogLevel.WARNING);
+  }
+  if (!releasable || held < EBG_HOLD_RELEASE_SECONDS) return;
+  // Same outcome as a mission without native saving: settings resume now, the
+  // zone joins native saves once persistence becomes active.
+  m_EBG_RegistrationPending = false;
+  m_EBG_TrackingDeferred = true;
+  m_EBG_HoldArmedAt = -1;
+  Print(string.Format("[EBG SETTINGS HOLD] zone=%1 released after %2 s: %3. Settings resume without native tracking until persistence is active.", GetID(), Math.Round(held), gate), LogLevel.WARNING);
+  EBG_CacheManager.Get().Register(this);
+  if (m_EBG_SessionAttributes)
+  {
+   EBG_FlushSavedAttributes();
+   ApplyPendingSettings();
+  }
+ }
+ protected void EBG_TryDeferredTracking()
+ {
+  if (!Replication.IsServer() || EBG_CacheManager.Unloading) return;
+  SCR_PersistenceSystem persistence = SCR_PersistenceSystem.GetByEntityWorld(this);
+  if (!persistence || persistence.GetState() != EPersistenceSystemState.ACTIVE) return;
+  m_EBG_TrackingDeferred = false;
+  if (!persistence.IsTracked(this)) persistence.StartTracking(this, false);
+  PrintFormat("[EBG ZONE PERSISTENCE REGISTER] id=%1 tracked=%2 deferred=1", persistence.GetId(this), persistence.IsTracked(this));
  }
  override void ApplyPendingSettings()
  {
@@ -161,6 +227,8 @@ modded class EBG_CacheZone
   QueueSetting(key, value);
   m_EBG_SessionAttributes = true;
   m_EBG_SessionSettleUntil = GetGame().GetWorld().GetWorldTime() * 0.001 + 1;
+  m_EBG_HoldArmedAt = m_EBG_SessionSettleUntil;
+  m_EBG_HoldReported = false;
   m_EBG_SettingsLoadHold = true;
   m_EBG_ResumeAfterLoad = true;
   m_EBG_SettingsHoldReason = "Restoring saved module settings";

@@ -102,6 +102,13 @@ class EBG_CacheFullCoordinator
  }
  static void CompleteRelease(EBG_CacheManager manager, EBG_CacheGroup record)
  {
+  EBG_PrefabFullCache released = EBG_PrefabFullCache.Cast(record.Full);
+  if (released && released.IsLenient())
+  {
+   PrintFormat("[EBG RECOVERY RELEASE] group=%1 completed %2", record.Id, released.LenientSummary());
+   // No native group remained: retire the record once its reservation is cleared.
+   if (released.IsLenientAbandoned()) record.ReleaseRequested = true;
+  }
   ClearReservation(record);
   record.Recovery = "";
   record.Reason = "Surviving AI respawned; default kit; native group and supported orders recreated";
@@ -156,6 +163,10 @@ class EBG_CacheFullCoordinator
    }
   }
   if (!selected || EBG_FullCacheGroup.IsNativeOperationBusy()) return false;
+  // The shared wake budget charges the whole survivor roster on admission; its
+  // survivors still spawn one per coordinator call.
+  int wakeCost = selected.Full.GetMemberCount();
+  if (!manager.TakeWakeBudget(wakeCost)) { manager.ReportWakeDeferred(selected, wakeCost); return false; }
   selected.RecoveryRetryRequested = false;
   if (!selected.Full.BeginWake()) selected.Recovery = selected.Full.GetError();
   else selected.Full.Poll();

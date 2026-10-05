@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{BCEEC811A0C00031}Configs/EAC_SessionThemes.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

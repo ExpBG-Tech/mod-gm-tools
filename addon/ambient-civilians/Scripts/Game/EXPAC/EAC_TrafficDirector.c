@@ -75,6 +75,17 @@ class EAC_TrafficDirector
  protected string m_LastAdmission, m_LastRoute;
  protected int m_LifecycleFailures;
  protected string m_LastFailure;
+ // Owned cars that disappeared without this director (see LoseCar).
+ protected int m_CarsLost;
+ // Controller gap cleanup (DrainParties): one pump tick a second, at most
+ // GAP_PARTIES records examined and one entity deleted per tick. The removal
+ // distance is the last active module's, so deleting it changes no rule.
+ static const int GAP_INTERVAL_MS = 1000;
+ static const int GAP_PARTIES = 4;
+ protected float m_CleanupDistance = 1000;
+ protected int m_GapCursor, m_GapDeletions;
+ protected ref array<int> m_GapPlayers = {};
+ protected ref array<IEntity> m_GapObservers = {};
 
  void RecordFailure(EAC_TrafficParty party, string reason)
  {
@@ -114,11 +125,16 @@ class EAC_TrafficDirector
  string BuildDebugSummary(int logLevel = 3)
  {
   if (logLevel <= 1)
-   return string.Format("traffic reserved_parties=%1 pending=%2 despawned=%3 trips=%4/%5 failures=%6", GetActiveCount(), GetPendingCount(), m_DespawnCount, m_JourneysStarted, m_JourneysCompleted, m_LifecycleFailures) + " live_cars=" + GetLiveCarCount().ToString();
+  {
+   string brief = string.Format("traffic reserved_parties=%1 pending=%2 despawned=%3 trips=%4/%5 failures=%6", GetActiveCount(), GetPendingCount(), m_DespawnCount, m_JourneysStarted, m_JourneysCompleted, m_LifecycleFailures) + " live_cars=" + GetLiveCarCount().ToString();
+   brief += " cars_lost=" + m_CarsLost.ToString();
+   return brief;
+  }
   int townCount = EAC_SettlementIndex.GetCount();
   string summary = string.Format("traffic parties=%1 reserved_parties=%2 pending=%3 towns=%4 trips=%5/%6 despawned=%7", GetPartyCount(), GetActiveCount(), GetPendingCount(), townCount, m_JourneysStarted, m_JourneysCompleted, m_DespawnCount)
    + " live_cars=" + GetLiveCarCount().ToString()
    + string.Format(" peak_kmh=%1 horn_input_requests_cleared=%2 horn_polled_parties=%3 boarding_screened=%4 board_hidden=%5 drive_abandoned=%6", m_PeakSpeed, m_HornRequests, m_HornPolled, m_BoardingScreened, m_BoardHidden, m_DriveAbandoned);
+  summary += string.Format(" cars_lost=%1 gap_deletions=%2", m_CarsLost, m_GapDeletions);
   summary += "\ntraffic admission last=" + m_LastAdmission;
   for (int i = 0; i < m_AdmissionResults.Count(); i++) summary += string.Format(" %1=%2", m_AdmissionResults.GetKey(i), m_AdmissionResults.GetElement(i));
   // Existing retained records only; low-frequency summary, no world queries.
@@ -140,7 +156,11 @@ class EAC_TrafficDirector
  }
 
  void EAC_TrafficDirector(BaseWorld world) { m_World = world; s_Instance = this; }
- void ~EAC_TrafficDirector() { if (s_Instance == this) s_Instance = null; }
+ void ~EAC_TrafficDirector()
+ {
+  if (GetGame()) GetGame().GetCallqueue().Remove(DrainParties);
+  if (s_Instance == this) s_Instance = null;
+ }
  static EAC_TrafficDirector Get()
  {
   if (!Replication.IsServer() || !GetGame() || !s_Instance || s_Instance.m_World != GetGame().GetWorld()) return null;
@@ -152,13 +172,76 @@ class EAC_TrafficDirector
   EAC_TrafficDirector director = Get();
   if (!director || EAC_AmbientModule.GetActive() || director.m_GapStopped) return;
   director.m_GapStopped = true;
-  // Removing the last controller intentionally pauses mission ownership. Keep
-  // the existing protected cleanup state for its replacement, without counting
-  // this operator action as a failed journey. No cleanup runs while absent.
+  // Removing the last controller pauses mission ownership: nothing is admitted,
+  // driven or ordered again, and this operator action is not counted as a failed
+  // journey. The retained parties are no longer left in the world for good
+  // (issue #20): DrainParties removes them under the protected cleanup rules, and
+  // a module placed before that finishes adopts whatever is left.
   foreach (EAC_TrafficParty party : director.m_Parties)
    party.Fail("module absent; retained until protected cleanup", false);
+  director.StartGapCleanup();
   if (!director.m_Parties.IsEmpty() && EAC_AmbientModule.GetDebugLevelMirror() >= 1)
-   PrintFormat("[EAC TRAFFIC] controller removed; %1 parties retained; protected cleanup resumes with a replacement controller", director.m_Parties.Count());
+   PrintFormat("[EAC TRAFFIC] controller removed; %1 parties retained; protected cleanup continues without a controller", director.m_Parties.Count());
+ }
+
+ protected void StartGapCleanup()
+ {
+  if (!GetGame()) return;
+  GetGame().GetCallqueue().Remove(DrainParties);
+  if (HasRetainedEntities()) GetGame().GetCallqueue().CallLater(DrainParties, GAP_INTERVAL_MS, true);
+ }
+
+ protected bool HasRetainedEntities()
+ {
+  foreach (EAC_TrafficParty party : m_Parties) if (party.HasEntities()) return true;
+  return false;
+ }
+
+ // The module's observer list, rebuilt for the controller gap. Unknown, Game
+ // Master and spectator slots stay in it, so removal fails closed exactly as it
+ // does under a module.
+ protected void CollectGapObservers()
+ {
+  m_GapObservers.Clear(); m_GapPlayers.Clear();
+  PlayerManager manager = GetGame().GetPlayerManager();
+  if (!manager) return;
+  manager.GetPlayers(m_GapPlayers);
+  foreach (int id : m_GapPlayers) m_GapObservers.Insert(manager.GetPlayerControlledEntity(id));
+ }
+
+ // Controller gap pump (issue #20). With no module placed, retained parties are
+ // removed under the same protected rules as ever: owned and never touched by a
+ // player, stopped, healthy, beyond the traffic removal distance from every
+ // player character and out of their sight. The one difference is that a crew
+ // still seated in its stopped car goes with the car, because no dismount order
+ // can be placed without a module. Bounded: GAP_PARTIES records looked at and one
+ // entity deleted per pump tick. Reservations stay with their records, as the
+ // pedestrian claims do; the next module releases them on its first ticks. The
+ // pump stops when a module returns, the world changes or nothing is left.
+ protected void DrainParties()
+ {
+  if (!GetGame() || GetGame().GetWorld() != m_World || Get() != this || EAC_AmbientModule.GetActive() || !HasRetainedEntities())
+  {
+   if (GetGame()) GetGame().GetCallqueue().Remove(DrainParties);
+   if (GetGame() && Get() == this && !m_Parties.IsEmpty() && EAC_AmbientModule.GetDebugLevelMirror() >= 1 && !EAC_AmbientModule.GetActive())
+    PrintFormat("[EAC TRAFFIC] controller gap: retained parties removed (deletions=%1); reservations are released by the next controller", m_GapDeletions);
+   return;
+  }
+  CollectGapObservers();
+  int count = Math.Min(GAP_PARTIES, m_Parties.Count());
+  for (int i = 0; i < count; i++)
+  {
+   m_GapCursor = m_GapCursor % m_Parties.Count();
+   EAC_TrafficParty party = m_Parties[m_GapCursor++];
+   if (!party.HasEntities()) continue;
+   if (party.HadCar && !party.Car) LoseCar(party);
+   bool removed = RemoveOrphanGroup(party);
+   if (!removed) removed = RemoveOne(party, m_GapObservers, m_CleanupDistance, true);
+   if (!removed) continue;
+   if (m_GapDeletions < 1000000) m_GapDeletions++;
+   break;
+  }
+  EAC_SessionLifecycle.Sync(m_World.GetWorldTime() * 0.001);
  }
 
  int GetPartyCount() { return m_Parties.Count(); }
@@ -455,7 +538,10 @@ class EAC_TrafficDirector
   return true;
  }
 
- protected bool CanRemove(EAC_AmbientModule module, EAC_TrafficParty party, array<IEntity> observers)
+ // `distance` is the module's TrafficSleepDistance (the last module's during a
+ // controller gap). `seated` is set by the controller gap pump only: see
+ // DrainParties.
+ protected bool CanRemove(EAC_TrafficParty party, array<IEntity> observers, float distance, bool seated = false)
  {
   if (!party.Controlled() || party.Speed() > 1 || !EBG_PrefabFullCache.CanDeleteFullEntity(party.Group) || party.Group.GetChildren()) return false;
   if (party.Car && !EBG_PrefabFullCache.CanDeleteFullEntity(party.Car)) return false;
@@ -470,7 +556,18 @@ class EAC_TrafficDirector
    // An explicit zone removes the complete stopped owned party even when seated.
    return true;
   }
-  if (!party.AllOutside() || !HealthyParty(party) || !FarFromObservers(party, observers, module.TrafficSleepDistance)) return false;
+  if (seated)
+  {
+   // In or out of the car, but never caught halfway through a get-in or get-out.
+   foreach (EAC_TrafficOccupant member : party.Crew)
+   {
+    if (!member.Actor) continue;
+    CompartmentAccessComponent access = CompartmentAccessComponent.Cast(member.Actor.FindComponent(CompartmentAccessComponent));
+    if (!access || access.IsGettingIn() || access.IsGettingOut()) return false;
+   }
+  }
+  else if (!party.AllOutside()) return false;
+  if (!HealthyParty(party) || !FarFromObservers(party, observers, distance)) return false;
   if (party.Car && !Hidden(party, party.Car.GetOrigin(), observers)) return false;
   foreach (EAC_TrafficOccupant row : party.Crew)
    if (row.Actor && !Hidden(party, row.Actor.GetOrigin(), observers)) return false;
@@ -662,9 +759,9 @@ class EAC_TrafficDirector
   return false;
  }
 
- protected bool RemoveOne(EAC_AmbientModule module, EAC_TrafficParty party, array<IEntity> observers)
+ protected bool RemoveOne(EAC_TrafficParty party, array<IEntity> observers, float distance, bool seated = false)
  {
-  if (!CanRemove(module, party, observers)) return false;
+  if (!CanRemove(party, observers, distance, seated)) return false;
   party.ClearOrder();
   if (party.Order) return false;
   party.Deleting = true;
@@ -680,8 +777,8 @@ class EAC_TrafficDirector
   if (party.Car)
   {
    if (!party.Controlled()) return false;
-   party.UnbindCar(); SCR_EntityHelper.DeleteEntityAndChildren(party.Car);
-   if (party.Car) party.BindCar();
+   party.UnbindCar(); party.HadCar = false; SCR_EntityHelper.DeleteEntityAndChildren(party.Car);
+   if (party.Car) { party.BindCar(); party.HadCar = true; }
    return true;
   }
   if (party.Group)
@@ -690,6 +787,46 @@ class EAC_TrafficDirector
    SCR_EntityHelper.DeleteEntityAndChildren(party.Group); return true;
   }
   return false;
+ }
+
+ // Issue #1. An owned car can disappear without this director: vanilla puts a
+ // vehicle into its garbage system when the last occupant leaves it
+ // (VehicleControllerComponent.OnCompartmentLeft -> SCR_GarbageSystem.Insert; the
+ // default vehicle rule removes it after 1,200 s with no player within 35 m),
+ // which is what took the cars a STUCK crew had left, and a Game Master can
+ // delete it. That is accepted rather than fought: count it once, drop the dead
+ // car bindings and fail the journey, so the crew and group go through the
+ // ordinary protected cleanup and the reservation is released with the last of
+ // them. A car a player entered is never in that cleanup (PlayerTouched).
+ protected void LoseCar(EAC_TrafficParty party)
+ {
+  party.HadCar = false; party.UnbindCar();
+  if (m_CarsLost < 1000000) m_CarsLost++;
+  // A zone or session removal already owns this record's end.
+  if (!party.Deleting && !party.ExclusionRemoval && !party.SessionRemoval) party.Fail("vehicle externally removed");
+ }
+
+ // Issue #1. A failed party whose car and actors are all gone - the car and a
+ // corpse taken by vanilla garbage collection, or deleted by a Game Master - can
+ // still hold its slot through the empty group alone (SetDeleteWhenEmpty is
+ // off). A dead or player-touched member makes the record permanently
+ // uncontrolled, so CanRemove never cleared that group and the slot was lost
+ // for the session. Same guards as the pedestrian orphan group: our own group,
+ // server authority, no agents, no players, no children, deletable. Nothing but
+ // the group and our own order is touched; never a car, a survivor or a corpse.
+ protected bool RemoveOrphanGroup(EAC_TrafficParty party)
+ {
+  if (party.Phase != EAC_TrafficPhase.FAILED || party.Car || !party.Group) return false;
+  foreach (EAC_TrafficOccupant row : party.Crew) if (row.Actor) return false;
+  SCR_AIGroup group = party.Group;
+  if (group.GetAgentsCount() != 0 || group.GetPlayerCount() != 0 || group.GetChildren()) return false;
+  RplComponent groupRpl = RplComponent.Cast(group.FindComponent(RplComponent));
+  if (!groupRpl || groupRpl.IsProxy() || !groupRpl.IsOwner() || !EBG_PrefabFullCache.CanDeleteFullEntity(group)) return false;
+  party.ClearOrder();
+  if (party.Order) return false;
+  party.Deleting = true;
+  SCR_EntityHelper.DeleteEntityAndChildren(group);
+  return true;
  }
 
  protected bool OwnsSimulationAgent(EAC_TrafficParty party, AIAgent agent)
@@ -737,6 +874,8 @@ class EAC_TrafficDirector
  protected void Monitor(EAC_AmbientModule module, EAC_TrafficParty party, array<IEntity> observers, float now)
  {
   if (!party.HasEntities()) return;
+  // Any phase, failed records included: see LoseCar.
+  if (party.HadCar && !party.Car) LoseCar(party);
   if (party.ExclusionRemoval || party.SessionRemoval) return;
   m_PeakSpeed = Math.Max(m_PeakSpeed, party.Speed());
   if (!party.Controlled()) { party.Fail("ownership, death or foreign occupant"); return; }
@@ -844,6 +983,7 @@ class EAC_TrafficDirector
    if (m_DespawnCount < 1000000) m_DespawnCount++;
    return true;
   }
+  if (RemoveOrphanGroup(party)) return true;
   // Default no-civilian zones also clear traffic. Population-only zones retain
   // their explicit pass-through contract; spawn points remain excluded.
   bool excluded = party.ExclusionRemoval || party.SessionRemoval;
@@ -872,7 +1012,7 @@ class EAC_TrafficDirector
    if (party.Movement) party.Movement.SetCruiseSpeed(0);
    if (!party.Controlled()) return false;
    if (party.CarControl) party.CarControl.SetPersistentHandBrake(true);
-   return RemoveOne(module, party, observers);
+   return RemoveOne(party, observers, module.TrafficSleepDistance);
   }
   if (party.Phase == EAC_TrafficPhase.FAILED && party.Controlled() && !party.AllOutside() && party.Car && party.CarControl)
   {
@@ -881,7 +1021,7 @@ class EAC_TrafficDirector
    if (PlaceOrder(party, "{C40316EE26846CAB}Prefabs/AI/Waypoints/AIWaypoint_GetOut.et", party.Car.GetOrigin()))
    { party.Phase = EAC_TrafficPhase.EXIT; party.Since = now; party.Retire = true; return true; }
   }
-  if (party.Phase == EAC_TrafficPhase.CLEARING || party.Phase == EAC_TrafficPhase.FAILED) return RemoveOne(module, party, observers);
+  if (party.Phase == EAC_TrafficPhase.CLEARING || party.Phase == EAC_TrafficPhase.FAILED) return RemoveOne(party, observers, module.TrafficSleepDistance);
   if (party.Phase <= EAC_TrafficPhase.SPAWN_CREW && now - party.Since > 20) { party.Fail("spawn deadline"); return true; }
   if (party.Phase == EAC_TrafficPhase.NEW)
   {
@@ -927,6 +1067,7 @@ class EAC_TrafficDirector
    if (!EAC_TrafficRoute.Clear(m_World, party.Position)) return false;
    party.PendingReason = "car_spawn";
    party.Car = Spawn(party.CarPrefab, party.Position + "0 0.25 0", party.Direction, true);
+   if (party.Car) party.HadCar = true;
    if (!party.Car || !party.BindCar() || !party.Controlled()) { party.Fail("vehicle capabilities or ownership"); return true; }
    EAC_SessionLifecycle.Keep(party.Car);
    FactionAffiliationComponent carFaction = FactionAffiliationComponent.Cast(party.Car.FindComponent(FactionAffiliationComponent));
@@ -1049,7 +1190,18 @@ class EAC_TrafficDirector
     // PARK issues the ordinary dismount and the crew rests, despawns or boards again,
     // and three in a row still retire the record. A crew that leaves a car that has
     // actually driven is still a failure.
-    if (party.Moved) { party.Fail("crew left vehicle while driving"); return true; }
+    if (party.Moved)
+    {
+     // Normally a native vehicle STUCK: vanilla SCR_AIProcessFailedMovementResult
+     // answers it with a high-priority get-out before TrafficStuckDelay can offer
+     // the re-order (issue #1). The stop line carries where the car stands and the
+     // group's last native move result, so a junction is identifiable from the log.
+     vector failedAt;
+     int moveResult = EAC_MoveFailureGuard.PeekResult(party.Group, failedAt);
+     if (party.Car) party.PendingPosition = party.Car.GetOrigin();
+     party.PendingReason = "crew_left native_move=" + moveResult.ToString();
+     party.Fail("crew left vehicle while driving"); return true;
+    }
     if (party.BlockedTrips < 1000000) party.BlockedTrips++;
     if (party.BlockedTrips >= BLOCKED_TRIP_LIMIT) party.Retire = true;
     if (m_DriveAbandoned < 1000000) m_DriveAbandoned++;
@@ -1141,7 +1293,7 @@ class EAC_TrafficDirector
   {
    if (party.WantDespawn || party.Retire)
    {
-    if (!CanRemove(module, party, observers))
+    if (!CanRemove(party, observers, module.TrafficSleepDistance))
     {
      if (module.TrafficRoundTrips == 0 && !party.WantDespawn) return Stroll(module, party, now);
      return false;
@@ -1278,6 +1430,8 @@ class EAC_TrafficDirector
  {
   if (Get() != this || !module || module != EAC_AmbientModule.GetActive() || module.GetWorld() != m_World) return;
   m_GapStopped = false;
+  // Kept for a controller gap: DrainParties applies the same removal distance.
+  m_CleanupDistance = module.TrafficSleepDistance;
   foreach (EAC_TrafficParty party : m_Parties) Monitor(module, party, observers, now);
   int count = m_Parties.Count();
   for (int i = 0; i < count && !m_Parties.IsEmpty(); i++)

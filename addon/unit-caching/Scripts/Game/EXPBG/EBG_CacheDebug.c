@@ -112,9 +112,10 @@ class EBG_CacheDebug
   {
    Reset(); return;
   }
-  // A Game Master tool: shown only while this client's editor is open, never in first person.
+  // A testing tool for logged-in admins: shown only while this client's editor is
+  // open, never in first person. Voted Game Masters keep the zone overlays only.
   SCR_EditorManagerEntity editor = SCR_EditorManagerEntity.GetInstance();
-  if (!editor || !editor.IsOpened())
+  if (!editor || !editor.IsOpened() || !EBG_CacheVisuals.LocalAdmin())
   {
    Hide(); return;
   }

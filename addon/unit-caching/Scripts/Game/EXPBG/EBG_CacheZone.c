@@ -57,7 +57,7 @@ class EBG_CacheZone : GenericEntity
  // settings preserve the choice; older schemas default to On during migration.
  [Attribute("1", UIWidgets.CheckBox, "Soldiers only: cache military factions, leave civilian factions alone", category: "EXPBG GM Optimizer"), RplProp()]
  int MilitaryOnly;
- [Attribute("1", UIWidgets.CheckBox, "Show Full-cached group icons to logged-in admins in GM", category: "EXPBG GM Optimizer"), RplProp()]
+ [Attribute("1", UIWidgets.CheckBox, "Show Full-cached group icons to Game Masters in GM", category: "EXPBG GM Optimizer"), RplProp()]
  int CachedGroupMarkers;
  protected string m_DebugLast;
  protected float m_DebugNext;

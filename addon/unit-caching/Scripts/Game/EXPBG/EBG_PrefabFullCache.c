@@ -10,6 +10,8 @@ class EBG_PrefabSurvivor
  ref EBG_StaticEmplacement Emplacement;
  bool MountRequested;
  float MountDeadline;
+ // Operator release only: this row is left where it is and never spawned again.
+ bool Abandoned;
  ref EBG_CacheAuthor Author = new EBG_CacheAuthor();
 }
 
@@ -48,6 +50,43 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
  protected ref EBG_CacheGroupSnapshot m_Snapshot;
  protected bool m_GroupCreated;
  protected bool m_GroupSettingsApplied;
+ // Operator escape for a blocked wake ("Release blocked groups"). Never automatic.
+ // It never spawns a created row twice, refills casualties or deletes AI; it only
+ // stops waiting for the seat, waypoint or ownership check that blocked the wake.
+ protected bool m_Lenient;
+ protected bool m_LenientAbandoned;
+ protected bool m_LenientOrdersSkipped;
+ void BeginLenientRelease() { m_Lenient = true; }
+ bool IsLenient() { return m_Lenient; }
+ bool IsLenientAbandoned() { return m_LenientAbandoned; }
+ string LenientSummary()
+ {
+  int kept, skipped, lost;
+  foreach (EBG_PrefabSurvivor row : m_Survivors)
+  {
+   if (!row.Member || row.Member.Dead) continue;
+   if (row.Abandoned && row.Entity) skipped++;
+   else if (row.Entity) kept++;
+   else if (!row.Member.WasPlayer) lost++;
+  }
+  return string.Format("kept=%1 leftInPlace=%2 missing=%3 ordersSkipped=%4 groupGone=%5", kept, skipped, lost, m_LenientOrdersSkipped, m_LenientAbandoned);
+ }
+ // No native group can take the survivors: hand back what exists and forget the
+ // rest of the snapshot. Nothing is spawned or deleted here.
+ protected void AbandonLenient()
+ {
+  if (m_Group)
+  {
+   if (m_GroupPolicy) m_GroupPolicy.Restore();
+   m_Group.EBG_PrefabCacheHeld = false;
+   m_Group.SetDeleteWhenEmpty(m_DeleteEmpty);
+   m_Group.SetCanDeleteIfNoPlayer(m_DeleteNoPlayer);
+  }
+  if (m_Record) m_Record.Group = m_Group;
+  m_LenientAbandoned = true;
+  m_Problem = "";
+  m_State = EBG_FullGroupPhase.RELEASED;
+ }
  // Standalone adapters retain their native group and its private settings/orders.
  // GM-managed Full explicitly opts into portable snapshot/group replacement.
  protected bool CapturesNativeGroup()
@@ -226,7 +265,11 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
  override bool BeginWake()
  {
   if (!Replication.IsServer() || !m_Record) return Refuse("Full wake requires its authority record");
-  if (!m_Snapshot && !m_Group) return Refuse("Original group no longer exists; cached survivors retained");
+  if (!m_Snapshot && !m_Group)
+  {
+   if (m_Lenient && m_State == EBG_FullGroupPhase.FAILED) { AbandonLenient(); return true; }
+   return Refuse("Original group no longer exists; cached survivors retained");
+  }
   if (m_State != EBG_FullGroupPhase.CACHED && m_State != EBG_FullGroupPhase.FAILED) return false;
   if (m_State == EBG_FullGroupPhase.FAILED)
   foreach (EBG_PrefabSurvivor row : m_Survivors)
@@ -245,6 +288,7 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
   if (m_State != EBG_FullGroupPhase.RESTORING) return;
   if (!m_Record || (!m_Snapshot && !m_Group))
   {
+   if (m_Lenient && m_Record) { AbandonLenient(); return; }
    Refuse("Logical group disappeared during restore");
    return;
   }
@@ -254,6 +298,7 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    // never permission to spawn a second group or refill already created slots.
    if (m_GroupCreated)
    {
+    if (m_Lenient) { AbandonLenient(); return; }
     Refuse("Restored group was removed externally");
     return;
    }
@@ -264,11 +309,14 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    bool ignoredTerrain = SCR_AIGroup.EBG_SnapshotIgnoresTerrain();
    SCR_AIGroup.IgnoreSpawning(true);
    SCR_AIGroup.IgnoreSnapToTerrain(true);
-   m_Group = SCR_AIGroup.Cast(GetGame().SpawnEntityPrefab(Resource.Load(m_Snapshot.Prefab), GetGame().GetWorld(), groupParams));
+   // Keep the loaded resource alive through the spawn call.
+   Resource groupResource = Resource.Load(m_Snapshot.Prefab);
+   m_Group = SCR_AIGroup.Cast(GetGame().SpawnEntityPrefab(groupResource, GetGame().GetWorld(), groupParams));
    SCR_AIGroup.IgnoreSpawning(ignoredSpawning);
    SCR_AIGroup.IgnoreSnapToTerrain(ignoredTerrain);
    if (!m_Group)
    {
+    if (m_Lenient) { AbandonLenient(); return; }
     Refuse("Group prefab spawn failed; snapshot retained for retry");
     return;
    }
@@ -300,23 +348,31 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    // failed native group is never mistaken for a fully configured group.
    if (m_Group.GetAgentsCount() != 0 || !m_Snapshot.Apply(m_Group))
    {
-    Refuse("New native group settings or empty roster could not be confirmed");
-    return;
+    // Released by the operator: keep the group with whatever settings it took.
+    if (!m_Lenient)
+    {
+     Refuse("New native group settings or empty roster could not be confirmed");
+     return;
+    }
    }
    m_GroupSettingsApplied = true;
   }
   foreach (EBG_PrefabSurvivor row : m_Survivors)
   {
    // A spawned survivor killed/deleted during wake is never spawned a second time.
-   if (row.Member.Dead || row.Member.WasPlayer) continue;
+   if (row.Member.Dead || row.Member.WasPlayer || row.Abandoned) continue;
    if (row.Created)
    {
     // Check ownership before a native remount can move a survivor reassigned by GM.
     if (!row.Entity || row.Member.Entity != row.Entity || row.Entity.GetCharacterGroup() != m_Group)
-    { Refuse("Restored survivor was externally removed, rebound or regrouped");
+    {
+     // Released by the operator: a removed or reassigned survivor stays where it is.
+     if (m_Lenient) { row.Abandoned = true; continue; }
+     Refuse("Restored survivor was externally removed, rebound or regrouped");
      return;
     }
-    if (!row.Emplacement.Matches(row.Entity))
+    // Released by the operator: accept the survivor's current compartment state.
+    if (!m_Lenient && !row.Emplacement.Matches(row.Entity))
     {
      float now = EBG_CacheManager.Get().Now();
      bool mountTimedOut = row.MountDeadline > 0 && now >= row.MountDeadline;
@@ -352,9 +408,13 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
     EntitySpawnParams params = new EntitySpawnParams();
     params.TransformMode = ETransformMode.WORLD;
     params.Transform = row.Transform;
-    row.Entity = SCR_ChimeraCharacter.Cast(GetGame().SpawnEntityPrefab(Resource.Load(row.Prefab), GetGame().GetWorld(), params));
+    // Keep the loaded resource alive through the spawn call.
+    Resource survivorResource = Resource.Load(row.Prefab);
+    row.Entity = SCR_ChimeraCharacter.Cast(GetGame().SpawnEntityPrefab(survivorResource, GetGame().GetWorld(), params));
     if (!row.Entity)
     {
+     // Released by the operator: this survivor is not respawned; one attempt per call.
+     if (m_Lenient) { row.Abandoned = true; return; }
      Refuse("Survivor prefab spawn failed; missing slot retained for retry");
      return;
     }
@@ -369,7 +429,9 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    if (persistence) row.Member.PersistentId = persistence.GetId(row.Entity);
    EBG_CacheCleanup.Get().RegisterPrefabMember(m_Record, row.Member);
    if (!m_Group.AddAIEntityToGroup(row.Entity) || row.Entity.GetCharacterGroup() != m_Group)
-   { Refuse("Spawned survivor could not join restored group; entity retained");
+   {
+    if (m_Lenient) { row.Abandoned = true; return; }
+    Refuse("Spawned survivor could not join restored group; entity retained");
     return;
    }
    FactionAffiliationComponent faction = FactionAffiliationComponent.Cast(row.Entity.FindComponent(FactionAffiliationComponent));
@@ -377,21 +439,26 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    return;
    // Bound spawn cost to one survivor per coordinator tick.
   }
-  if (m_Snapshot)
+  if (m_Snapshot && !m_LenientOrdersSkipped)
   {
    if (!m_Snapshot.RestoreOrders(m_Group))
    {
-    Refuse("Supported group orders could not be restored; snapshot retained");
-    return;
+    // Released by the operator: keep the orders that exist and stop waiting.
+    if (!m_Lenient)
+    {
+     Refuse("Supported group orders could not be restored; snapshot retained");
+     return;
+    }
+    m_LenientOrdersSkipped = true;
    }
-   if (!m_Snapshot.OrdersBound) { return; }
+   else if (!m_Snapshot.OrdersBound) { return; }
   }
   m_State = EBG_FullGroupPhase.READY;
  }
  override bool ReleaseRestored()
  {
   if (m_State != EBG_FullGroupPhase.READY || !m_Group) return false;
-  if (m_Snapshot && !m_Snapshot.OwnsOrders(m_Group)) return Refuse("Restored waypoint ownership changed before release; snapshot retained");
+  if (!m_Lenient && m_Snapshot && !m_Snapshot.OwnsOrders(m_Group)) return Refuse("Restored waypoint ownership changed before release; snapshot retained");
   array<AIAgent> nativeRoster = {};
   m_Group.GetAgents(nativeRoster);
   foreach (AIAgent agent : nativeRoster)
@@ -403,7 +470,7 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
     known = true;
     break;
    }
-   if (!known)
+   if (!known && !m_Lenient)
    {
     IEntity controlled = null;
     if (agent) controlled = agent.GetControlledEntity();
@@ -414,10 +481,14 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
   int newDeaths;
   foreach (EBG_PrefabSurvivor row : m_Survivors)
   {
-   if (row.Member.WasPlayer && !row.Member.Dead) continue;
+   if (row.Abandoned || (row.Member.WasPlayer && !row.Member.Dead)) continue;
    if (!row.Member.Dead && row.Entity)
    {
-    if (row.Member.Entity != row.Entity) return Refuse("Restored survivor identity changed during wake");
+    if (row.Member.Entity != row.Entity)
+    {
+     if (m_Lenient) continue;
+     return Refuse("Restored survivor identity changed during wake");
+    }
     CharacterControllerComponent controller = row.Entity.GetCharacterController();
     if (controller && controller.IsDead()) EBG_CacheManager.Get().ConfirmDeath(row.Entity);
    }
@@ -426,6 +497,8 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
     newDeaths++;
     continue;
    }
+   // Released by the operator: survivors that left, changed seat or state stay as they are.
+   if (m_Lenient) continue;
    if (!row.Entity || row.Entity.GetCharacterGroup() != m_Group) return Refuse("Restored survivor was externally removed or regrouped");
    if (!row.Emplacement.Matches(row.Entity) && !row.Emplacement.RestoreOnFootIfUnavailable(row.Entity, m_Group)) return Refuse("Restored static seat changed before group release");
    if (!row.Entity || !row.Entity.GetCharacterController() || row.Entity.GetCharacterController().IsDead()) return Refuse("Restored survivor life state requires recovery");
@@ -436,7 +509,7 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
   if (restoredAlive >= 0) restoredAlive = Math.Max(0, restoredAlive - newDeaths);
   int restoredDead = m_PrefabDormantDead + newDeaths;
   m_Group.SetDormantCounts(restoredAlive, restoredDead);
-  if (m_Group.GetDormantAliveCount() != restoredAlive || m_Group.GetDormantDeadCount() != restoredDead) return Refuse("Native group casualty counts were not restored");
+  if (!m_Lenient && (m_Group.GetDormantAliveCount() != restoredAlive || m_Group.GetDormantDeadCount() != restoredDead)) return Refuse("Native group casualty counts were not restored");
   m_GroupPolicy.Restore();
   m_Group.EBG_PrefabCacheHeld = false;
   m_Group.SetDeleteWhenEmpty(m_DeleteEmpty);

@@ -214,8 +214,12 @@ class EBG_MissionPersistence
   if (system && system.WasDataLoaded() && state.LoadedVersion >= 2 && !state.Bound) { reason = "Native metadata binding is incomplete"; return false; }
   EBG_CacheManager manager = EBG_CacheManager.Instance;
   if (manager && EBG_FullSaveGate.HasRecoveryState(manager)) { reason = "Restore ALL cache/recovery state before saving"; return false; }
-  foreach (EBG_CacheZone zone : EBG_CacheZone.Zones)
-   if (zone && zone.Enabled && !zone.Editing) { reason = "Restore ALL zones for editing before saving"; return false; }
+  // Enabled zones save like paused ones while every group is awake: native data
+  // carries the AI and these records carry ownership. A roster change that is
+  // still settling in a live zone would bind wrongly on load, so wait for it.
+  if (manager)
+   foreach (EBG_CacheGroup settling : manager.Records)
+    if (settling.RegroupReason != "" && settling.Zone && settling.Zone.Enabled && !settling.Zone.Editing) { reason = "Group roster change not reconciled yet (" + settling.RegroupReason + "); wait for it or use Prepare for save"; return false; }
   if (!EBG_MissionPlayerHistory.Export(state.EverPlayerIds)) { reason = "Player exclusion identity unavailable or excessive"; return false; }
   EBG_CacheCleanup cleanup = EBG_CacheCleanup.Instance;
   if (cleanup) cleanup.CheckTransfers();

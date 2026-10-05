@@ -136,13 +136,20 @@ class EAC_DebugView
  // and the old Ambient Sounds legend (bottom-left). Regions now in use by others:
  // top-left (Unit Caching), bottom-left (GM panel), bottom-right corner (GM entity
  // panel) and the right edge between 25 % and 50 % of the height (Ambient Sounds
- // legend). This view uses two free regions instead:
- //  - the summary panel at top centre, just below the GM top toolbar;
+ // legend). The vanilla edit mode (UI/layouts/Editor/Modes/Mode_Edit.layout)
+ // draws a full-width 42-unit toolbar and, centred under it, the 96 x 96 compass
+ // dial (CompassSlot, top padding 42, so 42-138); its N/E/S/W labels stay inside
+ // the dial. The 0.1.4 client re-test saw the summary, then at top centre from 64
+ // down, drawn over that dial (issue #21). This view uses two free regions:
+ //  - the summary panel centred just below the dial (SUMMARY_TOP), so it clears
+ //    the toolbar and the compass at any aspect ratio. Beside the dial is not
+ //    free on 16:9: its left is the Unit Caching monitor's region again;
  //  - the legend on the right edge directly above the GM entity panel, its
  //    bottom at 72 % of the height and its top never above 50 %.
  static const int PANEL_WIDTH = 340;
  static const int PANEL_MARGIN = 24;
- static const int PANEL_TOP = 64;
+ // Compass dial bottom (42 + 96) plus a margin.
+ static const int SUMMARY_TOP = 152;
  static const int PANEL_HEIGHT = 180;
  static const float LEGEND_BOTTOM_SHARE = 0.72;
  static const float LEGEND_TOP_MIN_SHARE = 0.5;
@@ -288,15 +295,15 @@ class EAC_DebugView
   if (!workspace) return;
   float width = workspace.DPIUnscale(workspace.GetWidth());
   float height = workspace.DPIUnscale(workspace.GetHeight());
-  // See PANEL_WIDTH: summary at top centre, legend on the right edge above the
-  // GM entity panel.
+  // See PANEL_WIDTH: summary centred below the GM compass, legend on the right
+  // edge above the GM entity panel.
   float columnWidth = Math.Min(PANEL_WIDTH, width - 2 * PANEL_MARGIN);
   float columnLeft = width - PANEL_MARGIN - columnWidth;
   float legendTop = LegendTop(height);
   if (level > 0)
   {
    // A small panel of numbers, not a log: see EAC_AmbientModule.BuildOverlayStats.
-   m_Summary = MakeText((width - columnWidth) * 0.5, PANEL_TOP, columnWidth, PANEL_HEIGHT, 15, 0xFFFFFFFF);
+   m_Summary = MakeText((width - columnWidth) * 0.5, SUMMARY_TOP, columnWidth, PANEL_HEIGHT, 15, 0xFFFFFFFF);
    if (m_Summary) m_Summary.SetText("EXPBG Ambient Civilians\n" + summary);
   }
   if (!draw) return;

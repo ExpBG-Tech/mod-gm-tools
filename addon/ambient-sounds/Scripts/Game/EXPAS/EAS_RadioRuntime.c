@@ -50,7 +50,8 @@ class EAS_RadioRuntime
   if (m_Diagnostics) m_Diagnostics.Stops++;
   if (EAS_Diagnostics.Enabled(module))
   {
-   EAS_Diagnostics.Event("release", module, string.Format("runtime=finite kind=%1 handle=%2 recording=%3 reason=%4 interrupted=%5", module.AudioKind(), module.Handle, module.State.LastRecording, reason, interrupted));
+   // remaining > 0 with reason=finished: the native query ended the recording early.
+   EAS_Diagnostics.Event("release", module, string.Format("runtime=finite kind=%1 handle=%2 recording=%3 reason=%4 interrupted=%5 remaining=%6", module.AudioKind(), module.Handle, module.State.LastRecording, reason, interrupted, module.End - EAS_Runtime.Now()));
   }
   module.Handle = AudioHandle.Invalid;
  }
@@ -150,7 +151,9 @@ class EAS_RadioRuntime
      EAS_Diagnostics.Error("finite-event-invalid", radio, string.Format("kind=%1 selection=%2 resolved=%3 event=%4 duration=%5 attempt=%6/3", radio.AudioKind(), radio.Recording, recording, eventName, duration, invalidAttempts));
     continue;
    }
+   int callStarted = System.GetTickCount();
    radio.Handle = AudioSystem.PlayEvent(radio.AudioProject(), eventName, transform, names, values);
+   int callMs = System.GetTickCount(callStarted);
    if (radio.Handle == AudioHandle.Invalid)
    {
     float failedDistance = AudioSystem.GetDistance(radio.GetOrigin());
@@ -166,7 +169,7 @@ class EAS_RadioRuntime
    if (m_Diagnostics) m_Diagnostics.Starts++;
    if (EAS_Diagnostics.Enabled(radio))
    {
-    EAS_Diagnostics.Event("play", radio, string.Format("runtime=finite kind=%1 selection=%2 resolved=%3 event=%4 handle=%5 position=%6 range=%7 duration=%8 voices=%9", radio.AudioKind(), radio.Recording, recording, eventName, radio.Handle, radio.GetOrigin(), radio.AudibleRange(), duration, voices));
+    EAS_Diagnostics.Event("play", radio, string.Format("runtime=finite kind=%1 selection=%2 resolved=%3 event=%4 handle=%5 position=%6 range=%7 duration=%8 voices=%9", radio.AudioKind(), radio.Recording, recording, eventName, radio.Handle, radio.GetOrigin(), radio.AudibleRange(), duration, voices) + " call_ms=" + callMs.ToString());
    }
   }
   m_Cursor = (m_Cursor + 1) % count;

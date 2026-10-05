@@ -231,7 +231,9 @@ class EBG_CacheOrder : EBG_CachePose
    EntitySpawnParams params = new EntitySpawnParams();
    params.TransformMode = ETransformMode.WORLD;
    Transform(params.Transform);
-   Entity = AIWaypoint.Cast(GetGame().SpawnEntityPrefab(Resource.Load(Prefab), GetGame().GetWorld(), params));
+   // Keep the loaded resource alive through the spawn call.
+   Resource orderResource = Resource.Load(Prefab);
+   Entity = AIWaypoint.Cast(GetGame().SpawnEntityPrefab(orderResource, GetGame().GetWorld(), params));
   }
   if (!Entity) { return false; }
   RestoreBound = true;
