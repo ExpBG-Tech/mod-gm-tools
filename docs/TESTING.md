@@ -1,5 +1,17 @@
 # EXPBG GM Tools validation gates
 
+## Ambient Sounds: Vinny sound modules (0.1.3, GM UI)
+
+Build `local-20261005-123008-430` compiled with no script errors. Workbench play
+on GM_Eden (2026-10-05): all 28 "EXPBG Sound: ..." entries appear on System
+browser pages 8-10 with radio, war, crowd and EXPBG cards. Muslim prayer
+(imported Vinny recording, 1000 m) played `SOUND_EAS_VINNY_MUSLIM_PRAYER_R1000`,
+finished after 165.7 s and looped; Russian radio 3 (reused converted recording,
+50 m) started once the camera was inside its 50 m range
+(`SOUND_EAS_VINNY_RUSSIAN_3_R50`). Finite sources start only for listeners inside
+their audible range (existing radio behaviour). Not covered: the other 26 sounds
+individually, dedicated server/JIP, save/load.
+
 ## No Game Master Budget (0.1.2, GM UI)
 
 Workbench play on GM_Eden with the installed `local-20261005-111422-291` build

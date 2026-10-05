@@ -54,8 +54,10 @@ The only dependency is the base game (`58D0FB3206B6F859`).
 - **Intel Items**: placeable intel with GM-authored title and text.
 - **Ambient Civilians**: civilian population module and exclusion zones.
 - **Ambient Destruction**: permanent building damage, rubble and road wrecks.
-- **Ambient Sounds**: war ambience, radios, crowds and emergency-alert TVs; new
-  modules start OFF.
+- **Ambient Sounds**: war ambience, radios, crowds and emergency-alert TVs, plus
+  28 placeable EXPBG Sound modules from Vinny - Sounds (radio chatter, Hanoi
+  Hannah, firefights, shelling, jets, drone, market, prayer, traffic and sound
+  effects); new modules start OFF.
 - **Persistent Battlefield**: body/wreck lifetime rules, reconnect retention
   and spawn weapon safety. It overrides the vanilla `Character_Base` prefab and
   systems config. Bodies owned by Unit Caching cleanup are removed by that
