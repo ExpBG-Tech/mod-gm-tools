@@ -90,14 +90,16 @@ Native gates for the 0.1.4 source: build `local-20261005-183149-156` compiled wi
 - [ ] Unit Caching: every vanilla AUTO save fails while any cache zone is enabled (`Restore ALL zones for editing before saving` -> `[PERSISTENCE] Save failed`); decide (see GMO #21).
 - [-] Entity dialogs titled "Editing: Scenario properties": also on the vanilla character dialog, not caused by EXPBG.
 
-## M4: Old world cleanup (user confirms Workshop removal clicks)
-- [ ] Remove 6 standalone Workshop items: GM Optimizer F3B7C6FB18AB1F79, Intel Items E110000000000001, Ambient Civilians A9C45E82D6710B3F, Ambient Destruction E2A47D19C8B6503F, Ambient Sounds A93E9F6271894A3C, Persistent Battlefield 6A32DB878B264D05 (old CDF companions stay).
-- [ ] Re-create 23 sanitized public issues (drafts in `.local/issue-drafts/`), close 8 originals as obsolete, comment + close all originals with pointers.
-- [ ] Archive the 6 old repos with a pointer to mod-gm-tools.
-- [ ] Move the 6 local folders to the Recycle Bin.
+## M4: Old world cleanup
+- [ ] Remove 6 standalone Workshop items: GM Optimizer F3B7C6FB18AB1F79, Intel Items E110000000000001, Ambient Civilians A9C45E82D6710B3F, Ambient Destruction E2A47D19C8B6503F, Ambient Sounds A93E9F6271894A3C, Persistent Battlefield 6A32DB878B264D05 (old CDF companions stay). User removes them (decision 2026-10-06); verify afterwards.
+- [x] Issues migrated 2026-10-06: 23 sanitized public copies (mod-gm-tools #1-#19, mod-cdf-compat #1-#4; 6 closed as fixed in 0.1.4, 2 closed as done), 8 originals closed without migrating, all 31 originals closed with pointers. New M3 findings filed as mod-gm-tools #20-#25.
+- [x] 6 old repos archived 2026-10-06 with a description pointing to mod-gm-tools / mod-cdf-compat (all local commits verified present on the remotes first).
+- [-] Local folders: ~170 GB (Sounds 95 GB, Destruction 32 GB) exceed the ~50 GB C: Recycle Bin; user handles them (decision 2026-10-06). Release receipts/manifests copied to `.local/legacy-evidence` (400 files).
 
 ## M5: Issues to zero
-- [ ] Work every open issue; close obsolete ones with a comment.
+Decisions 2026-10-06: PB corpse protection 80 m (#19); native saves allowed when nothing is cached or pending (#23).
+- [ ] mod-gm-tools open: #1 #2 #4 (civilians), #9 #10 (sounds), #11 #12 #14 #15 (unit caching), #16 #17 (intel), #19 (PB), #20 #21 (civilians), #22 (sounds), #23 #24 (unit caching), #25 (intel manual check).
+- [ ] mod-cdf-compat open: #1 #2 #3.
 
 ## M6: New features (new addons in the GM Tools pack)
 
