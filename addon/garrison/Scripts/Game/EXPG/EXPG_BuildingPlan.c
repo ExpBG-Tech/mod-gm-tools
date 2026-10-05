@@ -33,7 +33,7 @@ class EXPG_BuildingReservation
 class EXPG_BuildingPlan
 {
  static const float GRID = 0.75;
- static const int MAX_NODES = 4096;
+ static const int MAX_NODES = 8192;
  IEntity Structure;
  vector Origin;
  vector Angles;
@@ -123,7 +123,7 @@ class EXPG_BuildingPlan
   building.GetBounds(Mins, Maxs);
   m_Width = Math.Ceil((Maxs[0] - Mins[0]) / GRID);
   m_Depth = Math.Ceil((Maxs[2] - Mins[2]) / GRID);
-  if (m_Width < 1 || m_Depth < 1 || m_Width * m_Depth > 2048 || Maxs[1] - Mins[1] > 40)
+  if (m_Width < 1 || m_Depth < 1 || m_Width * m_Depth > 6144 || Maxs[1] - Mins[1] > 60)
   { Fail("Structure exceeds the supported sampling bounds"); return; }
   for (int i = 0; i < m_Width * m_Depth; i++) { Columns.Insert(new EXPG_BuildingColumn()); }
   array<Managed> sentinels = {};
@@ -157,7 +157,14 @@ class EXPG_BuildingPlan
    if (part == Structure || m_Openings.Count() >= 64) continue;
    DoorComponent door = DoorComponent.Cast(part.FindComponent(DoorComponent));
    NavmeshCustomLinkComponent link = NavmeshCustomLinkComponent.Cast(part.FindComponent(NavmeshCustomLinkComponent));
-   if (door && link && link.HasLinkOfNavmeshType("Soldiers") && Math.AbsFloat(door.GetAngleRange()) > 1) m_TraversableDoors.Insert(part);
+   if (door && link && link.HasLinkOfNavmeshType("Soldiers") && Math.AbsFloat(door.GetAngleRange()) > 1)
+   {
+    m_TraversableDoors.Insert(part);
+    // Glass panes and handles swing with the leaf (observed blocking glazed doors).
+    array<IEntity> leaf = {part};
+    for (int c = 0; c < leaf.Count() && leaf.Count() < 16; c++)
+     for (IEntity sub = leaf[c].GetChildren(); sub && leaf.Count() < 16; sub = sub.GetSibling()) { leaf.Insert(sub); m_TraversableDoors.Insert(sub); }
+   }
    ResourceName prefab = SCR_ResourceNameUtils.GetPrefabName(part);
    bool window = Building.Cast(part) && (prefab.Contains("/Windows/") || prefab.Contains("/windows/"));
    if (!door && !window) continue;
@@ -218,8 +225,18 @@ class EXPG_BuildingPlan
   return structural;
  }
 
+ // Building floors, or bare ground inside an authored interior volume (barns,
+ // sheds). Terrain outside the house is never an indoor floor.
+ bool IndoorFloor(IEntity entity, vector point)
+ {
+  if (!Structure) return false;
+  if (StructuralFloor(entity)) return true;
+  return GenericTerrainEntity.Cast(entity) && m_InteriorBounds && !m_InteriorBounds.IsEmpty() && InteriorPoint(point + "0 0.1 0", 0);
+ }
+
  bool InteriorPoint(vector point, float margin = 0.23)
  {
+  if (!Structure) return false;
   vector local = Structure.CoordToLocal(point);
   if (m_InteriorBounds && !m_InteriorBounds.IsEmpty())
   {
@@ -237,7 +254,7 @@ class EXPG_BuildingPlan
   {
    TraceParam wall = new TraceParam();
    wall.Start = point + "0 0.9 0";
-   wall.End = wall.Start + vector.FromYaw(side * 90 + Angles[0]) * 40;
+   wall.End = wall.Start + vector.FromYaw(side * 90 + Angles[1]) * 40;
    wall.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
    if (GetGame().GetWorld().TraceMove(wall, null) < 0.999 && IsBuilding(wall.TraceEnt)) walls++;
   }
@@ -309,7 +326,7 @@ class EXPG_BuildingPlan
   if (excludeEntities) { trace.ExcludeArray = excludeEntities; }
   else { trace.Exclude = exclude; }
   float hit = GetGame().GetWorld().TraceMove(trace, null);
-  return hit < 0.999 && StructuralFloor(trace.TraceEnt) && trace.TraceNorm[1] > 0.65;
+  return hit < 0.999 && IndoorFloor(trace.TraceEnt, vector.Lerp(trace.Start, trace.End, hit)) && trace.TraceNorm[1] > 0.65;
  }
 
  bool ValidateSlots(int count, array<IEntity> excludeEntities = null)
@@ -343,7 +360,7 @@ class EXPG_BuildingPlan
  {
   for (int i = 0; i < 4; i++)
   {
-   vector direction = vector.FromYaw(i * 90 + Angles[0]);
+   vector direction = vector.FromYaw(i * 90 + Angles[1]);
    vector outside = point + direction * 2.25;
    if (Inside(outside)) { continue; }
    float ground = GetGame().GetWorld().GetSurfaceY(outside[0], outside[2]);
@@ -366,6 +383,86 @@ class EXPG_BuildingPlan
     previousY = floorPoint[1];
    }
    if (supported) { return true; }
+  }
+  return false;
+ }
+
+ // AI enter most houses through native doors, often over a raised floor or
+ // entry steps that the terrain probe above rejects. A node near the inside
+ // approach of a door on its floor is a root when a standing body fits straight
+ // through the doorway (along the frame's thin axis) and, past any porch that
+ // the interior volume still covers, reaches terrain at most 1.5 m below the
+ // floor over supported steps of at most 0.5 m. Upper-floor balconies fail.
+ bool DoorEntrance(vector point)
+ {
+  foreach (EXPG_BuildingOpening opening : m_Openings)
+  {
+   if (!opening.Door) continue;
+   vector door = opening.Position;
+   if (door[1] < point[1] + 0.2 || door[1] > point[1] + 2.5 || vector.DistanceXZ(door, point) > 2.0) continue;
+   vector frame[4]; opening.Part.GetWorldTransform(frame);
+   vector mins, maxs; opening.Part.GetBounds(mins, maxs);
+   vector normal = frame[2];
+   if (maxs[0] - mins[0] < maxs[2] - mins[2]) normal = frame[0];
+   normal[1] = 0;
+   if (normal.Length() < 0.1) continue;
+   normal.Normalize();
+   vector threshold = Vector(door[0], point[1], door[2]);
+   float side = vector.Dot(point - threshold, normal);
+   if (Math.AbsFloat(side) < 0.05) continue;
+   if (side < 0) normal = normal * -1;
+   vector inner = threshold + normal * 0.7;
+   bool approach = vector.DistanceXZ(point, inner) <= 1.2;
+   if (approach && vector.DistanceXZ(point, inner) > 0.05) approach = ClearBody(point, inner, null, null, true);
+   if (approach && WalkOut(inner, normal * -1)) return true;
+   // Fallback: straight from the node through the door centre (small sheds).
+   vector flat = Vector(door[0] - point[0], 0, door[2] - point[2]);
+   float distance = flat.Length();
+   if (distance < 0.1 || distance > 1.5) continue;
+   vector beyond = Vector(door[0], point[1], door[2]) + flat * (1.25 / distance);
+   if (Inside(beyond, 0.1) && InteriorPoint(beyond, 0)) continue;
+   float drop = point[1] - GetGame().GetWorld().GetSurfaceY(beyond[0], beyond[2]);
+   if (drop <= 1.5 && drop >= -0.5 && ClearBody(point, beyond, null, null, true)) return true;
+  }
+  return false;
+ }
+
+ // Open gateways and ramps without door components (barns, sheds): a node
+ // within 2 m of the footprint edge may walk straight out along a building axis.
+ bool PerimeterEntrance(vector point)
+ {
+  vector local = Structure.CoordToLocal(point);
+  float edge = Math.Min(Math.Min(local[0] - Mins[0], Maxs[0] - local[0]), Math.Min(local[2] - Mins[2], Maxs[2] - local[2]));
+  if (edge > 2.0) return false;
+  for (int side = 0; side < 4; side++)
+   if (WalkOut(point, vector.FromYaw(side * 90 + Angles[1]))) return true;
+  return false;
+ }
+
+ // Walk outward from a door's inside approach in 0.5 m steps (at most 4 m).
+ protected bool WalkOut(vector from, vector outward)
+ {
+  vector previous = from;
+  for (int step = 1; step <= 8; step++)
+  {
+   vector next = from + outward * (0.25 + 0.5 * step);
+   TraceParam foot = new TraceParam();
+   foot.Start = Vector(next[0], previous[1] + 0.3, next[2]);
+   foot.End = Vector(next[0], previous[1] - 0.6, next[2]);
+   foot.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   foot.LayerMask = EPhysicsLayerDefs.CharacterAI;
+   float hit = GetGame().GetWorld().TraceMove(foot, null);
+   if (hit >= 0.999 || foot.TraceNorm[1] < 0.65) return false;
+   next[1] = foot.Start[1] + (foot.End[1] - foot.Start[1]) * hit + 0.05;
+   if (!ClearBody(previous, Vector(next[0], Math.Max(next[1], previous[1]), next[2]), null, null, true)) return false;
+   previous = next;
+   if (Inside(next, 0.1) && InteriorPoint(next, 0)) continue;
+   // Outside the interior volume: succeed only once the footing is back on terrain,
+   // so railed or edged terraces and upper-floor balconies never become roots.
+   float ground = GetGame().GetWorld().GetSurfaceY(next[0], next[2]);
+   float drop = from[1] - ground;
+   if (drop > 1.5 || drop < -0.5) return false;
+   if (next[1] - ground <= 0.45) return true;
   }
   return false;
  }
@@ -400,12 +497,12 @@ class EXPG_BuildingPlan
   vector point = vector.Lerp(floor.Start, floor.End, fraction);
   m_Height = Structure.CoordToLocal(point)[1] - 0.15;
   if (m_Height <= Mins[1]) { NextColumn(); }
-  if (!StructuralFloor(floor.TraceEnt) || floor.TraceNorm[1] < 0.65) { return; }
+  if (!IndoorFloor(floor.TraceEnt, point) || floor.TraceNorm[1] < 0.65) { return; }
   point[1] = point[1] + 0.05;
   if (!Inside(point) || !ClearBody(point, point + "0 0.01 0")) { return; }
   TraceParam ceiling = new TraceParam();
   ceiling.Start = point + "0 1.8 0";
-  ceiling.End = point + "0 12 0";
+  ceiling.End = point + "0 30 0";
   ceiling.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
   if (GetGame().GetWorld().TraceMove(ceiling, null) >= 0.999 || !IsBuilding(ceiling.TraceEnt)) { return; }
   if (Nodes.Count() >= MAX_NODES) { Fail("Structure has too many interior samples"); return; }
@@ -413,7 +510,7 @@ class EXPG_BuildingPlan
   node.Position = point;
   // Sample belongs to the column before NextColumn advanced it.
   node.Column = z * m_Width + x;
-  node.Entrance = Entrance(point);
+  node.Entrance = Entrance(point) || DoorEntrance(point) || PerimeterEntrance(point);
   node.Interior = InteriorPoint(point);
   Columns[node.Column].Nodes.Insert(Nodes.Count());
   Nodes.Insert(node);
@@ -481,7 +578,7 @@ class EXPG_BuildingPlan
   if (m_Node >= Nodes.Count()) { m_Phase = 4; return; }
   EXPG_BuildingNode node = Nodes[m_Node++];
   if (!node.Reachable) { return; }
-  node.Look = vector.FromYaw(Angles[0]);
+  node.Look = vector.FromYaw(Angles[1]);
   if (node.Entrance) { node.Score = 70; }
   foreach (int link : node.Links)
   {

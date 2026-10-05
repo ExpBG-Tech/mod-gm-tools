@@ -686,7 +686,10 @@ class EXPG_GarrisonManager
   {
    m_PlanCursor = m_PlanCursor % m_Plans.Count();
    EXPG_BuildingPlan plan = m_Plans[m_PlanCursor++];
-   if (!plan.Done) { plan.Step(32); }
+   // About 4 ms of analysis per 100 ms pump: large buildings finish in seconds
+   // instead of minutes, and one expensive step batch cannot stall a frame.
+   int analysisStart = System.GetTickCount();
+   while (!plan.Done && System.GetTickCount() - analysisStart < 4) { plan.Step(8); }
    bool used;
    foreach (EXPG_GarrisonRecord record : m_Records) { if (record.Plan == plan && !record.Finished) { used = true; break; } }
    if (!used && Now() - plan.LastUsed > 120) { m_Plans.RemoveItem(plan); }
