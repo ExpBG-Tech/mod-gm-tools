@@ -259,11 +259,16 @@ modded class SCR_PlacingEditorComponent
   if (!manager || !manager.CanFit(building, members.Count(), reason)) { EXPG_Reply("Garrison was not placed. " + reason); return; }
   vector transform[4];
   building.GetWorldTransform(transform);
-  SCR_EditorPreviewParams params = SCR_EditorPreviewParams.CreateParams(transform);
   EEditableEntityBudget blockingBudget;
   SetPlacingFlag(EEditorPlacingFlags.CHARACTER_PLAYER, false);
-  if (!CanCreateEntity(params: params) || !CanPlaceEntityServer(editableSource, blockingBudget, false, false) || !IsThereEnoughBudgetToSpawn(editableSource))
+  // The building plan validates every post, so skip the preview transform: on
+  // sloped ground the building origin can fail the terrain-height check.
+  bool placeable = CanCreateEntity();
+  bool budget = CanPlaceEntityServer(editableSource, blockingBudget, false, false);
+  bool spawnBudget = IsThereEnoughBudgetToSpawn(editableSource);
+  if (!placeable || !budget || !spawnBudget)
   {
+   Print(string.Format("[EXPG GARRISON] placement refused: placing=%1 budget=%2 spawnBudget=%3 blocking=%4", placeable, budget, spawnBudget, typename.EnumToString(EEditableEntityBudget, blockingBudget)), LogLevel.WARNING);
    EXPG_Reply("The squad exceeds the editor budget or cannot be placed here.");
    return;
   }

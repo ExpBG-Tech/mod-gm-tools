@@ -2,6 +2,30 @@
 
 ## Pack 0.1.0 status (2026-10-05)
 
+GM UI and building coverage (Workbench play with computer use, then native survey):
+
+- Real GM flow: right-click building -> Add Garrison -> "Choose Garrison Squad"
+  picker -> squad selection. Two defects found and fixed: the picker was never
+  bound (`GetTopMenu()` never returns dialogs; now `FindMenuByPreset`), and the
+  server refused every vanilla squad (no vanilla group prefab has
+  `GROUPTYPE_INFANTRY`; the roster is now checked for editable characters).
+  The selection then reached analysis and capacity, and on a sloped row house
+  the editor placement/budget check refused. The placement check now skips the
+  preview transform (the building origin can fail its terrain-height test; the
+  building plan validates positions) and logs which check refused.
+- `tests/EXPG_BuildingSurvey.c` runs the production planner on one building of
+  each distinct prefab around Montignac, Saint-Philippe, Levie and Morton
+  (`tests/Run-Gameplay.ps1 -FixturePath tests/EXPG_BuildingSurvey.c`). Before:
+  most houses had floor samples but no entrance (only axis probes with terrain
+  within 0.45 m). Door entrances (straight doorway sweep, porch walk-out to
+  terrain), door glass excluded with its leaf, terrain floors inside authored
+  interiors, open gateways and larger bounds raised coverage to 91 of 160
+  prefabs; nearly all remaining ones are non-enterable (graves, walls, bridges,
+  tanks). `Angles[1]` is now used as yaw (it was pitch). Building analysis gets
+  about 4 ms per 100 ms pump instead of a fixed 32 steps.
+- Open: `Barn_E_01` (open barn) and the open `ShedMetal_02` have no positions;
+  the castle keep at Montfort has none.
+
 - Portable: `tests/Test-Tools.ps1` passes with the assembled pack (843 files,
   three merged overrides, no duplicate GUIDs).
 - Native compile: `build/pack-floorfix-20261005-0130/` compiled all seven modules as one
