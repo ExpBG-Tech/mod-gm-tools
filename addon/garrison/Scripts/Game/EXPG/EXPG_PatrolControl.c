@@ -21,6 +21,16 @@ class EXPG_PatrolSpeedSetting : SCR_AICharacterMovementSpeedSettingBase
 	}
 }
 
+// Logical route only; the Full adapter owns the actor's exact world transform.
+class EXPG_PatrolState
+{
+	int NodeIndex;
+	int Target = -1;
+	int Choice;
+	vector From;
+	vector To;
+}
+
 class EXPG_PatrolControl
 {
 	protected SCR_ChimeraCharacter m_Actor;
@@ -42,14 +52,24 @@ class EXPG_PatrolControl
 	protected vector m_To;
 	protected EMovementType m_PreviousSpeed;
 	protected bool m_Reserved;
+	protected bool m_ResumeTarget;
 	protected ref array<vector> m_Path = {};
 
-	bool Start(SCR_ChimeraCharacter actor, EXPG_BuildingPlan plan, int initialNode)
+	bool Start(SCR_ChimeraCharacter actor, EXPG_BuildingPlan plan, int initialNode, EXPG_PatrolState saved = null)
 	{
 		Release();
 		if (!Replication.IsServer() || !actor || !plan || !plan.Done || plan.Error != string.Empty || !plan.Valid()) { return false; }
-		if (initialNode < 0 || initialNode >= plan.Nodes.Count() || !plan.Nodes[initialNode].Reachable || plan.Nodes[initialNode].Links.IsEmpty()) { return false; }
-		if (vector.DistanceSq(actor.GetOrigin(), plan.Nodes[initialNode].Position) > 0.09) { return false; }
+		if (initialNode < 0 || initialNode >= plan.Nodes.Count() || !plan.Nodes[initialNode].Reachable || !plan.Nodes[initialNode].Interior || plan.Nodes[initialNode].Links.IsEmpty()) { return false; }
+		if (saved)
+		{
+			if (saved.NodeIndex != initialNode) { return false; }
+			if (saved.Target >= 0)
+			{
+				if (saved.Target >= plan.Nodes.Count() || !plan.Nodes[initialNode].Links.Contains(saved.Target) || !plan.Nodes[saved.Target].Reachable || !plan.Nodes[saved.Target].Interior || !plan.InteriorEdge(saved.From, saved.To) || !InEdgeCorridor(actor.GetOrigin(), saved.From, saved.To)) { return false; }
+			}
+			else if (vector.DistanceSq(actor.GetOrigin(), plan.Nodes[initialNode].Position) > 0.09) { return false; }
+		}
+		else if (vector.DistanceSq(actor.GetOrigin(), plan.Nodes[initialNode].Position) > 0.09) { return false; }
 		AIControlComponent control = actor.GetAIControlComponent();
 		if (!control || !control.GetAIAgent()) { return false; }
 		m_Actor = actor;
@@ -63,19 +83,43 @@ class EXPG_PatrolControl
 		m_Node = initialNode;
 		m_Choice = 0;
 		m_RetryAt = 0;
+		m_ResumeTarget = false;
+		if (saved)
+		{
+			m_Target = saved.Target;
+			m_Choice = saved.Choice;
+			m_From = saved.From;
+			m_To = saved.To;
+			m_ResumeTarget = saved.Target >= 0;
+		}
 		if (!IsOwnedActor() || !m_Utility.m_CombatMoveState || m_Utility.m_OwnerEntity != actor || !m_Settings || !m_Movement || m_Utility.EXPG_GetPostControl() || m_Utility.EXPG_GetPatrolControl() || m_Controller.EXPG_GetPatrolControl())
 		{
 			Release();
 			return false;
 		}
 		m_PreviousSpeed = m_Movement.GetMovementTypeWanted();
-		if (!m_Plan.ReserveNode(actor, initialNode)) { Release(); return false; }
+		bool reserved;
+		if (m_Target >= 0) { reserved = m_Plan.TryReserveEdge(actor, m_Node, m_Target); }
+		else { reserved = m_Plan.ReserveNode(actor, initialNode); }
+		if (!reserved) { Release(); return false; }
 		m_Reserved = true;
 		m_Speed = EXPG_PatrolSpeedSetting.Create();
 		if (!m_Settings.AddCharacterSetting(m_Speed, false, false)) { Release(); return false; }
 		m_Utility.EXPG_SetPatrolControl(this);
 		m_Controller.EXPG_SetPatrolControl(this);
 		return Tick();
+	}
+
+	EXPG_PatrolState CaptureState()
+	{
+		if (!IsOwnedActor()) { return null; }
+		EXPG_PatrolState saved = new EXPG_PatrolState();
+		saved.NodeIndex = m_Node;
+		saved.Target = m_Target;
+		saved.Choice = m_Choice;
+		saved.From = m_From;
+		saved.To = m_To;
+		return saved;
 	}
 
 	bool IsOwnedActor()
@@ -109,18 +153,19 @@ class EXPG_PatrolControl
 		int next = m_Target;
 		// A stopped actor mid-edge retains that whole edge and retries only its
 		// destination. It cannot cut diagonally to another neighbor of the old node.
-		if (next < 0 || AtNode(m_Node))
+		if (next < 0 || (!m_ResumeTarget && AtNode(m_Node)))
 		{
 			next = links[m_Choice % links.Count()];
 			m_Choice++;
 		}
 		vector from = m_Actor.GetOrigin();
 		vector to = m_Plan.Nodes[next].Position;
-		if (!m_Plan.Nodes[next].Reachable || !m_Plan.Inside(from, 0.25) || !m_Plan.Inside(to, 0.25) || !m_Plan.ClearBody(from, to, m_Actor)) { return true; }
+		if (!m_Plan.Nodes[next].Reachable || !m_Plan.Nodes[next].Interior || !m_Plan.InteriorEdge(from, to) || !m_Plan.ClearBody(from, to, m_Actor, null, true)) { return true; }
 		if (!m_Plan.TryReserveEdge(m_Actor, m_Node, next)) { return true; }
 		m_Target = next;
-		m_From = from;
+		if (!m_ResumeTarget) { m_From = from; }
 		m_To = to;
+		m_ResumeTarget = false;
 		m_Speed.Blocked = true;
 		m_Movement.SetMovementTypeWanted(EMovementType.IDLE);
 		m_EdgeDeadline = now + 10000;
@@ -153,6 +198,8 @@ class EXPG_PatrolControl
 		{
 			m_Speed.Blocked = false;
 			m_Movement.SetMovementTypeWanted(EMovementType.WALK);
+			// Admitted interior edge: remove only this patrol's native cap.
+			m_Actor.SetSpeedLimit(this, 1);
 		}
 		return true;
 	}
@@ -161,6 +208,10 @@ class EXPG_PatrolControl
 	{
 		if (m_Speed) { m_Speed.Blocked = true; }
 		if (m_Movement && m_Speed) { m_Movement.SetMovementTypeWanted(EMovementType.IDLE); }
+		// Desired IDLE and zero input do not stop native idle/formation locomotion
+		// (proven on fixed posts). The same source-owned minimum cap holds a blocked
+		// patrol; other owners' limits remain intact.
+		if (m_Actor && m_Speed) { m_Actor.SetSpeedLimit(this, 0, true); }
 	}
 
 	protected void Block()
@@ -229,6 +280,7 @@ class EXPG_PatrolControl
 	void Release()
 	{
 		Block();
+		if (m_Actor) { m_Actor.SetSpeedLimit(this, 1); }
 		if (m_Reserved && m_Plan) { m_Plan.ReleaseReservation(m_Actor); }
 		m_Reserved = false;
 		if (m_Utility && m_Utility.EXPG_GetPatrolControl() == this) { m_Utility.EXPG_SetPatrolControl(null); }
@@ -252,12 +304,28 @@ class EXPG_PatrolControl
 
 modded class SCR_CharacterControllerComponent
 {
+	protected EXPG_PostControl m_EXPG_PostControl;
+	EXPG_PostControl EXPG_GetPostControl() { return m_EXPG_PostControl; }
+	void EXPG_SetPostControl(EXPG_PostControl post) { m_EXPG_PostControl = post; }
 	protected EXPG_PatrolControl m_EXPG_PatrolControl;
 	EXPG_PatrolControl EXPG_GetPatrolControl() { return m_EXPG_PatrolControl; }
 	void EXPG_SetPatrolControl(EXPG_PatrolControl patrol) { m_EXPG_PatrolControl = patrol; }
 	protected override void OnPrepareControls(IEntity owner, ActionManager am, float dt, bool player)
 	{
 		super.OnPrepareControls(owner, am, dt, player);
+		if (m_EXPG_PostControl)
+		{
+			// Possession releases the native speed cap in the first input callback.
+			// Aiming, rotation, stance and weapon input stay native.
+			if (player || !m_EXPG_PostControl.IsOwnedActor()) { m_EXPG_PostControl.Release(); }
+			else
+			{
+				CharacterInputContext postInput = GetInputContext();
+				if (postInput) { postInput.SetMovement(0, vector.Zero); }
+			}
+		}
+		// Possession releases the patrol's native speed cap in the first input callback.
+		if (player && m_EXPG_PatrolControl) { m_EXPG_PatrolControl.Release(); }
 		if (!player && m_EXPG_PatrolControl)
 		{
 			CharacterInputContext input = GetInputContext();

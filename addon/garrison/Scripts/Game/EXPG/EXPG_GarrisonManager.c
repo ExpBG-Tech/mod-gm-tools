@@ -7,6 +7,7 @@ class EXPG_GarrisonMember
  ref EXPG_PostControl Post;
  // Patrol controller is bound only after its native movement contract is checked.
  ref EXPG_PatrolControl Patrol;
+ ref EXPG_PatrolState PatrolState;
  void ReleaseControl()
  {
   if (Plan && CacheMember) { Plan.ReleaseReservation(CacheMember.Entity); }
@@ -21,6 +22,9 @@ class EXPG_GarrisonRecord
  ref EXPG_BuildingPlan Plan;
  ref array<ref EXPG_GarrisonMember> Members = {};
  ref EBG_SimulationState Simulation;
+ ref EBG_CacheGroup FullRecord;
+ ref EXPG_FullCache Full;
+ int FreshRequested; // Nonzero only for the explicit just-spawned editor transaction.
  bool Ready;
  bool ReleaseRequested;
  bool Finished;
@@ -70,7 +74,7 @@ class EXPG_GarrisonRecord
    {
     if (member.Patrol) { continue; }
     member.Patrol = new EXPG_PatrolControl();
-    if (!member.Patrol.Start(cache.Entity, Plan, member.NodeIndex)) { member.Patrol = null; return false; }
+    if (!member.Patrol.Start(cache.Entity, Plan, member.NodeIndex, member.PatrolState)) { member.Patrol = null; return false; }
    }
   }
   return true;
@@ -81,6 +85,7 @@ class EXPG_GarrisonRecord
   ReleaseControls();
   if (Group)
   {
+   Group.EXPG_EndFreshRoster();
    Group.GetOnWaypointAdded().Remove(OnWaypoint);
    Group.EXPG_Active = false;
    Group.EXPG_Status = "Released";
@@ -112,6 +117,7 @@ class EXPG_GarrisonManager
  protected int m_PlanCursor;
  protected int m_RecordCursor;
  protected float m_NextPlayers;
+ protected int m_NextFullId = -1;
 
  static EXPG_GarrisonManager Get()
  {
@@ -226,9 +232,27 @@ class EXPG_GarrisonManager
   return saving && saving.IsBusy();
  }
 
+ static int PlacementCount(int requested, int slots)
+ {
+  if (requested < 1 || requested > 32 || slots < 1) { return 0; }
+  return Math.Min(requested, slots);
+ }
+
+ // Native damage destruction can remove the agent before controller.IsDead
+ // updates. Vanilla kill tasks and smart-action teardown also use DESTROYED
+ // as death; numeric health alone is deliberately not a casualty signal.
+ static bool IsDeadActor(SCR_ChimeraCharacter actor)
+ {
+  if (!actor) { return false; }
+  CharacterControllerComponent controller = actor.GetCharacterController();
+  if (controller && controller.IsDead()) { return true; }
+  DamageManagerComponent damage = actor.GetDamageManager();
+  return damage && damage.IsDestroyed();
+ }
+
  bool CanFit(IEntity building, int count, out string reason)
  {
-  if (SaveInProgress()) { reason = "Finish saving and resume the Optimizer before adding a garrison"; return false; }
+  if (SaveInProgress()) { reason = "Finish saving and resume Unit Caching before adding a garrison"; return false; }
   reason = "Choose an infantry squad with 1 to 32 members";
   if (count < 1 || count > 32) { return false; }
   foreach (EXPG_GarrisonRecord record : m_Records)
@@ -242,14 +266,28 @@ class EXPG_GarrisonManager
   plan.LastUsed = Now();
   if (!plan.Valid()) { reason = "Structure changed; close and reopen Add Garrison"; return false; }
   if (!plan.Error.IsEmpty()) { reason = plan.Error; return false; }
-  reason = string.Format("Structure fits %1 soldiers; choose a smaller squad", plan.Slots.Count());
-  if (count > plan.Slots.Count()) { return false; }
-  if (!plan.ValidateSlots(count)) { reason = "Structure positions changed or are obstructed; remove the obstruction or choose another building"; return false; }
+  int fitting = PlacementCount(count, plan.Slots.Count());
+  reason = "Structure has no verified safe infantry positions";
+  if (fitting == 0) { return false; }
+  if (!plan.ValidateSlots(fitting)) { reason = "Structure positions changed or are obstructed; remove the obstruction or choose another building"; return false; }
   reason = "";
   return true;
  }
 
  bool Adopt(SCR_AIGroup group, IEntity building, int playerId)
+ {
+  return AdoptInternal(group, building, playerId, 0);
+ }
+
+ // Only the successful native editor spawn callback may call this. Existing
+ // Adopt callers never authorize deleting soldiers to fit a smaller building.
+ bool AdoptFresh(SCR_AIGroup group, IEntity building, int playerId, int requestedCount)
+ {
+  if (requestedCount < 1 || requestedCount > 32 || !group || !group.EXPG_FreshRequestMatches(requestedCount)) { return false; }
+  return AdoptInternal(group, building, playerId, requestedCount);
+ }
+
+ protected bool AdoptInternal(SCR_AIGroup group, IEntity building, int playerId, int freshRequested)
  {
   if (!Replication.IsServer() || !group || !building || Find(group) || SaveInProgress()) { return false; }
   EXPG_BuildingPlan plan = FindPlan(building);
@@ -266,6 +304,7 @@ class EXPG_GarrisonManager
   record.Group = group;
   record.Plan = plan;
   record.CreatorId = playerId;
+  record.FreshRequested = freshRequested;
   record.Created = Now();
   group.EXPG_Active = true;
   group.GetOnWaypointAdded().Insert(record.OnWaypoint);
@@ -314,26 +353,69 @@ class EXPG_GarrisonManager
   if (!group.IsExpandComplete() || !group.EBG_HasCompletedInitialSpawn()) { return false; }
   array<AIAgent> agents = {};
   group.GetAgents(agents);
-  if (agents.IsEmpty() || agents.Count() > record.Plan.Slots.Count())
+  if (record.FreshRequested > 0 && !group.EXPG_FreshRosterMatches(record.FreshRequested))
+  { record.Report("Fresh squad membership changed; retained as normal AI"); record.ReleaseRequested = true; return false; }
+  int fitting = PlacementCount(agents.Count(), record.Plan.Slots.Count());
+  if (fitting == 0 || (agents.Count() > fitting && record.FreshRequested == 0) || (record.FreshRequested > 0 && agents.Count() != record.FreshRequested))
   { record.Report("Squad cannot fit safely; retained as a normal squad"); record.ReleaseRequested = true; return false; }
   array<IEntity> originals = {};
   foreach (AIAgent agent : agents)
   {
    SCR_ChimeraCharacter actor = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
-   if (!actor || !actor.GetCharacterController() || actor.GetCharacterController().IsPlayerControlled() || actor.IsInVehicle())
+   if (!EligiblePlacement(actor, group))
    { record.Report("Squad contains unsupported occupants; retained as a normal squad"); record.ReleaseRequested = true; return false; }
    if (EBG_CacheManager.Instance && EBG_CacheManager.Instance.FindMember(actor))
-   { record.Report("Squad member already has Optimizer ownership; garrison assignment refused"); record.ReleaseRequested = true; return false; }
+   { record.Report("Squad member already has Unit Caching ownership; garrison assignment refused"); record.ReleaseRequested = true; return false; }
    originals.Insert(actor);
+  }
+  // Preserve the native leader when reducing a freshly spawned roster.
+  IEntity leader = group.GetLeaderEntity();
+  int leaderIndex = originals.Find(leader);
+  if (leaderIndex > 0)
+  {
+   IEntity first = originals[0];
+   originals[0] = leader;
+   originals[leaderIndex] = first;
   }
   // Analysis ran while the picker was open. Validate all selected places again
   // before moving anyone; ignore only this squad's original spawn positions.
-  if (!record.Plan.ValidateSlots(agents.Count(), originals))
+  if (!record.Plan.ValidateSlots(fitting, originals))
   { record.Report("Structure positions changed or are obstructed; retained as a normal squad"); record.ReleaseRequested = true; return false; }
-  int index;
-  foreach (AIAgent agent : agents)
+  // Complete deletion preflight before the first mutation. A refused/late
+  // ownership change never retries trimming or refills a casualty.
+  for (int surplus = fitting; surplus < originals.Count(); surplus++)
   {
-   SCR_ChimeraCharacter actor = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
+   SCR_EditableEntityComponent extra = SCR_EditableEntityComponent.GetEditableEntity(originals[surplus]);
+   if (!extra || extra.HasEntityFlag(EEditableEntityFlag.NON_DELETABLE))
+   { record.Report("Fresh squad surplus cannot be deleted safely; retained as normal AI"); record.ReleaseRequested = true; return false; }
+  }
+  bool fresh = record.FreshRequested > 0;
+  record.FreshRequested = 0;
+  group.EBG_UseCapturedRoster();
+  for (int surplus = originals.Count() - 1; surplus >= fitting; surplus--)
+  {
+   if (!group.EXPG_FreshRosterMatches(originals.Count()))
+   { record.Report("Fresh squad provenance changed; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+   foreach (IEntity candidate : originals)
+   {
+    if (!EligiblePlacement(SCR_ChimeraCharacter.Cast(candidate), group))
+    { record.Report("Fresh squad ownership changed during trimming; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+   }
+   SCR_EditableEntityComponent extra = SCR_EditableEntityComponent.GetEditableEntity(originals[surplus]);
+   if (!extra || extra.HasEntityFlag(EEditableEntityFlag.NON_DELETABLE) || !group.EXPG_ExpectFreshRemoval(originals[surplus]) || !extra.Delete(false, false) || originals[surplus])
+   { record.Report("Native surplus deletion was not acknowledged; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+   originals.RemoveOrdered(surplus);
+  }
+  // Deletion callbacks may modify the roster. Check the remaining identities
+  // before positioning anyone, then retire this one-shot deletion authority.
+  if (fresh && !group.EXPG_FreshRosterMatches(originals.Count()))
+  { record.Report("Fresh squad changed after trimming; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+  group.EXPG_EndFreshRoster();
+  int index;
+  foreach (IEntity original : originals)
+  {
+   SCR_ChimeraCharacter actor = SCR_ChimeraCharacter.Cast(original);
+   if (!EligiblePlacement(actor, group)) { record.ReleaseRequested = true; return false; }
    EXPG_GarrisonMember member = new EXPG_GarrisonMember();
    member.Plan = record.Plan;
    member.CacheMember = new EBG_CacheMember();
@@ -360,8 +442,16 @@ class EXPG_GarrisonManager
   return true;
  }
 
+ protected bool EligiblePlacement(SCR_ChimeraCharacter actor, SCR_AIGroup group)
+ {
+  if (!actor || actor.GetCharacterGroup() != group || actor.IsInVehicle() || actor.EBG_WasPlayerControlled()) { return false; }
+  CharacterControllerComponent controller = actor.GetCharacterController();
+  return controller && !controller.IsDead() && !controller.IsUnconscious() && !controller.IsPlayerControlled();
+ }
+
  protected bool Wake(EXPG_GarrisonRecord record)
  {
+  if (record.Full) { return WakeFull(record); }
   // This record is outside Optimizer's zone registry; observe casualties and
   // possession before its adapter restores the retained original actors.
   foreach (EXPG_GarrisonMember member : record.Members)
@@ -369,7 +459,7 @@ class EXPG_GarrisonManager
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
    if (!actor) { continue; }
    CharacterControllerComponent controller = actor.GetCharacterController();
-   if (controller && controller.IsDead()) { member.CacheMember.Dead = true; member.ReleaseControl(); }
+   if (IsDeadActor(actor)) { member.CacheMember.Dead = true; member.ReleaseControl(); }
    if (controller && (controller.IsPlayerControlled() || actor.EBG_WasPlayerControlled()))
    { member.CacheMember.WasPlayer = true; record.ReleaseRequested = true; member.ReleaseControl(); }
   }
@@ -392,15 +482,105 @@ class EXPG_GarrisonManager
   return true;
  }
 
+ protected bool WakeFull(EXPG_GarrisonRecord record)
+ {
+  EXPG_FullCache full = record.Full;
+  full.ObserveAndHold();
+  EBG_FullGroupPhase state = full.GetState();
+  if (state == EBG_FullGroupPhase.CACHED || state == EBG_FullGroupPhase.FAILED)
+  {
+   if (Now() < record.RetryAt) { return false; }
+   record.RetryAt = Now() + 5;
+   if (!full.BeginWake()) { record.Report("Full recovery held: " + full.GetError()); return false; }
+  }
+  full.Poll();
+  if (full.GetState() != EBG_FullGroupPhase.READY)
+  {
+   if (full.GetState() == EBG_FullGroupPhase.FAILED) { record.Report("Full recovery held: " + full.GetError()); }
+   else { record.Report("Restoring Full survivors"); }
+   return false;
+  }
+  // Validate actual restored positions before binding; never snap an actor to
+  // its old initial slot. A failed rebind keeps group and per-actor LOD holds.
+  if (!record.ReleaseRequested)
+  {
+   foreach (EXPG_GarrisonMember member : record.Members)
+   {
+    if (member.CacheMember.Dead || member.CacheMember.WasPlayer) { continue; }
+    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
+    if (!actor || actor.GetCharacterGroup() != record.Group || !record.Plan.Inside(actor.GetOrigin(), 0.25) || !record.Plan.Supported(actor.GetOrigin(), 0.2, actor) || !record.Plan.ClearBody(actor.GetOrigin(), actor.GetOrigin() + "0 0.01 0", actor))
+    { record.Report("Full recovery held: restored position or membership is unsafe"); return false; }
+   }
+   if (!record.BindControls()) { record.Report("Full recovery held: guard controls not ready"); return false; }
+  }
+  else { record.ReleaseControls(); }
+  // Save/Force Move first materializes every survivor, then releases normal AI
+  // without reassigning it to the building. Controls already exist otherwise.
+  if (!full.ReleaseRestored()) { record.Report("Full recovery held: " + full.GetError()); return false; }
+  if (!record.Group) { record.ReleaseRequested = true; }
+  record.Full = null;
+  record.FullRecord = null;
+  foreach (EXPG_GarrisonMember member : record.Members) { member.PatrolState = null; }
+  record.Created = Now();
+  record.ClearSince = -1;
+  record.Report("Garrison restored");
+  return true;
+ }
+
+ protected void TryFullSleep(EXPG_GarrisonRecord record)
+ {
+  SCR_AIGroup group = record.Group;
+  if (!group || group.EBG_Exclude || group.IsSlave() || group.GetMaster() || group.IsCreatedByCommander() || !group.EBG_HasCompletedInitialSpawn())
+  { record.Report("Full cache held: group has external ownership"); return; }
+  EBG_CacheGroup captured = new EBG_CacheGroup();
+  captured.Id = m_NextFullId--;
+  captured.Group = group;
+  captured.Anchor = record.Plan.Origin;
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   EBG_CacheMember cache = member.CacheMember;
+   captured.Members.Insert(cache);
+   if (cache.Dead) { captured.Dead++; continue; }
+   if (cache.WasPlayer || !EligiblePlacement(cache.Entity, group)) { record.Report("Full cache held: survivor ownership changed"); return; }
+   string problem = EBG_SimulationCache.Unsupported(cache.Entity, false);
+   if (!problem.IsEmpty()) { record.Report("Full cache held: " + problem); return; }
+   if (!member.Fixed)
+   {
+    if (!member.Patrol) { record.Report("Full cache held: patrol state unavailable"); return; }
+    member.PatrolState = member.Patrol.CaptureState();
+    if (!member.PatrolState) { record.Report("Full cache held: patrol ownership changed"); return; }
+    member.NodeIndex = member.PatrolState.NodeIndex;
+   }
+   captured.FullMembers.Insert(cache);
+   captured.Alive++;
+  }
+  record.FullRecord = captured;
+  record.Full = new EXPG_FullCache();
+  record.Full.SetRecord(captured);
+  record.Full.SetOwner(record);
+  record.ReleaseControls();
+  if (record.Full.BeginManagedSleep(group)) { record.Report("Full cached (prefab-default kits on restore)"); return; }
+  string failure = record.Full.GetError();
+  if (record.Full.HasDeletionAttempted())
+  { record.Report("Full recovery retained: " + failure); return; }
+  // No native deletion: abandon only this unused transaction and rebind the
+  // untouched actors. Once deletion starts the transaction must survive retries.
+  record.Full = null;
+  record.FullRecord = null;
+  if (!record.BindControls()) { record.ReleaseRequested = true; }
+  record.Report("Full cache held: " + failure);
+ }
+
  protected void TrySleep(EXPG_GarrisonRecord record)
  {
   // CDF alone bypasses Optimizer's save-admission hook. Keep originals active
   // rather than let that path serialize suppressed presentation/AI state.
   array<string> addons = {};
   GameProject.GetLoadedAddons(addons);
-  if (addons.Contains("6A1876F37D65AB09") && !addons.Contains("8C5A6D9E73B241F0"))
-  { record.Report("Cache held: CDF requires the Optimizer CDF companion for save protection"); return; }
+  if (addons.Contains("6A1876F37D65AB09") && !addons.Contains("07BC942D90324CD9"))
+  { record.Report("Cache held: CDF requires the EXPBG GM Tools CDF companion for save protection"); return; }
   if (EBG_OptimizerControl.Preparing || EBG_CacheSnapshot.Loading) { return; }
+  if (record.Group.EXPG_CacheMode == 2) { TryFullSleep(record); return; }
   string reason;
   record.Simulation = EBG_SimulationCache.Suspend(record.Group, reason);
   if (record.Simulation) { record.Report("Simulation cached"); }
@@ -419,18 +599,26 @@ class EXPG_GarrisonManager
    if (!check.CacheMember.Dead && !record.Plan.Supported(record.Plan.Nodes[check.NodeIndex].Position, 0.2, check.CacheMember.Entity))
    { record.Report("Structure position destroyed; releasing survivors"); record.ReleaseRequested = true; }
   }
+  if (record.Full)
+  {
+   bool wakeFull = record.ReleaseRequested || !record.Group || record.Group.EXPG_CacheMode != 2;
+   if (record.Group && Near(record, record.Group.EXPG_WakeDistance)) { wakeFull = true; }
+   if (record.Full.GetState() != EBG_FullGroupPhase.CACHED) { wakeFull = true; }
+   if (!wakeFull || !Wake(record)) { return; }
+  }
   if (record.Simulation)
   {
-   bool wake = record.ReleaseRequested || !record.Group || record.Group.EXPG_CacheMode == 0;
+   bool wake = record.ReleaseRequested || !record.Group || record.Group.EXPG_CacheMode != 1;
    if (record.Group && Near(record, record.Group.EXPG_WakeDistance)) { wake = true; }
    if (!record.Simulation.Suspended) { wake = true; }
    // Death, external deletion and possession must release sleeping originals,
    // even when no player has crossed the distance boundary.
    foreach (EXPG_GarrisonMember sleeping : record.Members)
    {
-    SCR_ChimeraCharacter actor = sleeping.CacheMember.Entity;
-    if (sleeping.CacheMember.Dead) { continue; }
-    if (!actor || actor.GetCharacterGroup() != record.Group || actor.EBG_WasPlayerControlled()) { wake = true; record.ReleaseRequested = true; break; }
+   SCR_ChimeraCharacter actor = sleeping.CacheMember.Entity;
+   if (sleeping.CacheMember.Dead) { continue; }
+   if (IsDeadActor(actor)) { wake = true; break; }
+   if (!actor || actor.GetCharacterGroup() != record.Group || actor.EBG_WasPlayerControlled()) { wake = true; record.ReleaseRequested = true; break; }
     CharacterControllerComponent controller = actor.GetCharacterController();
     if (!controller || controller.IsDead() || controller.IsPlayerControlled()) { wake = true; break; }
    }
@@ -452,7 +640,7 @@ class EXPG_GarrisonManager
    SCR_ChimeraCharacter actor = cached.Entity;
    if (!actor) { record.ReleaseRequested = true; unsafe = true; continue; }
    CharacterControllerComponent controller = actor.GetCharacterController();
-   if (controller && controller.IsDead()) { cached.Dead = true; member.ReleaseControl(); continue; }
+   if (IsDeadActor(actor)) { cached.Dead = true; member.ReleaseControl(); continue; }
    alive++;
    cached.Position = actor.GetOrigin();
    if (!controller || controller.IsPlayerControlled() || actor.EBG_WasPlayerControlled() || actor.GetCharacterGroup() != record.Group)

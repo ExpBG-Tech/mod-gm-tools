@@ -19,7 +19,7 @@ modded class EBG_OptimizerControl
    EXPG_GarrisonManager.RequestReleaseAll();
    Pending = Math.Max(1, Pending);
    if (State != 3) { State = 1; }
-   Message = "Garrison restoration/release pending. Optimizer readiness will be checked after release.";
+   Message = "Garrison restoration/release pending. Unit Caching readiness will be checked after release.";
    EBG_OptimizerControl.Publish();
    return;
   }
@@ -68,7 +68,7 @@ modded class EBG_CacheSnapshot
  {
   if (EXPG_GarrisonManager.HasActive())
   {
-   reason = "Use Optimizer Prepare for Save to restore and release all garrisons, then wait for Ready. Garrison assignments are mission-only.";
+   reason = "Use Unit Caching Prepare for Save to restore and release all garrisons, then wait for Ready. Garrison assignments are mission-only.";
    return false;
   }
   return super.CanSave(reason);
@@ -82,7 +82,7 @@ modded class EBG_MissionPersistenceSerializer
  {
   if (EXPG_GarrisonManager.HasActive())
   {
-   Print("[EXPG SAVE] Refused active garrison ownership. Use Optimizer Prepare for Save and wait for Ready; assignments are mission-only.", LogLevel.ERROR);
+   Print("[EXPG SAVE] Refused active garrison ownership. Use Unit Caching Prepare for Save and wait for Ready; assignments are mission-only.", LogLevel.ERROR);
    return ESerializeResult.ERROR;
   }
   return super.Serialize(instance, context);

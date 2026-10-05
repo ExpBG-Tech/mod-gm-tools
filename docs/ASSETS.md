@@ -19,5 +19,12 @@ The final banner editing prompt was:
 > discreet smaller subtitle GARRISON beneath GM TOOLS to identify the first included
 > feature. Keep everything legible with comfortable margins. No other changes.
 
-Native texture conversion and in-engine visual acceptance remain pending. PNGs
-are source artwork, not evidence of a compiled texture or packaged rendering.
+The square card was imported with Workbench's native Reimport action. The resulting
+`EXPG_Card.edds` is 313 x 313 pixels (294246 bytes), with resource GUID
+`5ACF724CA7564555`. Import receipt and rendered preview are retained under
+`build/root-art-ui-20261004-180502/`. The indexed native build
+`build/root-garrison-full-20261004-1824/` includes that texture.
+
+Actual packaged UI presentation remains unverified. The native squad selector
+does not expose a header-image field in its display config. The small context
+menu icon remains a stock icon; the detailed poster is not suitable at that size.

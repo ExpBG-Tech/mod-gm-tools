@@ -1,9 +1,60 @@
 # EXPBG GM Tools validation gates
 
-Portable tooling and GitHub CI passed on 2026-10-05. Native Game script compile
-and the ResourceManager graph/ticket/settings/corridor contract fixture passed.
-Artwork import stalled. The real house fixture ran and failed placement capacity
-(1 safe slot for a requested four-person fireteam), before spawning actors.
+Earlier portable tooling, GitHub CI, native compile and scalar contracts passed
+on 2026-10-05. Native artwork import and Resource Browser preview passed.
+The original real house fixture failed capacity before spawning actors: closed
+native doors isolated the interior, leaving two reachable exterior porch samples.
+That evidence remains under `build/gameplay-20261004-181506-740`. The revised
+door-aware planner, standing/interior checks, fresh-squad trimming and Full-cache
+integration compiled in `build/root-garrison-full-20261004-1824/`; contracts passed
+in `build/contracts-20261004-182429-417/`. The house still had only two slots in
+`build/gameplay-20261004-182511-833/`. Boundary diagnostics in
+`build/gameplay-20261004-182839-199/` proved an omitted diagonal edge clear of both
+body and floor obstacles. The resulting eight-neighbor correction, exact fresh
+roster tracking, interior patrol checks and Full failure-path fixes compiled in
+`build/root-garrison-full-20261004-1840/`; contracts passed in
+`build/contracts-20261004-183804-041/`. World run
+`build/gameplay-20261004-183828-944/` reached nine safe slots, four actors in one
+group and five seconds of fixed-post retention, then failed on premature release
+before Simulation sleep. Later native build
+`build/root-garrison-posthold-20261004-1855/` passed compilation, but native run
+`build/gameplay-20261004-185751-652/` proved that the controller's zero movement
+input and IDLE wanted/override values did not prevent displacement. GuardHouse
+run `build/gameplay-20261004-190234-938/` measured 23 slots and admitted four fresh
+actors in one group, then failed the same retention check. It supplies no actual
+roster-reduction evidence. A labeled test-only native maximum-speed hypothesis
+in `build/gameplay-20261004-190538-307/` passed awake retention, Simulation sleep
+and wake, and one Full restore of all four survivors: world transforms matched
+within 0.001 at each observed Poll and before release, and assignments were bound
+before resuming AI. The run stopped at the fixture's undocumented Boolean-return
+assumption about `SetHealthScaled(0)`, before observing actual death. It exited
+normally but did not pass the fixture. Production speed-cap build
+`build/root-garrison-speedcap-20261004-1913/` and contracts passed. Its world run
+`build/gameplay-20261004-191609-524/` passed Simulation and the first Full restore,
+then held the second restore at the position-safety gate. Death-order build
+`build/root-garrison-deathorder-20261004-1934/` also compiled successfully; it
+recognizes the native destroyed damage state before group-transfer checks.
+Diagnostic run `build/gameplay-20261004-194816-251/` uses the supported damage
+`Kill` path and observes actual controller death, ledger retirement and three
+native survivors. The second restore recreates those three at their captured
+world transforms. Its broad body query hits the casualty's helmet and vest,
+while otherwise identical CharacterAI and Character collision queries are clear.
+ClearBody now uses the native CharacterAI interaction matrix; structural support
+and geometry checks remain required. Build
+`build/root-garrison-charcollision-20261004-1956/` compiled successfully.
+`build/gameplay-20261004-195632-008/` then passed the complete default fixture:
+native exit 0, receipt `passed=true`, 57 checks and zero failures, normal shutdown
+and no SCRIPT (E) entries. The real house still measured nine positions; four
+actors retained one group and their fixed posts through Simulation and both Full
+cycles (four survivors, then three after native death). Captured world matrices
+and assignments matched. Native crouch/stand state, head aim and separate body
+rotation passed while held; Force Move removed controls and stayed released for
+ten seconds. This does not establish arrival at the Force Move destination.
+The same diagnostic shows deferred LOD activation settling on the next frame;
+no LOD-policy correction is justified by that evidence. Real combat/firing,
+fresh-roster reduction, blocked patrols, other buildings, interactive GM actions,
+distance-triggered wake, multiplayer/JIP and publication remain open. Portable
+structural checks passed. A separate real-wall collision control is prepared.
 Actual gameplay acceptance remains open. Do not publish an
 unvalidated payload as a completed release.
 
@@ -15,7 +66,7 @@ unvalidated payload as a completed release.
 | Placement | Windows/doors/stairs, rotations, disconnected floor and roof rejection |
 | Behavior | Guards hold during combat while aiming/firing/crouching; overflow stays inside |
 | Orders | Real Force Move releases active/cached/restoring squads permanently |
-| Caching | Two Simulation cycles, same actors/equipment/casualties, post resumption, no duplicate owner |
+| Caching | Simulation retains original actors; two Full cycles preserve captured transforms/assignments and exclude casualties, no duplicate owner |
 | Lifecycle | Collapse, deletion, possession, transfer, GM disconnect during picker |
 | Ownership transfer | Both directions between Optimizer and Garrison while sleeping; pending regroup cannot commit until original snapshots and controls release |
 | Save admission | No intermediate Ready publication; Enable/Resume stays blocked until release; native GM and Optimizer-CDF export refusal |
@@ -28,12 +79,13 @@ Orchestrator before any Workbench/client/server launch. Existing GME or Optimize
 fixtures prove only their tested contract, not this new garrison behavior.
 
 `tests/Run-Contracts.ps1` runs graph connectivity/reservation geometry, editor
-ticket replay/expiry, attribute bounds and route corridor contracts in an isolated
+ticket replay/expiry, attribute bounds, safe-capacity selection, CREATED-slot
+no-replenishment and route corridor contracts in an isolated
 ResourceManager copy. It requires an indexed source snapshot and an explicit
 `-OrchestratorSlotGranted` acknowledgement. This does not launch a gameplay world.
 
 Cold restoration of garrison assignments is not supported. Check the native
 save refusal and Optimizer-CDF refusal while active, then Prepare for Save,
-await original actor restoration and ownership release, and save ordinary squads.
+await survivor restoration and ownership release, and save ordinary squads.
 CDF without its Optimizer companion bypasses the save hook: caching must refuse
 to suspend actors in that configuration.

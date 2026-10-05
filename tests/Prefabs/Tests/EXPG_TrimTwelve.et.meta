@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{383447BBD154428E}Prefabs/Tests/EXPG_TrimTwelve.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

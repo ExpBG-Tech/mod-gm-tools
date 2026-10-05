@@ -27,6 +27,7 @@ class EXPG_PostControl
 	protected SCR_AIUtilityComponent m_Utility;
 	protected SCR_AICharacterSettingsComponent m_Settings;
 	protected AICharacterMovementComponent m_Movement;
+	protected SCR_CharacterControllerComponent m_Controller;
 	protected ref EXPG_PostSpeedSetting m_SpeedSetting;
 	protected EMovementType m_PreviousMovement;
 	protected vector m_Position;
@@ -50,7 +51,8 @@ class EXPG_PostControl
 		SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
 		SCR_AICharacterSettingsComponent settings = SCR_AICharacterSettingsComponent.Cast(agent.FindComponent(SCR_AICharacterSettingsComponent));
 		AICharacterMovementComponent movement = AICharacterMovementComponent.Cast(actor.FindComponent(AICharacterMovementComponent));
-		if (!utility || !utility.m_CombatMoveState || utility.m_OwnerEntity != actor || !settings || !movement || utility.EXPG_GetPostControl() || utility.EXPG_GetPatrolControl())
+		SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(actor.GetCharacterController());
+		if (!utility || !utility.m_CombatMoveState || utility.m_OwnerEntity != actor || !settings || !movement || !controller || controller.EXPG_GetPostControl() || utility.EXPG_GetPostControl() || utility.EXPG_GetPatrolControl())
 		{
 			return false;
 		}
@@ -61,6 +63,7 @@ class EXPG_PostControl
 		m_Utility = utility;
 		m_Settings = settings;
 		m_Movement = movement;
+		m_Controller = controller;
 		m_Position = position;
 		m_LookDirection = lookDirection;
 		if (vector.DistanceSq(lookDirection, vector.Zero) > 0.01)
@@ -81,7 +84,13 @@ class EXPG_PostControl
 			return false;
 		}
 		m_Utility.EXPG_SetPostControl(this);
-		return Tick();
+		m_Controller.EXPG_SetPostControl(this);
+		if (!Tick()) { return false; }
+		// Native idle/formation motion can bypass desired speed and input values.
+		// The character's source-owned minimum cap also gates native locomotion.
+		// Other owners' slowdowns remain intact when this post releases its entry.
+		m_Actor.SetSpeedLimit(this, 0, true);
+		return true;
 	}
 
 	bool IsOwnedActor()
@@ -129,6 +138,8 @@ class EXPG_PostControl
 
 	void Release()
 	{
+		if (m_Actor) { m_Actor.SetSpeedLimit(this, 1); }
+		if (m_Controller && m_Controller.EXPG_GetPostControl() == this) { m_Controller.EXPG_SetPostControl(null); }
 		if (m_Utility && m_Utility.EXPG_GetPostControl() == this)
 		{
 			m_Utility.EXPG_SetPostControl(null);
@@ -151,6 +162,7 @@ class EXPG_PostControl
 		m_SpeedSetting = null;
 		m_Settings = null;
 		m_Movement = null;
+		m_Controller = null;
 		m_Utility = null;
 		m_Group = null;
 		m_Agent = null;

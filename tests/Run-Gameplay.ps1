@@ -2,10 +2,38 @@
 param(
  [Parameter(Mandatory)][string]$SourceSnapshot,
  [switch]$OrchestratorSlotGranted,
+ [switch]$FreshTrim,
+ [switch]$BodyClearance,
+ [string]$FixturePath = '',
  [ValidateRange(300,600)][int]$TimeoutSeconds = 360
 )
 $ErrorActionPreference = 'Stop'
+function Test-GameplayEvidence([string]$Text, [bool]$Trim) {
+ if ($Text -notmatch 'Game destroyed' -or $Text -match 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed') { return $false }
+ $mode = [int]$Trim
+ $requested = 4
+ if ($Trim) { $requested = 12 }
+ $case = [regex]::Match($Text, "\[EXPG CAPACITY CASE\] freshTrim=$mode requested=$requested expected=(\d+) capacity=(\d+)")
+ if (!$case.Success) { return $false }
+ $count = [int]$case.Groups[1].Value
+ $capacity = [int]$case.Groups[2].Value
+ if ($Trim) {
+  if ($count -ne 9 -or $capacity -ne 9 -or $Text -notmatch '\[EXPG TRIM RESULT\] admitted=12 before=12 retained=9 acknowledged=3 deleted=3 leaderPreserved=1 originals=1') { return $false }
+ } elseif ($count -ne 4 -or $capacity -lt 4) { return $false }
+ $survivors = $count - 1
+ return $Text -match "\[EXPG GAMEPLAY RESULT\] phase=10 checks=\d+ failures=0 actors=$count fixedPosts=[1-9]\d* reason=completed" -and
+  $Text -match "\[EXPG FULL CYCLE\] cycle=1 living=$count transformParity=1 assignments=1" -and
+  $Text -match "\[EXPG FULL CYCLE\] cycle=2 living=$survivors transformParity=1 assignments=1"
+}
+function Test-BodyClearanceEvidence([string]$Text) {
+ if ($Text -notmatch 'Game destroyed' -or $Text -match 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed') { return $false }
+ return $Text -match '\[EXPG BODY RESULT\] checks=\d+ failures=0 attempts=[1-9]\d* verifiedBlock=1 reason=completed' -and
+  $Text -match '\[EXPG BODY CHECK\] pass=1 production body clearance rejects real solid wall' -and
+  $Text -match '\[EXPG BODY CHECK\] pass=1 native wall deletion acknowledged' -and
+  $Text -match '\[EXPG BODY CHECK\] pass=1 same point and geometry clear after wall deletion'
+}
 if (!$OrchestratorSlotGranted) { throw 'Explicit orchestrator native-slot handoff required. This launches a diagnostic server.' }
+if ($BodyClearance -and $FreshTrim) { throw 'Select one fixture kind.' }
 $repo = Split-Path -Parent $PSScriptRoot
 $config = & "$repo/tools/Get-LocalConfig.ps1"
 $project = & "$repo/tools/Get-ProjectConfig.ps1"
@@ -14,6 +42,12 @@ function Assert-NativeSlot {
  if (Get-Process -Name $nativeNames -ErrorAction SilentlyContinue) { throw 'Native slot occupied; no existing process will be stopped.' }
 }
 Assert-NativeSlot
+if (!$FixturePath) {
+ $FixturePath = Join-Path $PSScriptRoot 'EXPG_GarrisonGameplay.c'
+ if ($BodyClearance) { $FixturePath = Join-Path $PSScriptRoot 'EXPG_BodyClearance.c' }
+}
+$FixturePath = (Resolve-Path -LiteralPath $FixturePath).Path
+if (!(Test-Path -LiteralPath $FixturePath -PathType Leaf)) { throw 'FixturePath must identify a frozen gameplay script.' }
 $source = (Resolve-Path -LiteralPath $SourceSnapshot).Path
 if (!(Test-Path -LiteralPath "$source/resourceDatabase.rdb" -PathType Leaf)) { throw 'Use a built/indexed addon snapshot.' }
 $sourceProject = Join-Path $source $project.addon.project
@@ -28,19 +62,31 @@ Copy-Item -LiteralPath $source -Destination (Join-Path $addons $project.addon.na
 $fixture = Join-Path $addons 'EXPG_GameplayFixture'
 $logs = Join-Path $run 'logs'
 New-Item -ItemType Directory -Path "$fixture/Scripts/Game","$fixture/Worlds/Garrison_Layers",$logs | Out-Null
-Copy-Item -LiteralPath "$PSScriptRoot/EXPG_GarrisonGameplay.c" -Destination "$fixture/Scripts/Game"
-@'
+Copy-Item -LiteralPath $FixturePath -Destination "$fixture/Scripts/Game/EXPG_GarrisonGameplay.c"
+if ($FreshTrim) {
+ $prefabs = Join-Path $fixture 'Prefabs/Tests'
+ New-Item -ItemType Directory -Path $prefabs | Out-Null
+ foreach ($file in @('EXPG_TrimTwelve.et', 'EXPG_TrimTwelve.et.meta')) {
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Prefabs/Tests/$file") -Destination $prefabs
+ }
+ $fixturePath = "$fixture/Scripts/Game/EXPG_GarrisonGameplay.c"
+ $fixtureText = Get-Content -LiteralPath $fixturePath -Raw
+ $marker = 'static const bool EXPG_TEST_FRESH_TRIM = false;'
+ if ([regex]::Matches($fixtureText, [regex]::Escape($marker)).Count -ne 1) { throw 'Expected one fresh-trim fixture switch; no native process started.' }
+ $fixtureText.Replace($marker, 'static const bool EXPG_TEST_FRESH_TRIM = true;') | Set-Content -LiteralPath $fixturePath -Encoding utf8NoBOM
+}
+# The fixture depends on the base game, any installed dependencies and this project.
+$fixtureDependencies = (@('58D0FB3206B6F859') + @($project.addon.installedDependencies.Keys | Sort-Object) + @($project.addon.id) | ForEach-Object { "  `"$_`"" }) -join "`n"
+@"
 GameProject {
  ID "EXPG_GameplayFixture"
  GUID "67CC618B744C46A1"
  TITLE "EXPBG Garrison local gameplay fixture"
  Dependencies {
-  "58D0FB3206B6F859"
-  "F3B7C6FB18AB1F79"
-  "FC1402F65B2F4A45"
+$fixtureDependencies
  }
 }
-'@ | Set-Content -LiteralPath "$fixture/EXPG_GameplayFixture.gproj" -Encoding utf8NoBOM
+"@ | Set-Content -LiteralPath "$fixture/EXPG_GameplayFixture.gproj" -Encoding utf8NoBOM
 @'
 SubScene {
  Parent "{BEF094A5F7F3211B}worlds/GameMaster/GM_Eden.ent"
@@ -69,7 +115,7 @@ $process.StartInfo = $start
 Assert-NativeSlot
 if (!$process.Start()) { throw 'Diagnostic server failed to start.' }
 $started = $process.StartTime.ToUniversalTime()
-$receipt = [ordered]@{source=$source;run=$run;pid=$process.Id;startedUtc=$started.ToString('o');executable=$engine;arguments=$arguments;timeoutSeconds=$TimeoutSeconds;timedOut=$false;ownedProcessStopped=$false;nativeExitCode=$null;passed=$false}
+$receipt = [ordered]@{source=$source;run=$run;freshTrim=[bool]$FreshTrim;bodyClearance=[bool]$BodyClearance;pid=$process.Id;startedUtc=$started.ToString('o');executable=$engine;arguments=$arguments;timeoutSeconds=$TimeoutSeconds;timedOut=$false;ownedProcessStopped=$false;nativeExitCode=$null;passed=$false}
 $receipt | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$run/run.json"
 $stdout = $process.StandardOutput.ReadToEndAsync()
 $stderr = $process.StandardError.ReadToEndAsync()
@@ -87,8 +133,9 @@ try {
  $output = $stdout.GetAwaiter().GetResult() + "`n" + $stderr.GetAwaiter().GetResult()
  [IO.File]::WriteAllText("$run/native-output.log", $output)
  $text = $output + "`n" + ((Get-ChildItem -LiteralPath $run -Recurse -Filter '*.log' -File | Where-Object Name -ne 'native-output.log' | Get-Content -Raw) -join "`n")
- $terminal = [regex]::Match($text, '\[EXPG GAMEPLAY RESULT\] phase=10 checks=(\d+) failures=0 actors=4 fixedPosts=([1-9]\d*) reason=completed')
- $receipt.passed = !$receipt.timedOut -and $process.ExitCode -eq 0 -and $terminal.Success -and $text -match 'Game destroyed' -and $text -notmatch 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed'
+ $evidencePassed = Test-GameplayEvidence $text ([bool]$FreshTrim)
+ if ($BodyClearance) { $evidencePassed = Test-BodyClearanceEvidence $text }
+ $receipt.passed = !$receipt.timedOut -and $process.ExitCode -eq 0 -and $evidencePassed
  $text -split "`n" | Where-Object { $_ -match '\[EXPG|SCRIPT\s+\(E\)|Can.t compile' } | Write-Output
 } finally {
  $receipt | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$run/result.json"

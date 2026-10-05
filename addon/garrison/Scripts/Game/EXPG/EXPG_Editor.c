@@ -256,16 +256,25 @@ modded class SCR_PlacingEditorComponent
   IEntity entity = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawn);
   SCR_AIGroup group = SCR_AIGroup.Cast(entity);
   if (!entity) { EXPG_Reply("The engine could not spawn that squad."); return; }
+  bool fresh = group && group.EXPG_BeginFreshRoster(members.Count());
   SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.GetEditableEntity(entity);
-  if (!group || !editable) { EXPG_Reply("The prefab did not create an editable squad; inspect the spawned entity."); return; }
+  if (!group || !editable || !fresh)
+  {
+   if (group) group.EXPG_EndFreshRoster();
+   EXPG_Reply("The prefab did not create a verified editable squad; inspect the spawned entity."); return;
+  }
   int playerId = GetManager().GetPlayerID();
   editable.EOnEditorPlace(null, null, 0, false, playerId);
   editable.SetAuthor(playerId);
   editable.OnCreatedServer(this);
   array<SCR_EditableEntityComponent> created = {editable};
   OnEntityCreatedServer(created);
-  if (!manager.Adopt(group, building, playerId)) EXPG_Reply("The squad remains under normal AI control because garrison assignment was refused.");
-  else EXPG_Reply("Squad placed. Garrison preparation is completing.");
+  if (!manager.AdoptFresh(group, building, playerId, members.Count()))
+  {
+   group.EXPG_EndFreshRoster();
+   EXPG_Reply("The squad remains under normal AI control because garrison assignment was refused.");
+  }
+  else EXPG_Reply("Garrison preparation is completing. The new squad will use the building's safe capacity.");
   GetOnPlaceEntityServer().Invoke(prefabID, editable, playerId);
  }
 

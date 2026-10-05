@@ -7,6 +7,16 @@ class EXPG_SlotSelectionFixture : EXPG_BuildingPlan
 
 class EXPG_BuildingPlanTest
 {
+ static bool NeighborColumns()
+ {
+  // Three columns x three rows. Diagonal links must not wrap across a row.
+  array<int> middle = {5, 7, 8, 6};
+  for (int edge = 0; edge < 4; edge++)
+   if (EXPG_BuildingPlan.ForwardColumn(4, 3, 9, edge) != middle[edge]) return false;
+  if (EXPG_BuildingPlan.ForwardColumn(2, 3, 9, 0) != -1 || EXPG_BuildingPlan.ForwardColumn(2, 3, 9, 2) != -1) return false;
+  if (EXPG_BuildingPlan.ForwardColumn(3, 3, 9, 3) != -1) return false;
+  return EXPG_BuildingPlan.ForwardColumn(8, 3, 9, 1) == -1 && EXPG_BuildingPlan.ForwardColumn(8, 3, 9, 3) == -1;
+ }
  // Rejecting a nearby candidate must not discard later, well-spaced candidates.
  static bool SlotSelection()
  {
@@ -17,12 +27,18 @@ class EXPG_BuildingPlanTest
    EXPG_BuildingNode node = new EXPG_BuildingNode();
    node.Position = position;
    node.Reachable = true;
+   node.Interior = true;
    plan.Nodes.Insert(node);
   }
   plan.Select();
   bool passed = plan.Slots.Count() == 3;
   if (passed) { passed = plan.Slots[0] == 0 && plan.Slots[1] == 2 && plan.Slots[2] == 3; }
   PrintFormat("[EXPG SLOT RESULT] pass=%1 expected=3 actual=%2", passed, plan.Slots.Count());
+  // A roofed entrance/porch may connect the graph, but is not an indoor post.
+  plan.Slots.Clear(); plan.FixedSlots.Clear(); plan.Nodes[0].Interior = false;
+  plan.Select();
+  passed = passed && plan.Slots.Count() == 2 && !plan.Slots.Contains(0);
+  PrintFormat("[EXPG INTERIOR SLOT RESULT] pass=%1 expected=2 actual=%2", passed, plan.Slots.Count());
   return passed;
  }
 
@@ -81,7 +97,7 @@ class EXPG_BuildingPlanTest
   plan.Nodes[4].Links.Insert(3);
   plan.MarkReachable();
   bool passed = plan.Nodes[0].Reachable && plan.Nodes[1].Reachable && plan.Nodes[2].Reachable;
-  passed = passed && ReservationGeometry();
+  passed = passed && ReservationGeometry() && NeighborColumns();
   passed = SlotSelection() && passed;
   passed = passed && !plan.Nodes[3].Reachable && !plan.Nodes[4].Reachable;
   array<int> route = {};

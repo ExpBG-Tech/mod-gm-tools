@@ -7,12 +7,20 @@ class EXPG_BuildingNode
  int Score;
  bool Entrance;
  bool Reachable;
+ bool Interior;
  ref array<int> Links = {};
 }
 
 class EXPG_BuildingColumn
 {
  ref array<int> Nodes = {};
+}
+
+class EXPG_BuildingOpening
+{
+ IEntity Part;
+ vector Position;
+ bool Door;
 }
 
 class EXPG_BuildingReservation
@@ -48,6 +56,9 @@ class EXPG_BuildingPlan
  protected int m_Other;
  protected ref array<vector> m_Sentinels = {};
  protected ref array<vector> m_SentinelLooks = {};
+ protected ref array<ref EXPG_BuildingOpening> m_Openings = {};
+ protected ref array<IEntity> m_TraversableDoors = {};
+ protected ref array<ref SCR_InteriorBoundingBox> m_InteriorBounds;
  protected ref array<ref EXPG_BuildingReservation> m_Reservations = {};
 
  // Fixed guards and stopped patrols occupy a node. One entry per live actor.
@@ -124,7 +135,58 @@ class EXPG_BuildingPlan
    m_Sentinels.Insert(building.CoordToParent(sentinel.GetActionOffset()));
    m_SentinelLooks.Insert(building.CoordToParent(sentinel.GetLookPosition()));
   }
+  FindOpenings();
+  SCR_DestructibleBuildingComponent damage = SCR_DestructibleBuildingComponent.Cast(building.FindComponent(SCR_DestructibleBuildingComponent));
+  if (damage)
+  {
+   SCR_DestructibleBuildingComponentClass data = SCR_DestructibleBuildingComponentClass.Cast(damage.GetComponentData(building));
+   if (data) m_InteriorBounds = data.m_aInteriorQueryBoundingBoxes;
+  }
   m_Height = Maxs[1] + 1;
+ }
+
+ // Use the building's actual door/window parts, not a library of house-specific
+ // coordinates. Bounded hierarchy traversal never scans unrelated world entities.
+ protected void FindOpenings()
+ {
+  array<IEntity> parts = {Structure};
+  for (int cursor = 0; cursor < parts.Count() && cursor < 512; cursor++)
+  {
+   IEntity part = parts[cursor];
+   for (IEntity child = part.GetChildren(); child && parts.Count() < 512; child = child.GetSibling()) parts.Insert(child);
+   if (part == Structure || m_Openings.Count() >= 64) continue;
+   DoorComponent door = DoorComponent.Cast(part.FindComponent(DoorComponent));
+   NavmeshCustomLinkComponent link = NavmeshCustomLinkComponent.Cast(part.FindComponent(NavmeshCustomLinkComponent));
+   if (door && link && link.HasLinkOfNavmeshType("Soldiers") && Math.AbsFloat(door.GetAngleRange()) > 1) m_TraversableDoors.Insert(part);
+   ResourceName prefab = SCR_ResourceNameUtils.GetPrefabName(part);
+   bool window = Building.Cast(part) && (prefab.Contains("/Windows/") || prefab.Contains("/windows/"));
+   if (!door && !window) continue;
+   EXPG_BuildingOpening opening = new EXPG_BuildingOpening();
+   opening.Part = part;
+   // A swinging leaf's centre moves; its frame remains the watch target.
+   if (door && part.GetParent() && part.GetParent() != Structure) opening.Part = part.GetParent();
+   vector mins, maxs; opening.Part.GetBounds(mins, maxs);
+   opening.Position = opening.Part.CoordToParent((mins + maxs) * 0.5);
+   opening.Door = door != null;
+   m_Openings.Insert(opening);
+  }
+ }
+
+ protected bool SeesOpening(vector eye, EXPG_BuildingOpening opening)
+ {
+  TraceParam sight = new TraceParam();
+  sight.Start = eye; sight.End = opening.Position;
+  sight.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  if (GetGame().GetWorld().TraceMove(sight, null) >= 0.999) return true;
+  // Glass or a closed leaf is the target; furniture/walls before it still block.
+  IEntity hit = sight.TraceEnt;
+  for (int depth = 0; hit && depth < 8; depth++)
+  {
+   if (hit == opening.Part) return true;
+   if (hit == Structure) return false;
+   hit = hit.GetParent();
+  }
+  return false;
  }
 
  void Fail(string reason) { Error = reason; Done = true; }
@@ -139,6 +201,62 @@ class EXPG_BuildingPlan
   return entity && Structure && entity.GetRootParent() == Structure.GetRootParent();
  }
 
+ bool StructuralFloor(IEntity entity)
+ {
+  if (!IsBuilding(entity)) return false;
+  if (entity == Structure) return true;
+  bool structural = false;
+  for (int depth = 0; entity && entity != Structure && depth < 12; depth++)
+  {
+   ResourceName prefab = SCR_ResourceNameUtils.GetPrefabName(entity);
+   // Attached furnishings share the house root; they are not walkable floors.
+   if (prefab.Contains("/Furniture/") || prefab.Contains("/furniture/")) return false;
+   if (Building.Cast(entity) && !prefab.Contains("/Windows/") && !prefab.Contains("/windows/")) structural = true;
+   if (prefab.Contains("/Stairs/") || prefab.Contains("/stairs/")) structural = true;
+   entity = entity.GetParent();
+  }
+  return structural;
+ }
+
+ bool InteriorPoint(vector point, float margin = 0.23)
+ {
+  vector local = Structure.CoordToLocal(point);
+  if (m_InteriorBounds && !m_InteriorBounds.IsEmpty())
+  {
+   foreach (SCR_InteriorBoundingBox bounds : m_InteriorBounds)
+   {
+    vector mins, maxs; bounds.GetBounds(mins, maxs);
+    if (local[0] >= mins[0] + margin && local[0] <= maxs[0] - margin && local[2] >= mins[2] + margin && local[2] <= maxs[2] - margin && local[1] >= mins[1] && local[1] <= maxs[1]) return true;
+   }
+   return false;
+  }
+  // No authored interior volume: require surrounding house walls in three
+  // directions, in addition to the independently verified floor and ceiling.
+  int walls = 0;
+  for (int side = 0; side < 4; side++)
+  {
+   TraceParam wall = new TraceParam();
+   wall.Start = point + "0 0.9 0";
+   wall.End = wall.Start + vector.FromYaw(side * 90 + Angles[0]) * 40;
+   wall.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   if (GetGame().GetWorld().TraceMove(wall, null) < 0.999 && IsBuilding(wall.TraceEnt)) walls++;
+  }
+  return walls >= 3;
+ }
+
+ // Patrols use only short graph edges entirely inside the house. The extra
+ // margin includes allowed path drift; entrance/porch nodes remain graph roots
+ // for reachability but never become patrol destinations or shortcuts.
+ bool InteriorEdge(vector from, vector to)
+ {
+  float distance = vector.Distance(from, to);
+  if (distance > 1.2) return false;
+  int steps = Math.Max(1, Math.Ceil(distance / 0.2));
+  for (int step = 0; step <= steps; step++)
+   if (!InteriorPoint(vector.Lerp(from, to, step * 1.0 / steps), 0.4)) return false;
+  return true;
+ }
+
  bool Inside(vector point, float margin = 0)
  {
   if (!Structure) { return false; }
@@ -146,7 +264,7 @@ class EXPG_BuildingPlan
   return local[0] >= Mins[0] + margin && local[0] <= Maxs[0] - margin && local[2] >= Mins[2] + margin && local[2] <= Maxs[2] - margin && local[1] >= Mins[1] - 0.1 && local[1] <= Maxs[1];
  }
 
- bool ClearBody(vector from, vector to, IEntity exclude = null, array<IEntity> excludeEntities = null)
+ bool ClearBody(vector from, vector to, IEntity exclude = null, array<IEntity> excludeEntities = null, bool planning = false)
  {
   TraceBox trace = new TraceBox();
   trace.Start = from + "0 0.45 0";
@@ -154,8 +272,28 @@ class EXPG_BuildingPlan
   trace.Mins = "-0.23 0 -0.23";
   trace.Maxs = "0.23 1.35 0.23";
   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-  if (excludeEntities) { trace.ExcludeArray = excludeEntities; }
+  // Match the native AI character collision matrix. An all-layer query also
+  // hits nonblocking gear on casualties and can strand an exact cache restore.
+  trace.LayerMask = EPhysicsLayerDefs.CharacterAI;
+  array<IEntity> exclusions = {};
+  if (planning && !m_TraversableDoors.IsEmpty())
+  {
+   exclusions.Copy(m_TraversableDoors);
+   if (exclude) exclusions.Insert(exclude);
+   if (excludeEntities) exclusions.InsertAll(excludeEntities);
+   trace.ExcludeArray = exclusions;
+  }
+  else if (excludeEntities) { trace.ExcludeArray = excludeEntities; }
   else { trace.Exclude = exclude; }
+  // Sweep tests do not establish initial occupancy. Include lower legs for
+  // standing admission; walking sweeps retain step-height clearance separately.
+  if (vector.DistanceSq(from, to) < 0.0004)
+  {
+   trace.Start = from + "0 0.05 0";
+   trace.End = to + "0 0.05 0";
+   trace.Maxs = "0.23 1.75 0.23";
+   if (GetGame().GetWorld().TracePosition(trace, null) < 0) return false;
+  }
   return GetGame().GetWorld().TraceMove(trace, null) >= 0.999;
  }
 
@@ -168,7 +306,7 @@ class EXPG_BuildingPlan
   if (excludeEntities) { trace.ExcludeArray = excludeEntities; }
   else { trace.Exclude = exclude; }
   float hit = GetGame().GetWorld().TraceMove(trace, null);
-  return hit < 0.999 && IsBuilding(trace.TraceEnt) && trace.TraceNorm[1] > 0.65;
+  return hit < 0.999 && StructuralFloor(trace.TraceEnt) && trace.TraceNorm[1] > 0.65;
  }
 
  bool ValidateSlots(int count, array<IEntity> excludeEntities = null)
@@ -187,7 +325,7 @@ class EXPG_BuildingPlan
  // treats a sampled rooftop as connected merely because it lies on navmesh.
  bool WalkEdge(vector from, vector to)
  {
-  if (Math.AbsFloat(from[1] - to[1]) > 0.48 || !ClearBody(from, to)) { return false; }
+  if (Math.AbsFloat(from[1] - to[1]) > 0.48 || !ClearBody(from, to, null, null, true)) { return false; }
   for (int i = 1; i < 3; i++)
   {
    vector sample = vector.Lerp(from, to, i / 3.0);
@@ -208,7 +346,7 @@ class EXPG_BuildingPlan
    float ground = GetGame().GetWorld().GetSurfaceY(outside[0], outside[2]);
    if (Math.AbsFloat(ground - point[1]) > 0.45) { continue; }
    outside[1] = ground + 0.05;
-   if (!ClearBody(outside, point)) { continue; }
+   if (!ClearBody(outside, point, null, null, true)) { continue; }
    bool supported = true;
    float previousY = ground;
    for (int step = 1; step <= 8; step++)
@@ -259,7 +397,7 @@ class EXPG_BuildingPlan
   vector point = vector.Lerp(floor.Start, floor.End, fraction);
   m_Height = Structure.CoordToLocal(point)[1] - 0.15;
   if (m_Height <= Mins[1]) { NextColumn(); }
-  if (!IsBuilding(floor.TraceEnt) || floor.TraceNorm[1] < 0.65) { return; }
+  if (!StructuralFloor(floor.TraceEnt) || floor.TraceNorm[1] < 0.65) { return; }
   point[1] = point[1] + 0.05;
   if (!Inside(point) || !ClearBody(point, point + "0 0.01 0")) { return; }
   TraceParam ceiling = new TraceParam();
@@ -273,24 +411,39 @@ class EXPG_BuildingPlan
   // Sample belongs to the column before NextColumn advanced it.
   node.Column = z * m_Width + x;
   node.Entrance = Entrance(point);
+  node.Interior = InteriorPoint(point);
   Columns[node.Column].Nodes.Insert(Nodes.Count());
   Nodes.Insert(node);
  }
 
  protected void NextColumn() { m_Column++; m_Height = Maxs[1] + 1; }
 
+ // Four forward offsets create all eight undirected neighbors without repeats.
+ // Every diagonal still needs the full swept-body and intermediate-floor proof.
+ static int ForwardColumn(int column, int width, int count, int edge)
+ {
+  if (width < 1 || column < 0 || column >= count || edge < 0 || edge > 3) return -1;
+  int x = column % width;
+  if ((edge == 0 || edge == 2) && x == width - 1) return -1;
+  if (edge == 3 && x == 0) return -1;
+  int target = column + width;
+  if (edge == 0) target = column + 1;
+  else if (edge == 2) target++;
+  else if (edge == 3) target--;
+  if (target >= count) return -1;
+  return target;
+ }
+
  protected void LinkOne()
  {
   if (m_Node >= Nodes.Count()) { m_Phase = 2; return; }
   EXPG_BuildingNode node = Nodes[m_Node];
-  int otherColumn = node.Column + 1;
-  if (m_Edge == 0 && node.Column % m_Width == m_Width - 1) { m_Edge = 1; }
-  if (m_Edge == 1) { otherColumn = node.Column + m_Width; }
-  if (otherColumn >= Columns.Count() || m_Other >= Columns[otherColumn].Nodes.Count())
+  int otherColumn = ForwardColumn(node.Column, m_Width, Columns.Count(), m_Edge);
+  if (otherColumn < 0 || m_Other >= Columns[otherColumn].Nodes.Count())
   {
    m_Other = 0;
    m_Edge++;
-   if (m_Edge >= 2) { m_Node++; m_Edge = 0; }
+   if (m_Edge >= 4) { m_Node++; m_Edge = 0; }
    return;
   }
   int index = Columns[otherColumn].Nodes[m_Other++];
@@ -339,6 +492,23 @@ class EXPG_BuildingPlan
    node.Look = vector.Direction(node.Position, m_SentinelLooks[s]).Normalized();
    return;
   }
+  // Stand back from a furniture-blocked window (1-3 m), or watch a door from
+  // roughly 2 m inside. The candidate already passed body/floor/reachability.
+  foreach (EXPG_BuildingOpening opening : m_Openings)
+  {
+   vector eye = node.Position + "0 1.5 0";
+   vector delta = opening.Position - eye;
+   float horizontal = delta[0] * delta[0] + delta[2] * delta[2];
+   float maximum = 9;
+   float minimum = 1;
+   if (opening.Door) { minimum = 2.25; maximum = 6.25; }
+   if (horizontal < minimum || horizontal > maximum || Math.AbsFloat(delta[1]) > 0.75 || !SeesOpening(eye, opening)) continue;
+   int score = 80;
+   if (opening.Door) score = 90;
+   if (node.Score >= score) continue;
+   node.Score = score;
+   node.Look = delta.Normalized();
+  }
   for (int yaw = 0; yaw < 360; yaw += 45)
   {
    vector direction = vector.FromYaw(yaw);
@@ -355,13 +525,13 @@ class EXPG_BuildingPlan
  protected void SelectSlots()
  {
   // At most 32 places; greedy spacing over a bounded graph avoids a large solver.
-  array<int> priorities = {100, 80, 70, 60, 0};
+  array<int> priorities = {100, 90, 80, 70, 60, 0};
   foreach (int priority : priorities)
   {
    for (int i = 0; i < Nodes.Count() && Slots.Count() < 32; i++)
    {
     EXPG_BuildingNode node = Nodes[i];
-    if (!node.Reachable || node.Score != priority) { continue; }
+    if (!node.Reachable || !node.Interior || node.Score != priority) { continue; }
     bool occupied;
     foreach (int selected : Slots)
     {

@@ -5,10 +5,10 @@ class EXPG_GarrisonSettings
  {
   if (settings[0] != settings[0]) settings[0] = 300;
   if (settings[1] != settings[1]) settings[1] = 400;
-  if (settings[2] != settings[2]) settings[2] = 1;
+  if (settings[2] != settings[2]) settings[2] = 2;
   settings[0] = Math.Clamp(settings[0], 50, 3000);
   settings[1] = Math.Clamp(settings[1], settings[0] + 25, 4000);
-  settings[2] = Math.Round(Math.Clamp(settings[2], 0, 1));
+  settings[2] = Math.Round(Math.Clamp(settings[2], 0, 2));
   return settings;
  }
 }
@@ -18,7 +18,7 @@ modded class SCR_AIGroup
  [RplProp(), NonSerialized()] bool EXPG_Active;
  [RplProp(), NonSerialized()] float EXPG_WakeDistance = 300;
  [RplProp(), NonSerialized()] float EXPG_SleepDistance = 400;
- [RplProp(), NonSerialized()] int EXPG_CacheMode = 1; // 0 off, 1 Simulation; original actors and group retained.
+ [RplProp(), NonSerialized()] int EXPG_CacheMode = 2; // 0 Off, 1 Simulation, 2 Full; one retained native group.
  [RplProp(), NonSerialized()] string EXPG_Status;
 
  void EXPG_Changed()
