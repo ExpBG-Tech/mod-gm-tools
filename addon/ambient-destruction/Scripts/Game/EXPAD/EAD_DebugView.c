@@ -1,6 +1,8 @@
 // Retail UI canvas; no debug-build Shape API, prop component or extra timer.
 class EAD_DebugView
 {
+ static const float NEAR_PLANE = 1;
+ static const float SCREEN_MARGIN = 16;
  protected CanvasWidget m_Canvas;
  protected ref array<vector> m_Points = {};
  protected ref array<ref LineDrawCommand> m_Lines = {};
@@ -62,30 +64,71 @@ class EAD_DebugView
   {
    m_Canvas.SetDrawCommands(m_Commands); return;
   }
+  vector camera[4];
+  if (!onMap) world.GetCamera(world.GetCurrentCameraId(), camera);
   for (int i = 0; i < m_Lines.Count(); i++)
   {
    int point = i + i / 64;
    vector a, b;
+   vector from = m_Points[point]; vector to = m_Points[point + 1];
    if (onMap)
    {
     int ax, ay, bx, by;
-    vector from = m_Points[point]; vector to = m_Points[point + 1];
     mapEntity.WorldToScreen(from[0], from[2], ax, ay, true);
     mapEntity.WorldToScreen(to[0], to[2], bx, by, true);
     a = Vector(ax, ay, 1); b = Vector(bx, by, 1);
    }
    else
    {
-    a = workspace.ProjWorldToScreenNative(m_Points[point], world);
-    b = workspace.ProjWorldToScreenNative(m_Points[point + 1], world);
+    // A ring point just in front of the camera projects to enormous coordinates, and
+    // such a segment rendered as a screen-filling wedge near the zone. Clip each segment
+    // to a near plane before projecting, then to the screen below.
+    float depthFrom = vector.Dot(from - camera[3], camera[2]);
+    float depthTo = vector.Dot(to - camera[3], camera[2]);
+    if (depthFrom < NEAR_PLANE && depthTo < NEAR_PLANE) continue;
+    if (depthFrom < NEAR_PLANE) from = from + (to - from) * ((NEAR_PLANE - depthFrom) / (depthTo - depthFrom));
+    else if (depthTo < NEAR_PLANE) to = to + (from - to) * ((NEAR_PLANE - depthTo) / (depthFrom - depthTo));
+    a = workspace.ProjWorldToScreenNative(from, world);
+    b = workspace.ProjWorldToScreenNative(to, world);
     if (a[2] <= 0 || b[2] <= 0) continue;
    }
-   if ((a[0] < 0 && b[0] < 0) || (a[0] > m_Width && b[0] > m_Width) || (a[1] < 0 && b[1] < 0) || (a[1] > m_Height && b[1] > m_Height)) continue;
+   if (!ClipToScreen(a, b)) continue;
    LineDrawCommand line = m_Lines[i];
    line.m_Vertices[0] = a[0]; line.m_Vertices[1] = a[1];
    line.m_Vertices[2] = b[0]; line.m_Vertices[3] = b[1];
    m_Commands.Insert(line);
   }
   m_Canvas.SetDrawCommands(m_Commands);
+ }
+ // Liang-Barsky against the screen plus a small margin: every drawn vertex stays bounded.
+ protected bool ClipToScreen(inout vector a, inout vector b)
+ {
+  if (a[0] != a[0] || a[1] != a[1] || b[0] != b[0] || b[1] != b[1]) return false;
+  float dx = b[0] - a[0];
+  float dy = b[1] - a[1];
+  float t0 = 0;
+  float t1 = 1;
+  if (!ClipEdge(-dx, a[0] + SCREEN_MARGIN, t0, t1) || !ClipEdge(dx, m_Width + SCREEN_MARGIN - a[0], t0, t1)) return false;
+  if (!ClipEdge(-dy, a[1] + SCREEN_MARGIN, t0, t1) || !ClipEdge(dy, m_Height + SCREEN_MARGIN - a[1], t0, t1)) return false;
+  vector start = a;
+  a = Vector(start[0] + t0 * dx, start[1] + t0 * dy, 0);
+  b = Vector(start[0] + t1 * dx, start[1] + t1 * dy, 0);
+  return true;
+ }
+ protected static bool ClipEdge(float p, float q, inout float t0, inout float t1)
+ {
+  if (p == 0) return q >= 0;
+  float r = q / p;
+  if (p < 0)
+  {
+   if (r > t1) return false;
+   if (r > t0) t0 = r;
+  }
+  else
+  {
+   if (r < t0) return false;
+   if (r < t1) t1 = r;
+  }
+  return true;
  }
 }

@@ -3,10 +3,12 @@ class EAD_Attribute : SCR_BaseValueListEditorAttribute
 {
  [Attribute("0")] int m_Key;
  [Attribute()] ref array<ref SCR_EditorAttributeFloatStringValueHolder> m_aValues;
+ // Named choices (spinbox) instead of a slider; entry values equal the choice index.
+ protected bool IsChoice() { return m_aValues && !m_aValues.IsEmpty(); }
  override int GetEntries(notnull array<ref SCR_BaseEditorAttributeEntry> outEntries)
  {
   if (m_Key == 8 || m_Key == 10) return outEntries.Count();
-  if (m_Key != 11) return super.GetEntries(outEntries);
+  if (!IsChoice()) return super.GetEntries(outEntries);
   outEntries.Insert(new SCR_BaseEditorAttributeFloatStringValues(m_aValues));
   return outEntries.Count();
  }
@@ -18,7 +20,7 @@ class EAD_Attribute : SCR_BaseValueListEditorAttribute
   if (!zone) return null;
   // Native bool/int/float attribute values share the same serialized vector slot.
   if (m_Key == 8 || m_Key == 10) return SCR_BaseEditorAttributeVar.CreateBool(zone.GetSetting(m_Key) != 0);
-  if (m_Key == 11) return SCR_BaseEditorAttributeVar.CreateInt(zone.GetSetting(m_Key));
+  if (IsChoice()) return SCR_BaseEditorAttributeVar.CreateInt(zone.GetSetting(m_Key));
   return SCR_BaseEditorAttributeVar.CreateFloat(zone.GetSetting(m_Key));
  }
  override void WriteVariable(Managed item, SCR_BaseEditorAttributeVar var, SCR_AttributesManagerEditorComponent manager, int playerID)

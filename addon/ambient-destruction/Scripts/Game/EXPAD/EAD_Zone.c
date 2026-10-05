@@ -306,6 +306,7 @@ class EAD_Zone : GenericEntity
  bool BuildingsStep()
  {
   if (!Replication.IsServer() || EAD_Snapshot.Loading || Enabled == 0 || !m_Buildings || m_Rebuild) return false;
+  m_Buildings.DebugLevel = DebugLevel;
   return m_Buildings.Step();
  }
  // True means native work was attempted (or a slot advanced), including failures.

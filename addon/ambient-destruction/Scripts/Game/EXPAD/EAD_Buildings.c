@@ -27,12 +27,17 @@ class EAD_Buildings
  static const int CELL_SIZE = 64;
  static const int MAX_CALLBACKS = 512;
  static const int MAX_CHOICES = 65536;
+ // World-wide pacing of native collapses and phase changes across every zone. Each native
+ // collapse runs debris, effects, sinking and interior deletion on every client; back-to-back
+ // kills (one per 0.25 s step) froze a watching GM client. Scanning continues meanwhile.
+ static const float COLLAPSE_INTERVAL = 3;
  protected static BaseWorld s_World;
+ protected static float s_NextCollapse;
  protected static ref map<IEntity, ref EAD_BuildingChoice> s_Choices = new map<IEntity, ref EAD_BuildingChoice>();
  protected static ref array<ref EAD_BuildingChoice> s_History = {};
  static void ResetLedger(BaseWorld world)
  {
-  s_World = world; s_Choices.Clear(); s_History.Clear();
+  s_World = world; s_Choices.Clear(); s_History.Clear(); s_NextCollapse = 0;
  }
  static void EnsureWorld(BaseWorld world) { if (s_World != world) ResetLedger(world); }
  static void GetLedger(array<ref EAD_BuildingChoice> choices)
@@ -47,6 +52,8 @@ class EAD_Buildings
   s_History.Insert(choice);
  }
  protected BaseWorld m_World;
+ // Owning zone's server diagnostics level; 1 or more logs one line per native change.
+ int DebugLevel;
  protected vector m_Center;
  protected float m_Radius;
  protected int m_Intensity, m_Seed, m_X, m_Z, m_MinX, m_MinZ, m_MaxX, m_MaxZ;
@@ -250,10 +257,14 @@ class EAD_Buildings
   return true;
  }
  // At most one spatial query per Step, globally scheduled by the shared manager.
+ // Candidates wait for the world collapse interval; cell scanning does not.
  bool Step()
  {
   if (m_Finished || !Replication.IsServer() || !GetGame() || !m_World || GetGame().GetWorld() != m_World) return false;
-  if (!m_Candidates.IsEmpty())
+  float now = m_World.GetWorldTime() * 0.001;
+  if (s_NextCollapse > now + COLLAPSE_INTERVAL) s_NextCollapse = now; // world clock restarted
+  bool scanned = m_Cells.IsEmpty() && m_Z > m_MaxZ;
+  if (!m_Candidates.IsEmpty() && now >= s_NextCollapse)
   {
    EAD_BuildingChoice choice = m_Candidates[0];
    m_Candidates.RemoveOrdered(0);
@@ -276,12 +287,16 @@ class EAD_Buildings
     else choice.Finished = true; // Unsafe after bounded retries: preserve for this mission.
     return true;
    }
+   // Only an actual native change consumes the world interval.
+   s_NextCollapse = now + COLLAPSE_INTERVAL;
+   vector position = choice.Transform[3];
    if (choice.TargetPhase > 0)
    {
     bool applied = ApplyPhase(entity, choice.TargetPhase);
     SCR_DestructionMultiPhaseComponent phases = NativePhases(entity);
     if (phases) choice.AppliedPhase = phases.GetDamagePhase();
     if (!applied) PrintFormat("[EAD] native phase incomplete prefab=%1 target=%2 actual=%3", choice.Prefab, choice.TargetPhase, choice.AppliedPhase);
+    else if (DebugLevel > 0) PrintFormat("[EAD BUILDING] phase=%1 prefab=%2 pos=%3 pending=%4", choice.AppliedPhase, choice.Prefab, position, m_Candidates.Count());
     choice.Finished = true;
     return true;
    }
@@ -292,8 +307,15 @@ class EAD_Buildings
    if (damage.GetDefaultHitZone().GetDamageState() == EDamageState.DESTROYED)
    {
     choice.Destroyed = true; m_Destroyed++;
+    if (DebugLevel > 0) PrintFormat("[EAD BUILDING] killed prefab=%1 pos=%2 pending=%3", choice.Prefab, position, m_Candidates.Count());
    }
    return true;
+  }
+  // Scan complete: wait for paced candidates, then finish.
+  if (scanned)
+  {
+   if (m_Candidates.IsEmpty()) m_Finished = true;
+   return false;
   }
   EAD_BuildingCell cell;
   if (!m_Cells.IsEmpty())
@@ -303,7 +325,6 @@ class EAD_Buildings
   }
   else
   {
-   if (m_Z > m_MaxZ) { m_Finished = true; return false; }
    cell = new EAD_BuildingCell();
    cell.Min = Vector(m_X * CELL_SIZE, -1000, m_Z * CELL_SIZE);
    cell.Size = CELL_SIZE;

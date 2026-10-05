@@ -79,6 +79,8 @@ class EAD_BuildingRestore
  bool Failed;
  bool Finished;
  string Reason;
+ // Saved collapses whose original was already absent (native persistence) during import.
+ int NativeSatisfied;
  void EAD_BuildingRestore(EAD_BuildingSnapshot data)
  {
   m_Data = data; m_World = GetGame().GetWorld();
@@ -105,6 +107,24 @@ class EAD_BuildingRestore
  {
   EAD_BuildingChoice previous = PreviousDestruction(choice);
   return m_LookingFor == choice && previous && !previous.Entity && !previous.Authored && m_Matches == 0 && m_Visits <= 512;
+ }
+ // After a server restart, native (vanilla) persistence can already have removed a
+ // building that the save records as collapsed, while the fresh ledger has no history.
+ // An unambiguous, complete miss of a saved collapse (or of a building still selected
+ // for a collapse) is that saved end state. Ambiguous, truncated or phase records never are.
+ bool SatisfiedByNativeDestruction(EAD_BuildingChoice choice)
+ {
+  if (m_LookingFor != choice || m_Matches != 0 || m_Visits > 512) return false;
+  if (!choice.Selected || choice.TargetPhase != 0 || choice.AppliedPhase != 0) return false;
+  return choice.Destroyed || !choice.Finished;
+ }
+ string MissReason(EAD_BuildingChoice choice)
+ {
+  string where = choice.Prefab + " at " + choice.Transform[3].ToString();
+  if (m_Visits > 512) return "Building query exceeded its limit: " + where;
+  if (m_Matches > 1) return "Ambiguous building (" + m_Matches.ToString() + " matches): " + where;
+  if (choice.TargetPhase > 0 || choice.AppliedPhase > 0) return "Missing building for saved damage phase: " + where;
+  return "Missing building that the save records as standing: " + where;
  }
  protected bool Visit(IEntity entity)
  {
@@ -151,8 +171,8 @@ class EAD_BuildingRestore
    if (previous && entity) { Reason = "Original identity reappeared after permanent destruction"; return false; }
    if (!entity)
    {
-    if (HasCompletedHistory(choice)) continue;
-    Reason = "Missing or ambiguous building: " + choice.Prefab + " at " + choice.Transform[3].ToString(); return false;
+    if (HasCompletedHistory(choice) || SatisfiedByNativeDestruction(choice)) continue;
+    Reason = MissReason(choice); return false;
    }
    SCR_DestructibleBuildingComponent damage = SCR_DestructibleBuildingComponent.Cast(entity.FindComponent(SCR_DestructibleBuildingComponent));
    if (choice.TargetPhase > 0)
@@ -187,14 +207,26 @@ class EAD_BuildingRestore
   if (Failed || Finished || !EAD_Snapshot.Loading || !Replication.IsServer()) return false;
   if (GetGame().GetWorld() != m_World) { Failed = true; Reason = "World changed during building restore"; return false; }
   if (m_Next == 0) EAD_Buildings.ResetLedger(m_World);
-  if (m_Next >= m_Data.Choices.Count()) { Finished = true; return false; }
+  if (m_Next >= m_Data.Choices.Count())
+  {
+   Finished = true;
+   if (NativeSatisfied > 0) PrintFormat("[EAD RESTORE] nativeSatisfied=%1 of %2 saved buildings were already absent; recorded as completed collapses", NativeSatisfied, m_Data.Choices.Count());
+   return false;
+  }
   EAD_BuildingChoice choice = m_Data.Choices[m_Next];
   IEntity entity = Find(choice);
   if (entity && PreviousDestruction(choice)) { Failed = true; Reason = "Original identity reappeared during import"; return false; }
   if (!entity)
   {
    if (HasCompletedHistory(choice)) { EAD_Buildings.RestoreChoice(choice, null); m_Next++; return true; }
-   Failed = true; Reason = "Building disappeared during import"; return false;
+   if (SatisfiedByNativeDestruction(choice))
+   {
+    // Record the saved end state: a completed collapse whose original no longer exists.
+    choice.Finished = true; choice.Destroyed = true;
+    EAD_Buildings.RestoreChoice(choice, null); NativeSatisfied++; m_Next++;
+    return true;
+   }
+   Failed = true; Reason = "Building disappeared during import: " + MissReason(choice); return false;
   }
   if (choice.Destroyed)
   {
