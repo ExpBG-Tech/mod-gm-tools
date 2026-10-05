@@ -3,7 +3,7 @@ class EAS_RadioModuleClass : GenericEntityClass {}
 
 class EAS_RadioModule : GenericEntity
 {
- [Attribute("0", UIWidgets.EditBox, "Recording: radio 0-12 or 100-103 language random; crowd 0-3 or 100 random; TV 0", "0 103 1", category: "EXPBG Sound Player"), RplProp()]
+ [Attribute("0", UIWidgets.EditBox, "Recording: radio 0-12 or 100-103 language random; crowd 0-3 or 100 random; TV 0; placed sound 0-27", "0 103 1", category: "EXPBG Sound Player"), RplProp()]
  int Recording;
  [Attribute("15", UIWidgets.EditBox, "Volume (%)", "0 100 1", category: "EXPBG Sound Player"), RplProp()]
  int Volume;
@@ -13,7 +13,7 @@ class EAS_RadioModule : GenericEntity
  int Loop;
  [Attribute("1", UIWidgets.EditBox, "Pause between complete recordings (seconds)", "0 600 1", category: "EXPBG Sound Player"), RplProp()]
  int PauseSeconds;
- [Attribute("30", UIWidgets.EditBox, "Audible distance (metres)", "10 150 10", category: "EXPBG Sound Player"), RplProp()]
+ [Attribute("30", UIWidgets.EditBox, "Audible distance (metres); radio/TV 30, crowd 10-150, placed sound 30-1500", "10 1500 10", category: "EXPBG Sound Player"), RplProp()]
  int Range;
  [Attribute("0", UIWidgets.CheckBox, "Debug module (GM only)", category: "EXPBG Sound Player"), RplProp(onRplName: "SettingsReceived")]
  int DebugEnabled;

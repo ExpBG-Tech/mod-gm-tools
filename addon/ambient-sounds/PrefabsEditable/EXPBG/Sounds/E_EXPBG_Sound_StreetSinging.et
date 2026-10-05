@@ -1,0 +1,29 @@
+EAS_SoundModule {
+ ID "84C50A077E591925"
+ components {
+  SCR_EditableEntityComponent "{6D234D2151089739}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{370FC1913E97997F}" {
+    Name "#EAS-SoundStreetSinging_Name"
+    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{7AC98B75C4D54967}UI/Textures/EXPBG/EAS_Crowd_Card.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_CROWD }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{3742385FD1AFE539}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{1ACA1ACCA1967672}" {}
+ }
+ Recording 19
+ Volume 50
+ Enabled 0
+ Loop 1
+ PauseSeconds 0
+ Range 250
+}

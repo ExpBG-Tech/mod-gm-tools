@@ -1,0 +1,29 @@
+EAS_SoundModule {
+ ID "529DADA9FB6091E7"
+ components {
+  SCR_EditableEntityComponent "{2BB95F090D9D9833}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{B6D63CD32D91277A}" {
+    Name "#EAS-SoundPoliceCar_Name"
+    Description "Placed ambient sound. Plays once per Enable; turn Loop on to repeat. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{2B55F411BCD86C3A}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{DC59E82B7B09F7FA}" {}
+ }
+ Recording 24
+ Volume 50
+ Enabled 0
+ Loop 0
+ PauseSeconds 60
+ Range 300
+}

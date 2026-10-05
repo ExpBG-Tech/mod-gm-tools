@@ -1,0 +1,11 @@
+MetaFileClass {
+ Name "{5BF43F4DC8036F95}PrefabsEditable/EXPBG/Sounds/E_EXPBG_Sound_MarketSeller.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass XBOX_ONE : PC {}
+  EntityTemplateResourceClass XBOX_SERIES : PC {}
+  EntityTemplateResourceClass PS4 : PC {}
+  EntityTemplateResourceClass PS5 : PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

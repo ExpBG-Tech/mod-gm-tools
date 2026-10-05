@@ -1,0 +1,29 @@
+EAS_SoundModule {
+ ID "7EE04D08CF63F94F"
+ components {
+  SCR_EditableEntityComponent "{40B721DD4A04B4A5}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{574C3CFF055B661F}" {
+    Name "#EAS-SoundApache1_Name"
+    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{5F27F1E24582AD5B}UI/Textures/EditorPreviews/Auto/Props/Civilian/E_RadioSmall_01_black.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_RADIO }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{BDF93BC4095FAA66}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{1D6EA5DA057B6BE0}" {}
+ }
+ Recording 1
+ Volume 50
+ Enabled 0
+ Loop 1
+ PauseSeconds 0
+ Range 30
+}

@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{03CB733A77468732}Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_NokiaRingtone.wav"
+ Configurations {
+  WAVResourceClass PC : "{F72B05D02F3F135E}Configs/System/ResourceTypes/PC/Sound.conf" {
+  }
+  WAVResourceClass HEADLESS : "{D63592CA950AF3A8}Configs/System/ResourceTypes/HEADLESS/Sound.conf" {
+  }
+ }
+}

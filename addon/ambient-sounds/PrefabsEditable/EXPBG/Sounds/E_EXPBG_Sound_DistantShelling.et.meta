@@ -1,0 +1,11 @@
+MetaFileClass {
+ Name "{1DA9472AF532B605}PrefabsEditable/EXPBG/Sounds/E_EXPBG_Sound_DistantShelling.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass XBOX_ONE : PC {}
+  EntityTemplateResourceClass XBOX_SERIES : PC {}
+  EntityTemplateResourceClass PS4 : PC {}
+  EntityTemplateResourceClass PS5 : PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

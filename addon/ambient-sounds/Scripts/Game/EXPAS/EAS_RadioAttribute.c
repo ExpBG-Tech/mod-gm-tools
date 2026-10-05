@@ -9,10 +9,12 @@ class EAS_RadioAttribute : SCR_BaseValueListEditorAttribute
 
 
  bool SupportsModule(EAS_RadioModule module) { return module && module.AudioKind() == 0; }
+ // Keys whose spinbox rows map to durable configured values.
+ protected bool UsesValueList() { return m_Key == 0; }
 
  override int GetEntries(notnull array<ref SCR_BaseEditorAttributeEntry> outEntries)
  {
-  if (m_Key == 0) outEntries.Insert(new SCR_BaseEditorAttributeFloatStringValues(m_aValues));
+  if (UsesValueList()) outEntries.Insert(new SCR_BaseEditorAttributeFloatStringValues(m_aValues));
   else if (m_Key == 1 || m_Key == 4 || m_Key == 5) return super.GetEntries(outEntries);
   return outEntries.Count();
  }
@@ -26,12 +28,14 @@ class EAS_RadioAttribute : SCR_BaseValueListEditorAttribute
   if (!manager && m_Key == 2) module.TraceSettings("session-save");
   if (m_Key == 2 || m_Key == 3 || m_Key == 6) return SCR_BaseEditorAttributeVar.CreateBool(module.Value(m_Key) == 1);
   // Native spinboxes exchange row indices, not the configured recording IDs.
-  if (m_Key == 0)
+  if (UsesValueList())
   {
+   int durable = module.Value(m_Key);
    // Session saves store durable content IDs, never the UI's row ordering.
-   if (!manager) return SCR_BaseEditorAttributeVar.CreateInt(module.Recording);
+   if (!manager) return SCR_BaseEditorAttributeVar.CreateInt(durable);
+   if (!m_aValues) return null;
    foreach (int index, SCR_EditorAttributeFloatStringValueHolder entry : m_aValues)
-    if (entry.GetFloatValue() == module.Recording) return SCR_BaseEditorAttributeVar.CreateInt(index);
+    if (entry.GetFloatValue() == durable) return SCR_BaseEditorAttributeVar.CreateInt(index);
    return null;
   }
   return SCR_BaseEditorAttributeVar.CreateFloat(module.Value(m_Key));
@@ -52,9 +56,9 @@ class EAS_RadioAttribute : SCR_BaseValueListEditorAttribute
   if (!SupportsModule(module) || !module.IsAuthority()) return;
   vector raw = var.GetVector();
   float value = raw[0];
-  if (m_Key == 0 && manager)
+  if (UsesValueList() && manager)
   {
-   if (value != value || value < 0 || value != Math.Floor(value) || value >= m_aValues.Count()) value = -1;
+   if (!m_aValues || value != value || value < 0 || value != Math.Floor(value) || value >= m_aValues.Count()) value = -1;
    else value = m_aValues[value].GetFloatValue();
   }
   // Preserve atomic rejection: an invalid field poisons the entire deferred batch.

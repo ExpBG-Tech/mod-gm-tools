@@ -1,0 +1,29 @@
+EAS_SoundModule {
+ ID "8A4B451B18A3F145"
+ components {
+  SCR_EditableEntityComponent "{EA93201F221DA729}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{F5745644586A3A03}" {
+    Name "#EAS-SoundJetFlyby1_Name"
+    Description "Placed ambient sound. Plays once per Enable; turn Loop on to repeat. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{EEB3B9AECAEB416C}UI/Textures/EXPBG/EAS_War_Card.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_WAR_EFFECTS }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{28CBEA52FCAC7F1A}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{4E7250F8BC791126}" {}
+ }
+ Recording 14
+ Volume 50
+ Enabled 0
+ Loop 0
+ PauseSeconds 60
+ Range 1000
+}

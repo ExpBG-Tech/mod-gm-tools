@@ -1,0 +1,11 @@
+MetaFileClass {
+ Name "{9F5A7829E724A889}PrefabsEditable/EXPBG/Sounds/E_EXPBG_Sound_ArabChatter.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass XBOX_ONE : PC {}
+  EntityTemplateResourceClass XBOX_SERIES : PC {}
+  EntityTemplateResourceClass PS4 : PC {}
+  EntityTemplateResourceClass PS5 : PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

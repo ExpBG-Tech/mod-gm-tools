@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{56AD3B1D2B39383F}Configs/Systems/Persistence/Configuration/EXPAS/SoundModule.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

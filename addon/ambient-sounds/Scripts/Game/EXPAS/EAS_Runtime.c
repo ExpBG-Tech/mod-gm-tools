@@ -420,7 +420,7 @@ class EAS_Runtime
    }
    else if (finite && finite.DebugEnabled)
    {
-    DebugRing(centre, EAS_Activation.RADIO_RADIUS, 0xFF70FF80);
+    DebugRing(centre, finite.ActivationRadius(), 0xFF70FF80);
     DebugRing(centre, finite.AudibleRange(), 0xFFFFCC40);
    }
   }

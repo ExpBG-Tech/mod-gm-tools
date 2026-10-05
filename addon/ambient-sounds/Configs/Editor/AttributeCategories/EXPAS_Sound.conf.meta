@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{7E59ABA479831076}Configs/Editor/AttributeCategories/EXPAS_Sound.conf"
+ Configurations {
+  CONFResourceClass PC {}
+  CONFResourceClass HEADLESS : PC {}
+ }
+}

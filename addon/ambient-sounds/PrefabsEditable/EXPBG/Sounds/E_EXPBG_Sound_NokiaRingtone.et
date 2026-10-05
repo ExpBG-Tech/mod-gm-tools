@@ -1,0 +1,29 @@
+EAS_SoundModule {
+ ID "FC1D5B1847EA7476"
+ components {
+  SCR_EditableEntityComponent "{29AAA62F26C315D8}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{BDDBAE803E2B7358}" {
+    Name "#EAS-SoundNokiaRingtone_Name"
+    Description "Placed ambient sound. Plays once per Enable; turn Loop on to repeat. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{12DFB99EC3708183}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{778C36C277064620}" {}
+ }
+ Recording 25
+ Volume 50
+ Enabled 0
+ Loop 0
+ PauseSeconds 60
+ Range 40
+}

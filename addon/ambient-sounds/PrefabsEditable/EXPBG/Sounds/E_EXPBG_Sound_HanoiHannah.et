@@ -1,0 +1,29 @@
+EAS_SoundModule {
+ ID "330292A89D57927C"
+ components {
+  SCR_EditableEntityComponent "{539FA668A8DC1E7F}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{B18ED4D5BBD06DCD}" {
+    Name "#EAS-SoundHanoiHannah_Name"
+    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{5F27F1E24582AD5B}UI/Textures/EditorPreviews/Auto/Props/Civilian/E_RadioSmall_01_black.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_RADIO }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{8FCD46C3CF0C9B2D}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{F8B01D052FE190AC}" {}
+ }
+ Recording 10
+ Volume 50
+ Enabled 0
+ Loop 1
+ PauseSeconds 0
+ Range 500
+}

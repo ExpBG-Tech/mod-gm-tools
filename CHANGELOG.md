@@ -1,5 +1,27 @@
 # EXPBG GM Tools changelog
 
+## 0.1.3
+
+- Ambient Sounds: 28 new placeable sounds under the EXPBG Sounds browser category,
+  covering every sound from Vinny - Sounds by Vinuesa (Workshop 61D358A07E15C5FE,
+  APL-SA): radio static, Apache, Russian, Chinese and Arab radio chatter, Hanoi
+  Hannah, close and distant firefight, distant shelling, two jet flybys, a drone,
+  market, market seller, street singing, Muslim prayer, traffic, church bell, car
+  alarm, police car, Nokia ringtone, distant barking and distant sheep. They are
+  labelled Radio transmissions, War sound effects, Crowd or Sound effects.
+- Each sound is a new invisible EXPBG Ambient Sound module with Game Master
+  On/Off, Recording, Volume, Audible distance (30-1500 m), Loop, Pause between
+  repeats and Debug. New placements start Off at 50% volume; looping sounds
+  default to Loop on, one-shots (jet flybys, drone, church bell, car alarm,
+  police car, ringtone, barking) to Loop off. Settings are saved with the session.
+- The sounds share the radio/crowd/TV playback limits (at most four of these
+  voices at once, 32 active sources) and wake within 1000 m or their audible
+  distance plus 50 m, whichever is larger. Radios, crowds, TVs and the war module
+  are unchanged.
+- Vinny - Sounds is not required and Game Master FX is not used. Thirteen
+  recordings are included unchanged; the other fifteen reuse the radio, jet,
+  firefight and shelling recordings Ambient Sounds already ships.
+
 ## 0.1.2
 
 - New module: No Game Master Budget. A Game Settings switch, "Enable Game Master

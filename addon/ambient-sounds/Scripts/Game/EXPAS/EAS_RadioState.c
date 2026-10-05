@@ -19,11 +19,13 @@ class EAS_RadioState
  static bool ValidValue(int key, float value)
  {
   if (value != value || value < 0 || value != Math.Floor(value)) return false;
-  if (key == 0) return value <= 12 || (value >= 100 && value <= 103);
+  // Permanent recording IDs 0-99 and random groups 100-103.
+  if (key == 0) return value <= 103;
   if (key == 1) return value <= 100;
   if (key == 2 || key == 3 || key == 6) return value <= 1;
   if (key == 4) return value <= 600;
-  return key == 5 && value >= 10 && value <= 150 && Math.Floor(value / 10) * 10 == value;
+  // Radios, crowds and TVs keep their 150 m limits; placed sounds reach 1500 m.
+  return key == 5 && value >= 10 && value <= 1500 && Math.Floor(value / 10) * 10 == value;
  }
  bool Apply(array<int> values)
  {

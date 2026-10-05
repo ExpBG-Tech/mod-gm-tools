@@ -104,3 +104,5 @@ Module source keeps its original terms (APL-SA, APL, MIT), and third-party
 audio and assets keep their notices in the module `Credits`, `Licenses` and
 `NOTICE.md` files. Because Ambient Sounds content is internal-use only, the
 Workshop item uses a Custom license: `INTERNAL USE ONLY - DO NOT RE-DISTRIBUTE OR RE-UPLOAD`.
+
+Vinny - Sounds by Vinuesa (Workshop 61D358A07E15C5FE, APL-SA)

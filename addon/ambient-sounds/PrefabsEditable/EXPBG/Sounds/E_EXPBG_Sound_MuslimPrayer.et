@@ -1,0 +1,29 @@
+EAS_SoundModule {
+ ID "F41F8DD265A6F737"
+ components {
+  SCR_EditableEntityComponent "{EF7F5F1BE14354BD}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{E61D375A3DD3D4F1}" {
+    Name "#EAS-SoundMuslimPrayer_Name"
+    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
+    m_Image "{7AC98B75C4D54967}UI/Textures/EXPBG/EAS_Crowd_Card.edds"
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_CROWD }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags 65
+  }
+  RplComponent "{F91037B6AD1F8CD8}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{CE78D4EE703911CF}" {}
+ }
+ Recording 20
+ Volume 50
+ Enabled 0
+ Loop 1
+ PauseSeconds 0
+ Range 1000
+}
