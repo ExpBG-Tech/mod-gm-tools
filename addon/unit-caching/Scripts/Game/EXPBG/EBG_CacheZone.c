@@ -48,7 +48,7 @@ class EBG_CacheZone : GenericEntity
  int Viewer;
  [Attribute("1", UIWidgets.EditBox, "GM map display", "0 1 1", category: "EXPBG GM Optimizer"), RplProp()]
  int Map;
- [Attribute("0", UIWidgets.EditBox, "Debug: 0 Off, 1 All-player panel + logs, 2 Also GM identity detail", "0 2 1", category: "EXPBG GM Optimizer"), RplProp()]
+ [Attribute("0", UIWidgets.EditBox, "Debug: 0 Off, 1 GM panel + logs, 2 Also GM identity detail", "0 2 1", category: "EXPBG GM Optimizer"), RplProp()]
  int DebugMessages;
  // Soldiers only (default). A zone enrols a group only when its faction is military
  // (SCR_AIGroupUtilityComponent.IsMilitary). Civilians are cached by EXPBG Ambient

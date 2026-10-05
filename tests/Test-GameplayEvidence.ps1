@@ -62,8 +62,9 @@ $cleanup = @'
 [EBG CLEANUP TEST DELETED] case=full-partial-cached bodies=1 byEbg=1 state=2 whileCached=1 afterLeave=153 afterDeath=156 cachedAt=99
 [EBG CLEANUP TEST DELETED] case=full-partial-awake-then-cache bodies=1 byEbg=1 state=0 whileCached=0 afterLeave=40 afterDeath=43 cachedAt=-1
 [EBG CLEANUP TEST SNAPSHOT] case=sim-death-while-cached heldWhileCached=1 restored=1 deletedByEbg=1
-[EBG CLEANUP RELEASE] group=6 member=31 attempts=3 rows=4 nativeLifetimeRequested=1 root=id=0x1 blocker='Cleanup held: Unowned'
-[EBG CLEANUP TEST RESULT] checks=70 failures=0 cases=9 reason=complete
+[EBG CLEANUP TEST FOREIGN] case=foreign-item owned=24 present=0 firstByEbg=1 secondByEbg=1 foreignGone=1 afterEligible=31
+[EBG CLEANUP TEST ATOMIC] case=us-etool-atomic owned=31 etool=1 gone=1 outerDeletes=2 sameTick=1 partialStrips=0
+[EBG CLEANUP TEST RESULT] checks=70 failures=0 cases=10 reason=complete
 Game destroyed
 '@
 if (!(Test-UnitCleanupEvidence $cleanup)) { throw 'Complete unit-cleanup proof rejected.' }
@@ -73,7 +74,15 @@ if (!(Test-UnitCleanupEvidence ($cleanup.Replace('Game destroyed', $teardown + "
 foreach ($invalid in @(
  $cleanup.Replace('failures=0', 'failures=1'),
  $cleanup.Replace('reason=complete', 'reason=timeout'),
- $cleanup.Replace('cases=9', 'cases=8'),
+ $cleanup.Replace('cases=10', 'cases=9'),
+ $cleanup.Replace('sameTick=1', 'sameTick=0'),
+ $cleanup.Replace('etool=1 gone=1', 'etool=1 gone=0'),
+ $cleanup.Replace('present=0 firstByEbg', 'present=3 firstByEbg'),
+ $cleanup.Replace('firstByEbg=1', 'firstByEbg=0'),
+ $cleanup.Replace('secondByEbg=1', 'secondByEbg=0'),
+ ($cleanup -replace '(?m)^\[EBG CLEANUP TEST ATOMIC\].*\r?\n', ''),
+ ($cleanup -replace '(?m)^\[EBG CLEANUP TEST FOREIGN\].*\r?\n', ''),
+ ($cleanup + "`n[EBG CLEANUP TEST PARTIAL STRIP] id=0x4 wearer=0x5 prefab='x'"),
  $cleanup.Replace('state=2 whileCached=1', 'state=0 whileCached=0'),
  $cleanup.Replace('state=1 whileCached=1', 'state=0 whileCached=0'),
  $cleanup.Replace('state=0 whileCached=0', 'state=1 whileCached=1'),
@@ -81,7 +90,6 @@ foreach ($invalid in @(
  ($cleanup -replace '(?m)^\[EBG CLEANUP TEST DELETED\] case=full-partial-awake-then-cache.*\r?\n', ''),
  $cleanup.Replace('heldWhileCached=1', 'heldWhileCached=0'),
  ($cleanup -replace '(?m)^\[EBG CLEANUP TEST SNAPSHOT\].*\r?\n', ''),
- ($cleanup -replace '(?m)^\[EBG CLEANUP RELEASE\].*\r?\n', ''),
  ($cleanup + "`n[EBG CLEANUP TEST SURVIVOR DELETE] id=0x2 wearer=0x3"),
  ($cleanup + "`n[EBG CLEANUP TEST RESULT] checks=1 failures=1 cases=9 reason=timeout"),
  ("SCRIPT (E): failure`n" + $cleanup),
@@ -89,4 +97,4 @@ foreach ($invalid in @(
  if (Test-UnitCleanupEvidence $invalid) { throw 'Incomplete unit-cleanup proof accepted.' }
 }
 if ((Test-GameplayEvidence $cleanup $false) -or (Test-BodyClearanceEvidence $cleanup) -or (Test-UnitCleanupEvidence $full) -or (Test-UnitCleanupEvidence $body)) { throw 'Unit-cleanup and other fixture kinds accepted as one another.' }
-'PASS: complete Full/trim, body-clearance and unit-cleanup evidence required; wrong case, casualty, cache state, survivor deletion, errors and incomplete runs rejected. No engine launched.'
+'PASS: complete Full/trim, body-clearance and unit-cleanup evidence required; wrong case, casualty, cache state, survivor deletion, partial casualty strip, errors and incomplete runs rejected. No engine launched.'

@@ -46,15 +46,17 @@ function Test-UnitCleanupEvidence([string]$Text) {
  $result = $Text.IndexOf('[EBG CLEANUP TEST RESULT]')
  $checked = $Text.Substring(0, $result) + ($Text.Substring($result) -replace "(?m)^.*SCRIPT\s+\(E\): 'SCR_BaseResupplySupportStationComponent' needs a entity catalog manager!\r?$", '')
  if ($Text -notmatch 'Game destroyed' -or $checked -match 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed') { return $false }
- if ($Text -match '\[EBG CLEANUP TEST SURVIVOR DELETE\]') { return $false }
- return $Text -match '\[EBG CLEANUP TEST RESULT\] checks=[1-9]\d* failures=0 cases=9 reason=complete' -and
+ if ($Text -match '\[EBG CLEANUP TEST SURVIVOR DELETE\]|\[EBG CLEANUP TEST PARTIAL STRIP\]') { return $false }
+ # Per-casualty cleanup: each casualty (body + dropped items) goes whole in one tick, foreign content included.
+ return $Text -match '\[EBG CLEANUP TEST RESULT\] checks=[1-9]\d* failures=0 cases=10 reason=complete' -and
+  $Text -match '\[EBG CLEANUP TEST ATOMIC\] case=us-etool-atomic owned=([2-9]|[1-9]\d+) etool=1 gone=1 outerDeletes=[1-9]\d* sameTick=1 partialStrips=0' -and
+  $Text -match '\[EBG CLEANUP TEST FOREIGN\] case=foreign-item owned=([2-9]|[1-9]\d+) present=0 firstByEbg=1 secondByEbg=1 foreignGone=1' -and
   $Text -match '\[EBG CLEANUP TEST DELETED\] case=sim-partial-awake .*state=0 whileCached=0' -and
   $Text -match '\[EBG CLEANUP TEST DELETED\] case=sim-partial-cached .*state=1 whileCached=1' -and
   $Text -match '\[EBG CLEANUP TEST DELETED\] case=full-partial-cached .*state=2 whileCached=1' -and
   $Text -match '\[EBG CLEANUP TEST DELETED\] case=full-partial-awake-then-cache .*state=0 whileCached=0' -and
   ($Text -match '\[EBG CLEANUP TEST SNAPSHOT\] case=sim-death-while-cached heldWhileCached=1 restored=1 deletedByEbg=1' -or
-   $Text -match '\[EBG CLEANUP TEST SNAPSHOT\] case=sim-death-while-cached knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0') -and
-  $Text -match '\[EBG CLEANUP RELEASE\] '
+   $Text -match '\[EBG CLEANUP TEST SNAPSHOT\] case=sim-death-while-cached knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0')
 }
 if (!$OrchestratorSlotGranted) { throw 'Explicit orchestrator native-slot handoff required. This launches a diagnostic server.' }
 if (([int][bool]$FreshTrim + [int][bool]$BodyClearance + [int][bool]$UnitCleanup) -gt 1) { throw 'Select one fixture kind.' }

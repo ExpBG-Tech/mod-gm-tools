@@ -22,8 +22,20 @@ class EBG_FullSaveGate
   if (SCR_AIGroupSerializer.EBG_HasPendingMemberCallbacks()) return "Not ready to save: native group callbacks need recovery. Restore ALL after original member identity and ownership are valid.";
   if (s_Fault) return "Full save protection requires attention: " + s_Reason;
   if (s_Held && s_RestoreRequested) return "Not ready to save: restoring every cache zone. Wait for recovery to finish before any native or CDF save.";
-  if (s_Held) return "Native saves are paused while Full groups are absent. The matching CDF companion can save stable cached groups. Other saves require restoring ALL caches.";
+  // Shown only while Full groups are actually absent. The native permission itself stays
+  // withheld until Prepare for save releases it (unchanged); the "Before saving mission"
+  // action already requires that before any native save.
+  if (s_Held && HasAbsentFullGroups(EBG_CacheManager.Instance)) return "Native saves are paused while Full groups are absent. The matching CDF companion can save stable cached groups. Other saves require restoring ALL caches.";
+  if (s_Held) return "";
   return s_Reason;
+ }
+ // A Full group whose survivors are currently deleted or mid-transition.
+ static bool HasAbsentFullGroups(EBG_CacheManager manager)
+ {
+  if (!manager) return false;
+  foreach (EBG_CacheGroup record : manager.Records)
+   if (record.Full || record.FullCleanup || !record.FullMemberIds.IsEmpty()) return true;
+  return false;
  }
 
  protected static bool SupportedRuntime(out string reason)

@@ -45,9 +45,6 @@ class EBG_CleanupObject
 	bool NativeRequested;
 	float NativeRemaining = -1;
 	string ReleaseReason;
-	// Per-root bounded retry state (H3). Not persisted; a reload starts a fresh count.
-	int CleanupBlocks;
-	float CleanupRetryAt;
 	void OnSlotChanged(InventoryStorageSlot oldSlot, InventoryStorageSlot newSlot)
 	{
 		if (EBG_CacheCleanup.Instance && Held && !FullDetached)
@@ -139,14 +136,18 @@ class EBG_CacheCleanup
 	protected float m_NextMappingSummary;
 	protected bool m_LastFailureReported;
 	protected float m_LastDeletionScan = -1;
-	// A root rejected by SafeTree, the holder check or an unconfirmed native delete is
-	// retried at most CASUALTY_BLOCK_LIMIT times, CASUALTY_RETRY_SECONDS apart.
+	// A casualty whose native delete is not confirmed is retried at most
+	// CASUALTY_BLOCK_LIMIT times, CASUALTY_RETRY_SECONDS apart, then handed back to native
+	// garbage; a keep-protected or intel casualty is parked at once. A rejection
+	// deletes nothing of that casualty (EBG_CacheMember.CleanupBlocks/CleanupRetryAt).
 	static const int CASUALTY_BLOCK_LIMIT = 3;
 	static const float CASUALTY_RETRY_SECONDS = 60.0;
 	protected string m_Phase;
 	protected string m_Detail;
 	// Owner of the tree SafeTree is proving; every node must belong to this member.
 	protected EBG_CacheMember m_TreeOwner;
+	// When set, SafeTree records every node it proved (one casualty's verified set).
+	protected ref array<IEntity> m_TreeNodes;
 
 	static EBG_CacheCleanup Get()
 	{
@@ -214,7 +215,7 @@ class EBG_CacheCleanup
 		if (!object || object.Entity || object.Corpse || object.Held || object.Allowed || !object.PermanentlyReleased || !object.Member || !object.Member.Dead || object.Member.WasPlayer || !object.PersistentMap) return false;
 		EBG_CleanupFullEntry entry = object.PersistentMap;
 		bool known = object.NativeBelongings && (IsNativeBelongingsResource(entry.Prefab) || BelongingsModels().Contains(entry.Prefab));
-		if (!object.NativeBelongings && ApprovedHeads().Contains(entry.Prefab)) known = true;
+		if (!object.NativeBelongings && IsHeadEntry(entry)) known = true;
 		return known && object.PersistentId.IsNull() && entry.NativeId.IsNull() && entry.MemberId == object.Member.PersistentId && !entry.WasHeld && entry.ParentEntry == -1 && entry.ParentId.IsNull() && !entry.ParentOriginal;
 	}
 	protected bool CanExportInertCorpseHead(EBG_CleanupObject object, PersistenceSystem system)
@@ -226,7 +227,7 @@ class EBG_CacheCleanup
 		EBG_CleanupObject corpse = Find(member.Entity);
 		if (!controller || !controller.IsDead() || !corpse || !corpse.Corpse || !corpse.Held || !corpse.DeathConfirmed || corpse.Member != member || corpse.Group != object.Group) return false;
 		CharacterIdentityComponent identity = CharacterIdentityComponent.Cast(member.Entity.FindComponent(CharacterIdentityComponent));
-		return identity && identity.GetHeadEntity() == object.Entity && object.Entity.GetParent() == member.Entity && ApprovedHeads().Contains(SCR_ResourceNameUtils.GetPrefabName(object.Entity)) && ItemPolicyReason(object.Entity) == "";
+		return identity && identity.GetHeadEntity() == object.Entity && object.Entity.GetParent() == member.Entity && IsHeadLeaf(object.Entity) && ItemPolicyReason(object.Entity) == "";
 	}
 	protected bool NeverIdentifiedBelongings(EBG_CleanupObject object, PersistenceSystem system)
 	{
@@ -383,7 +384,7 @@ class EBG_CacheCleanup
 		if (parent) { parentId = system.GetId(parent); parentPrefab = SCR_ResourceNameUtils.GetPrefabName(parent); }
 		if (entity) { actualId = system.GetId(entity); actualPrefab = SCR_ResourceNameUtils.GetPrefabName(entity); actualShape = FullShape(entity); }
 		PrintFormat("[EBG MISSION MAP ACTUAL] parentPresent=%1 parentId=%2 parentPrefab='%3' itemPresent=%4 itemId=%5 itemPrefab='%6' itemShape='%7'", parent != null, parentId, parentPrefab, entity != null, actualId, actualPrefab, actualShape);
-		if (ApprovedHeads().Contains(entry.Prefab)) ReportHeadIdentity("disk mapping failure", SCR_ChimeraCharacter.Cast(parent), entry.Prefab);
+		if (IsHeadEntry(entry)) ReportHeadIdentity("disk mapping failure", SCR_ChimeraCharacter.Cast(parent), entry.Prefab);
 		if (entry.LoadedSlotKind > 0 && parent) ReportLoadedSlots("disk mapping failure", parent, entity);
 		int shown;
 		if (parent)
@@ -475,12 +476,12 @@ class EBG_CacheCleanup
 					bool mapped = ResolveOriginalMapping(entry, parent, system, entity, reason);
 					entry.Object = null;
 					bool correctingHead;
-					if (mapped && !entity && entry.NativeId.IsNull() && ApprovedHeads().Contains(entry.Prefab) && parent == object.Member.Entity && entry.ParentId == entry.MemberId)
+					if (mapped && !entity && entry.NativeId.IsNull() && IsHeadEntry(entry) && parent == object.Member.Entity && entry.ParentId == entry.MemberId)
 					{
 						if (row.Released || !row.Held || row.Corpse || object.Member.WasPlayer || object.Member.Dead || row.RailsPresent || row.BayonetPresent) { reason = "Original head row is not eligible living AI provenance"; return false; }
 						foreach (EBG_CacheMember cohortMember : record.Members) if (cohortMember.WasPlayer || (cohortMember.Entity && cohortMember.Entity.EBG_WasPlayerControlled())) { reason = "Head correction requires an entirely nonplayer AI cohort"; return false; }
 						int originalHeads;
-						foreach (EBG_MissionObjectData headRow : saved.Objects) if (headRow.Map.MemberId == entry.MemberId && ApprovedHeads().Contains(headRow.Map.Prefab)) originalHeads++;
+						foreach (EBG_MissionObjectData headRow : saved.Objects) if (headRow.Map.MemberId == entry.MemberId && IsHeadEntry(headRow.Map)) originalHeads++;
 						if (originalHeads != 1) { reason = "Original head provenance is not unique"; return false; }
 						EBG_MissionHeadBackup headBackup = new EBG_MissionHeadBackup();
 						if (!headBackup.CaptureHead(object, row)) { reason = "Native current head ownership/identity contract unavailable"; return false; }
@@ -1058,6 +1059,18 @@ class EBG_CacheCleanup
 			"SCR_MeleeWeaponProperties",
 			"SCR_HealSupportStationComponent",
 			"SCR_ResupplyMedicalGadgetSupportStationComponent",
+			// Production modset E-tool (2026-10-06): the multi-part deployable derives from
+			// SCR_BaseDeployableInventoryItemComponent, so ItemPolicyReason protects it while
+			// deployed. The placeable one holds only prefab data and a transient placing-gadget
+			// link that exists while a player places the item, never on a casualty.
+			"SCR_DeployablePlaceableItemComponent",
+			"SCR_MultiPartDeployableItemComponent",
+			// ACE Overheating weapon presentation and thermal/jam state: no inventory,
+			// ownership or mission data; a removed casualty weapon loses nothing.
+			"ACE_Overheating_BarrelComponent",
+			"ACE_Overheating_HelperAttachmentComponent",
+			"ACE_Overheating_SmokeEffectComponent",
+			"ACE_Overheating_BarrelGlowEffectComponent",
 			"AICombatPropertiesComponent",
 			"ActionsManagerComponent",
 			"AttachmentSlotComponent",
@@ -1196,6 +1209,54 @@ class EBG_CacheCleanup
 		s_ApprovedHeads = values;
 		return s_ApprovedHeads;
 	}
+	// The character's own identity head, resolved through the native identity component,
+	// never by GUID. Character mods (ToH ReCharacters, Change Your Face) inherit the stock
+	// CharacterHead_Base and only swap mesh/materials: the head is regenerated from the
+	// character's visual identity, carries no inventory and is never loot.
+	protected static bool IsIdentityHead(IEntity entity)
+	{
+		if (!entity || entity.GetChildren() || entity.FindComponent(InventoryItemComponent)) return false;
+		SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(entity.GetParent());
+		if (!character) return false;
+		CharacterIdentityComponent identity = CharacterIdentityComponent.Cast(character.FindComponent(CharacterIdentityComponent));
+		return identity && identity.GetHeadEntity() == entity;
+	}
+	protected static bool IsHeadLeaf(IEntity entity)
+	{
+		return entity && (ApprovedHeads().Contains(SCR_ResourceNameUtils.GetPrefabName(entity)) || IsIdentityHead(entity));
+	}
+	// Saved rows have no live identity. Only a stock-list or identity-head capture yields
+	// this UUID-less stock head shape in the head folder (FindFullLeaf still rebinds it by
+	// exact prefab, shape and parent).
+	protected static bool IsHeadEntry(EBG_CleanupFullEntry entry)
+	{
+		if (!entry) return false;
+		if (ApprovedHeads().Contains(entry.Prefab)) return true;
+		return entry.NativeId.IsNull() && entry.ShapeSignature == "GameEntity|ParametricMaterialInstanceComponent" && entry.Prefab.Contains("Prefabs/Characters/Heads/");
+	}
+	// ACE Overheating attaches this generated helper to each supported weapon through its
+	// own AttachmentSlotComponent. Its prefab is a bare GenericEntity (Hierarchy only): no
+	// inventory, actions, replication or script state, so the weapon's slot recreates it
+	// like an authored model part. Callers still require the parent weapon's policy.
+	protected static bool IsWeaponHelperLeaf(IEntity entity)
+	{
+		if (!entity || entity.GetChildren() || entity.Type().ToString() != "GenericEntity" || SCR_ResourceNameUtils.GetPrefabName(entity) != "{D4B8C629F3D4A322}Prefabs/Weapons/Attachments/Muzzle/ACE_Overheating_HelperAttachment.et") return false;
+		array<Managed> components = {};
+		entity.FindComponents(GenericComponent, components);
+		foreach (Managed component : components)
+			if (component.Type().ToString() != "Hierarchy") return false;
+		IEntity weapon = entity.GetParent();
+		if (!weapon || !weapon.FindComponent(BaseWeaponComponent)) return false;
+		array<Managed> slots = {};
+		weapon.FindComponents(AttachmentSlotComponent, slots);
+		if (slots.Count() > 32) return false;
+		foreach (Managed candidate : slots)
+		{
+			AttachmentSlotComponent slot = AttachmentSlotComponent.Cast(candidate);
+			if (slot && slot.Type().ToString() == "ACE_Overheating_HelperAttachmentComponent" && slot.GetAttachedEntity() == entity) return true;
+		}
+		return false;
+	}
 
 	// These resources are never ordinary kit: only the native death callback may enroll them.
 	static bool IsNativeBelongingsPrefab(IEntity entity)
@@ -1263,6 +1324,17 @@ class EBG_CacheCleanup
 				return "Head model has an unverified runtime component";
 			return "";
 		}
+		// A character-mod identity head: same native leaf rule, every component approved.
+		if (IsIdentityHead(item))
+		{
+			if (item.Type().ToString() != "GameEntity") return "Identity head is not a native character leaf";
+			array<Managed> identityHeadComponents = {};
+			item.FindComponents(GenericComponent, identityHeadComponents);
+			foreach (Managed identityHeadComponent : identityHeadComponents)
+				if (!ApprovedComponents().Contains(identityHeadComponent.Type().ToString())) return "Identity head has an unverified runtime component: " + identityHeadComponent.Type().ToString();
+			return "";
+		}
+		if (IsWeaponHelperLeaf(item)) return ItemPolicyReason(item.GetParent());
 		// Native unnamed leaves authored inside the inspected US/Soviet flashlights.
 		// Both exact parent/empty-component shapes were verified in native sessions.
 		if (prefab == "" && item.Type().ToString() == "LightEntity" && !item.GetChildren())
@@ -1300,8 +1372,14 @@ class EBG_CacheCleanup
 		}
 		// Ownership, exact shape, storage binding and state checks still apply.
 		if (prefab.IsEmpty() || !item.GetPrefabData()) { return "Item has no resolvable prefab"; }
-		SCR_BaseDeployableInventoryItemComponent deployable = SCR_BaseDeployableInventoryItemComponent.Cast(item.FindComponent(SCR_BaseDeployableInventoryItemComponent));
-		if (deployable && deployable.IsDeployed()) { return "Deployed equipment is protected"; }
+		// Every deployable, including SCR_MultiPartDeployableItemComponent next to another one.
+		array<Managed> deployables = {};
+		item.FindComponents(SCR_BaseDeployableInventoryItemComponent, deployables);
+		foreach (Managed deployableComponent : deployables)
+		{
+			SCR_BaseDeployableInventoryItemComponent deployable = SCR_BaseDeployableInventoryItemComponent.Cast(deployableComponent);
+			if (!deployable || deployable.IsDeployed()) { return "Deployed equipment is protected"; }
+		}
 		// Never delete a thrown projectile or placed explosive from ground provenance.
 		if (item.FindComponent(BaseProjectileComponent) && Holder(item) == item) { return "Ground projectile/explosive is protected"; }
 		array<Managed> components = {};
@@ -2492,7 +2570,7 @@ class EBG_CacheCleanup
 #endif
 		}
 #ifdef EBG_ACCEPTANCE_TEST
-		if (ApprovedHeads().Contains(entry.Prefab)) ReportHeadIdentity("capture", character, entry.Prefab);
+		if (IsHeadLeaf(object.Entity)) ReportHeadIdentity("capture", character, entry.Prefab);
 #endif
 		if (entry.MemberId.IsNull()) { reason = "Cleanup original member has no native identity"; return false; }
 		if (IsNativeDummyBelt(entry.Prefab))
@@ -2555,7 +2633,7 @@ class EBG_CacheCleanup
 		if (entry.NativeId.IsNull() && !entry.NativeClothSlot && !entry.WeaponInventorySlot) CaptureNamedSlot(entry, persistence);
 		if (entry.NativeId.IsNull() && !entry.WeaponInventorySlot && !entry.NativeClothSlot && !entry.NamedEntitySlot)
 		{
-			bool verifiedLeaf = ApprovedHeads().Contains(entry.Prefab) || BelongingsModels().Contains(entry.Prefab) || object.Entity.Type().ToString() == "LightEntity" || object.Entity.Type().ToString() == "RHS_LightEntity";
+			bool verifiedLeaf = IsHeadLeaf(object.Entity) || IsWeaponHelperLeaf(object.Entity) || BelongingsModels().Contains(entry.Prefab) || object.Entity.Type().ToString() == "LightEntity" || object.Entity.Type().ToString() == "RHS_LightEntity";
 			// WeaponPart_Base disables Inventory/Actions. The inspected Pegasus
 			// variant adds only prefab-configured, read-only detection properties.
 			// Reuse exact inspected resources, never accept arbitrary prefab prefixes.
@@ -2723,7 +2801,7 @@ class EBG_CacheCleanup
 		IEntity member, holder;
 		UUID actualMemberId, holderId;
 		if (entry.Object && entry.Object.Member) member = entry.Object.Member.Entity;
-		if (ApprovedHeads().Contains(entry.Prefab)) ReportHeadIdentity("rebind", SCR_ChimeraCharacter.Cast(member), entry.Prefab);
+		if (IsHeadEntry(entry)) ReportHeadIdentity("rebind", SCR_ChimeraCharacter.Cast(member), entry.Prefab);
 		if (actual) holder = Holder(actual);
 		if (persistence && member) actualMemberId = persistence.GetId(member);
 		if (persistence && holder) holderId = persistence.GetId(holder);
@@ -3165,6 +3243,13 @@ class EBG_CacheCleanup
 			return false;
 		}
 		if (!object.Corpse && !VanillaItemPolicy(entity)) { m_Reason = ItemPolicyReason(entity); return false; }
+		if (m_TreeNodes)
+		{
+			// Storage contents are usually hierarchy children too: prove each node once.
+			if (m_TreeNodes.Contains(entity)) return true;
+			if (m_TreeNodes.Count() >= 4096) { m_Reason = "Casualty tree exceeds 4096 entities: " + DescribeNode(entity); return false; }
+			m_TreeNodes.Insert(entity);
+		}
 		array<Managed> storages = {};
 		entity.FindComponents(BaseInventoryStorageComponent, storages);
 		foreach (Managed storageObject : storages)
@@ -3242,7 +3327,7 @@ class EBG_CacheCleanup
 		// The allowlisted original inventory ledger admits equipment only. Visual
 		// body parts and muzzle projectiles are removed with their containing root.
 		ResourceName prefab = SCR_ResourceNameUtils.GetPrefabName(entity);
-		if (ApprovedHeads().Contains(prefab) || BelongingsModels().Contains(prefab) || entity.FindComponent(BaseProjectileComponent)) { return false; }
+		if (IsHeadLeaf(entity) || BelongingsModels().Contains(prefab) || entity.FindComponent(BaseProjectileComponent)) { return false; }
 		return entity.FindComponent(InventoryItemComponent) || entity.FindComponent(BaseLoadoutClothComponent);
 	}
 
@@ -3318,16 +3403,17 @@ class EBG_CacheCleanup
 			if (member) member.CleanupDrained = false;
 	}
 	// A held but never-approved remain lying on its own (for example a dropped modded
-	// weapon). EBG never deletes it; once its casualty is mature it is handed back.
+	// weapon). EBG never deletes it; once its casualty is mature, that whole casualty is
+	// handed back intact (RemoveCasualty refuses it before deleting anything).
 	protected bool StandaloneUnapproved(EBG_CleanupObject object, EBG_CacheGroup record)
 	{
 		return object.Group == record && object.Held && !object.Allowed && !object.Corpse && object.Entity && !object.FullDetached && object.Member && object.Member.Dead && !object.Member.WasPlayer && Holder(object.Entity) == object.Entity;
 	}
 	// A row a later scan could still delete or hand back. Parked (mission-protected)
-	// roots and rows that only ride inside another root never keep a record unsettled.
+	// casualties and rows that only ride inside another root never keep a record unsettled.
 	protected bool PendingCasualtyRow(EBG_CleanupObject object, EBG_CacheGroup record)
 	{
-		if (object.Group != record || !object.Held || !object.Entity || object.FullDetached || object.CleanupBlocks >= CASUALTY_BLOCK_LIMIT) return false;
+		if (object.Group != record || !object.Held || !object.Entity || object.FullDetached || !object.Member || object.Member.CleanupBlocks >= CASUALTY_BLOCK_LIMIT) return false;
 		if (IsOwnedCleanupTarget(object.Entity, record)) return true;
 		return StandaloneUnapproved(object, record);
 	}
@@ -3343,15 +3429,41 @@ class EBG_CacheCleanup
 		}
 		return rows;
 	}
-	// The root still lies where its casualty left it: on the ground, on the casualty's
-	// body, or inside another held container of the same casualty.
-	protected bool HeldByCasualty(EBG_CleanupObject object)
+	// 0.1.4 rule (user decision): a casualty is its body, deleted in one native call that
+	// takes everything inside it, plus its own items lying loose on the ground (the weapon
+	// dropped on death). No per-item policy checks. Rows held by anyone else (a player who
+	// picked an item up, a vehicle or box) are never targets. Returns the body, if any.
+	protected IEntity CollectCasualtyTargets(EBG_CacheGroup record, EBG_CacheMember member, array<EBG_CleanupObject> rows, array<IEntity> targets)
 	{
-		IEntity holder = Holder(object.Entity);
-		if (!holder) return false;
-		if (holder == object.Entity || holder == object.Member.Entity) return true;
-		EBG_CleanupObject container = Find(holder);
-		return container && container.Held && container.Member == object.Member;
+		IEntity body;
+		foreach (EBG_CleanupObject object : m_Objects)
+		{
+			if (object.Group != record || object.Member != member || !object.Held || !object.Entity || object.FullDetached) continue;
+			rows.Insert(object);
+			if (object.Corpse) body = object.Entity;
+		}
+		if (body) targets.Insert(body);
+		foreach (EBG_CleanupObject row : rows)
+		{
+			if (row.Corpse || row.Entity == body || targets.Contains(row.Entity)) continue;
+			if (Holder(row.Entity) == row.Entity) targets.Insert(row.Entity);
+		}
+		return body;
+	}
+	// Read-only test hooks; deletion also requires all independent Tick guards.
+	bool CanDeleteCasualty(EBG_CacheGroup record, EBG_CacheMember member)
+	{
+		if (!record || !member) return false;
+		array<EBG_CleanupObject> rows = {};
+		array<IEntity> targets = {};
+		CollectCasualtyTargets(record, member, rows, targets);
+		return !targets.IsEmpty();
+	}
+	int CollectHeldMemberEntities(EBG_CacheMember member, array<IEntity> entities)
+	{
+		foreach (EBG_CleanupObject object : m_Objects)
+			if (object.Member == member && object.Held && object.Entity && !entities.Contains(object.Entity)) entities.Insert(object.Entity);
+		return entities.Count();
 	}
 	protected static bool KeepProtected(string reason)
 	{
@@ -3381,56 +3493,125 @@ class EBG_CacheCleanup
 			if (TreeHoldsProtected(child, depth + 1)) return true;
 		return false;
 	}
-	// H3: bounded per-root retry. A rejected root never puts the record in back-off,
-	// so other casualties drain on later scans.
-	protected void BlockRoot(EBG_CacheGroup record, EBG_CleanupObject root, float now, string reason, bool immediate = false)
+	// The casualty's body row when its body is still present, otherwise the given row.
+	protected EBG_CleanupObject CasualtyReportRow(EBG_CacheGroup record, EBG_CacheMember member, EBG_CleanupObject fallback)
 	{
-		root.CleanupBlocks++;
-		if (immediate) root.CleanupBlocks = CASUALTY_BLOCK_LIMIT;
-		root.CleanupRetryAt = now + CASUALTY_RETRY_SECONDS;
+		EBG_CleanupObject body = Find(member.Entity);
+		if (body && body.Corpse && body.Group == record && body.Member == member) return body;
+		return fallback;
+	}
+	// H3: bounded per-casualty retry. Nothing of this casualty was deleted. A rejected
+	// casualty never puts the record in back-off, so other casualties drain on later scans.
+	protected void BlockCasualty(EBG_CacheGroup record, EBG_CacheMember member, array<EBG_CleanupObject> rows, EBG_CleanupObject blocker, float now, string reason, bool immediate)
+	{
+		member.CleanupBlocks++;
+		if (immediate) member.CleanupBlocks = CASUALTY_BLOCK_LIMIT;
+		member.CleanupRetryAt = now + CASUALTY_RETRY_SECONDS;
 		m_Reason = reason;
-		if (root.CleanupBlocks < CASUALTY_BLOCK_LIMIT)
+		if (member.CleanupBlocks < CASUALTY_BLOCK_LIMIT)
 		{
-			m_Phase = "blocked root retry";
-			m_Detail = string.Format("%1 (attempt %2 of %3)", Friendly(reason), root.CleanupBlocks, CASUALTY_BLOCK_LIMIT);
+			m_Phase = "blocked casualty retry";
+			m_Detail = string.Format("%1 (attempt %2 of %3)", Friendly(reason), member.CleanupBlocks, CASUALTY_BLOCK_LIMIT);
 			return;
 		}
-		if (KeepProtected(reason) || TreeHoldsProtected(root.Entity))
+		EBG_CleanupObject report = CasualtyReportRow(record, member, blocker);
+		IEntity reportEntity;
+		if (report) reportEntity = report.Entity;
+		bool keep = KeepProtected(reason);
+		foreach (EBG_CleanupObject row : rows)
+			if (!keep && row.Entity && TreeHoldsProtected(row.Entity)) keep = true;
+		if (keep)
 		{
 			// Mission protection keeps the 0.1.31 rule: held, never deleted and never
-			// handed to native garbage. The root is parked: no further retries or scans.
+			// handed to native garbage. The whole casualty is parked: no further retries.
 			m_Reason = "Cleanup held: protected casualty remains kept";
 			m_Phase = "protected remains kept";
 			m_Detail = Friendly(reason);
-			PrintFormat("[EBG CLEANUP KEEP] group=%1 member=%2 root=%3 blocker='%4'", record.Id, root.Member.Id, DescribeNode(root.Entity), reason);
+			PrintFormat("[EBG CLEANUP KEEP] group=%1 member=%2 root=%3 blocker='%4'", record.Id, member.Id, DescribeNode(reportEntity), reason);
 			return;
 		}
-		ReleaseBlockedRoot(record, root, reason);
-		m_Reason = "Cleanup released a blocked casualty root to native garbage handling";
-		m_Phase = "blocked root returned to native garbage";
+		ReleaseCasualty(record, member, report, reason);
+		m_Reason = "Cleanup released an intact blocked casualty to native garbage handling";
+		m_Phase = "blocked casualty returned to native garbage";
 		m_Detail = m_Phase;
 	}
-	// Non-permanent release: no lineage or negative IDs, so saves and member identity
-	// are unaffected. Native garbage resumes the lifetime it requested (vanilla or
-	// Persistent Battlefield); without a captured request the remains behave as they
-	// would without EBG.
-	protected void ReleaseBlockedRoot(EBG_CacheGroup record, EBG_CleanupObject root, string reason)
+	// Non-permanent release of the WHOLE intact casualty (body, gear and owned ground
+	// roots): no lineage or negative IDs, so saves and member identity are unaffected.
+	// Native garbage resumes the lifetime it requested (vanilla or Persistent Battlefield);
+	// without a captured request the remains behave as they would without EBG.
+	protected void ReleaseCasualty(EBG_CacheGroup record, EBG_CacheMember member, EBG_CleanupObject report, string reason)
 	{
-		if (!root || !root.Entity || !root.Member) return;
-		IEntity rootEntity = root.Entity;
-		EBG_CacheMember member = root.Member;
-		string node = DescribeNode(rootEntity);
-		bool lifetimeRequested = root.NativeRequested;
+		string node = "null";
+		bool lifetimeRequested;
+		if (report)
+		{
+			node = DescribeNode(report.Entity);
+			lifetimeRequested = report.NativeRequested;
+		}
 		int released;
 		foreach (EBG_CleanupObject object : m_Objects)
 		{
 			if (object.Group != record || object.Member != member || !object.Held || !object.Entity || object.FullDetached) continue;
-			if (object != root && !EBG_FullCacheGroup.InventoryBelongsTo(object.Entity, rootEntity)) continue;
 			object.ReleaseReason = "Cleanup blocked after bounded retries; native garbage handling resumed";
 			ReleaseObject(object, false);
 			released++;
 		}
-		PrintFormat("[EBG CLEANUP RELEASE] group=%1 member=%2 attempts=%3 rows=%4 nativeLifetimeRequested=%5 root=%6 blocker='%7'", record.Id, member.Id, root.CleanupBlocks, released, lifetimeRequested, node, reason);
+		PrintFormat("[EBG CLEANUP RELEASE] group=%1 member=%2 attempts=%3 rows=%4 nativeLifetimeRequested=%5 root=%6 blocker='%7'", record.Id, member.Id, member.CleanupBlocks, released, lifetimeRequested, node, reason);
+	}
+	// The casualty is the unit of work: its body and its loose items go in this same tick,
+	// so a body is never left partially stripped across scans.
+	protected void RemoveCasualty(EBG_CacheGroup record, EBG_CacheMember member, array<vector> players, float now)
+	{
+		EBG_CacheZone zone = record.Zone;
+		array<EBG_CleanupObject> rows = {};
+		array<IEntity> targets = {};
+		IEntity body = CollectCasualtyTargets(record, member, rows, targets);
+		// Items taken by players or stored elsewhere stop being tracked and are never deleted.
+		foreach (EBG_CleanupObject row : rows)
+			if (row && row.Entity && !targets.Contains(row.Entity) && Holder(row.Entity) != body) ReleaseObject(row, true);
+		if (targets.IsEmpty())
+		{
+			member.CleanupBlocks = 0;
+			m_Phase = "done";
+			m_Detail = "casualty items were taken or stored elsewhere; nothing left to remove";
+			return;
+		}
+		// Recheck positions and this casualty's death and age immediately before deletion.
+		if (!zone.Enabled || !zone.Cleanup || zone.Editing || PlayerNear(record, players) || !CasualtyMature(record, member, now, zone.CorpseAge))
+		{
+			record.CleanupClearSince = -1;
+			m_Phase = "rechecking";
+			m_Detail = "players or casualty state changed at deletion; clear delay restarts";
+			return;
+		}
+		// Explicit protection still wins: a keep component or valuable intel parks the casualty.
+		foreach (IEntity kept : targets)
+		{
+			if (!TreeHoldsProtected(kept)) continue;
+			BlockCasualty(record, member, rows, CasualtyReportRow(record, member, null), now, "Cleanup held: keep-protected or valuable intel casualty", true);
+			return;
+		}
+		EntityID reportId = targets[0].GetID();
+		bool hadBody = body != null;
+		int count = targets.Count();
+		foreach (IEntity target : targets)
+			if (target) SCR_EntityHelper.DeleteEntityAndChildren(target);
+		int left;
+		foreach (IEntity remaining : targets)
+			if (remaining) left++;
+		if (left > 0)
+		{
+			// A refused or deferred native delete retries a minute later, at most three times.
+			BlockCasualty(record, member, rows, CasualtyReportRow(record, member, null), now, string.Format("Native deletion not confirmed for %1 of %2 casualty objects", left, count), false);
+			return;
+		}
+		if (hadBody) EBG_CacheDebug.CleanedBodies++;
+		member.CleanupBlocks = 0;
+		m_Reason = "One managed AI casualty removed: body and dropped weapon";
+		m_Phase = "removed one casualty";
+		m_Detail = m_Phase;
+		if (zone.DebugMessages > 0)
+			PrintFormat("[EBG CLEANUP REMOVED] zone=%1 group=%2 member=%3 root=%4 body=%5 roots=%6 rows=%7 survivors=%8 state='%9'", zone.GetID(), record.Id, member.Id, reportId, hadBody, count, rows.Count(), record.Alive, record.DebugState(false));
 	}
 	protected void PublishCasualtyStatus(EBG_CacheGroup record)
 	{
@@ -3450,8 +3631,8 @@ class EBG_CacheCleanup
 		record.CleanupStatus = string.Format("Casualty cleanup: %1 bodies waiting, %2 gone, %3 handed back | %4", waiting, gone, handedBack, detail);
 	}
 
-	// One owned body/equipment root inspection across all records in a main scan.
-	// Rejected trees spend the same allowance as a successful native deletion.
+	// One casualty (its body and every owned root, proven together) across all records in
+	// a main scan. A rejected casualty spends the same allowance as a native deletion.
 	// The manager supplies the same timestamp and fresh player list to each record,
 	// including Simulation-suspended and Full-cached ones. There, only dead members'
 	// rows are candidates; survivors and their snapshots are never touched.
@@ -3580,54 +3761,12 @@ class EBG_CacheCleanup
 			}
 			// A young casualty, or one still in a live snapshot, never spends the shared allowance.
 			if (!checkedMature) continue;
-			if (now < object.CleanupRetryAt) { nextEvent = Math.Min(nextEvent, object.CleanupRetryAt); continue; }
+			if (now < checkedMember.CleanupRetryAt) { nextEvent = Math.Min(nextEvent, checkedMember.CleanupRetryAt); continue; }
 			// Transfer checks may prune rows. Resume against the current ledger,
 			// wrapping next time; no saved identity or ownership relies on this cursor.
 			record.CleanupObjectCursor = index + 1;
 			m_LastDeletionScan = now;
-			if (!object.Allowed)
-			{
-				BlockRoot(record, object, now, "Cleanup held: unapproved standalone remain: policy=" + ItemPolicyReason(object.Entity) + " " + DescribeNode(object.Entity), true);
-				return;
-			}
-			if (!HeldByCasualty(object))
-			{
-				BlockRoot(record, object, now, "Cleanup held: root is no longer held by its casualty: " + DescribeNode(object.Entity));
-				return;
-			}
-			m_TreeOwner = object.Member;
-			bool safe = SafeTree(object.Entity, record);
-			m_TreeOwner = null;
-			if (!safe)
-			{
-				BlockRoot(record, object, now, "Cleanup held: " + m_Reason);
-				return;
-			}
-			// Recheck positions and this casualty's death and age immediately before deletion.
-			if (!zone.Enabled || !zone.Cleanup || zone.Editing || !IsOwnedCleanupTarget(object.Entity, record) || PlayerNear(record, players) || !CasualtyMature(record, object.Member, now, zone.CorpseAge))
-			{
-				record.CleanupClearSince = -1;
-				m_Phase = "rechecking";
-				m_Detail = "players or casualty state changed at deletion; clear delay restarts";
-				return;
-			}
-			IEntity target = object.Entity;
-			EntityID targetId = target.GetID();
-			bool body = SCR_ChimeraCharacter.Cast(target) != null;
-			// A deferred/refused native delete still spends this scan's work budget.
-			SCR_EntityHelper.DeleteEntityAndChildren(target);
-			if (!object.Entity && body) EBG_CacheDebug.CleanedBodies++;
-			if (object.Entity)
-			{
-				// Retain ownership; other roots drain while this one waits (bounded, H3).
-				BlockRoot(record, object, now, "Cleanup deletion not confirmed; retained owned record");
-				return;
-			}
-			m_Reason = "One confirmed managed AI body or owned equipment root removed";
-			m_Phase = "removed one owned root";
-			m_Detail = m_Phase;
-			if (zone.DebugMessages > 0)
-				PrintFormat("[EBG CLEANUP REMOVED] zone=%1 group=%2 member=%3 root=%4 body=%5 survivors=%6 state='%7'", zone.GetID(), record.Id, object.Member.Id, targetId, body, record.Alive, record.DebugState(false));
+			RemoveCasualty(record, checkedMember, players, now);
 			return;
 		}
 		// Nothing deletable now. With no pending row left, stay settled until ConfirmDeath,

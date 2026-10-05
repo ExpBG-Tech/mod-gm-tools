@@ -17,6 +17,10 @@ class EBG_CacheMember
  // Cleanup: a body-less casualty with nothing left to delete. Re-armed with the
  // record's settled flag. Runtime only; never persisted.
  bool CleanupDrained;
+ // Cleanup: bounded per-casualty retry (H3); the whole casualty is one unit of work.
+ // Runtime only; never persisted, a reload starts a fresh count.
+ int CleanupBlocks;
+ float CleanupRetryAt;
 }
 enum EBG_CacheRecordState { ACTIVE, SIM_CACHED, FULL_CACHED, PENDING, RECOVERY, ELIMINATED }
 class EBG_CacheGroup

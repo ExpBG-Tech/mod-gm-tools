@@ -6,6 +6,9 @@
 class EBGCleanupCase
 {
  string Name;
+ // Native squad and its size; USSR rifle squad unless a case says otherwise.
+ ResourceName Squad = "{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et";
+ int Size = 6;
  int Mode;
  int CorpseAge;
  int Kills;
@@ -13,11 +16,15 @@ class EBGCleanupCase
  bool ExpectAwake;
  bool ExpectCached;
  bool WakeBand;
- bool Blocked;
+ bool ForeignItem;
  bool ReturnPhase;
  bool SnapshotDeath;
  bool SnapshotHeld;
  bool SnapshotRestored;
+ // Atomic per-casualty proof: the vanilla US E-tool casualty and the foreign-item casualty.
+ bool ETool;
+ bool EToolProven;
+ ref array<EntityID> OwnedIds = {};
  vector Point;
  vector PresenceAt;
  bool Present;
@@ -35,7 +42,6 @@ class EBGCleanupCase
  bool Done;
  bool EverSuspended;
  bool EverFull;
- bool SecondDeleted;
  float PhaseAt;
  float KilledAt = -1;
  float LeftAt = -1;
@@ -53,10 +59,13 @@ class EXPG_GarrisonGameplay : GenericEntity
  static ref array<vector> s_Presence;
  static ref array<EntityID> s_EbgDeleted;
  static ref array<int> s_EbgDeletedState;
+ static ref array<int> s_EbgDeletedSerial;
  static ref array<EntityID> s_Survivors;
  static bool s_InCleanupTick;
  static int s_TickState;
+ static int s_TickSerial;
  static int s_SurvivorDeletes;
+ static int s_PartialStrips;
  ref array<ref EBGCleanupCase> Cases = {};
  int Checks;
  int Failures;
@@ -70,15 +79,19 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
-  s_Presence = {}; s_EbgDeleted = {}; s_EbgDeletedState = {}; s_Survivors = {}; s_SurvivorDeletes = 0;
+  s_Presence = {}; s_EbgDeleted = {}; s_EbgDeletedState = {}; s_EbgDeletedSerial = {}; s_Survivors = {}; s_SurvivorDeletes = 0; s_PartialStrips = 0; s_TickSerial = 0;
   Started = Now(); Next = Started + 15;
-  // Partial cases first: earlier records win the shared one-root-per-scan allowance.
+  // Partial cases first: earlier records win the shared one-casualty-per-scan allowance.
   EBGCleanupCase awake = AddCase("sim-partial-awake", 0, 30, 1, 0, 0, 130); awake.ExpectAwake = true;
   EBGCleanupCase simCached = AddCase("sim-partial-cached", 0, 150, 1, 600, 0, -1); simCached.ExpectCached = true; simCached.ReturnPhase = true;
   EBGCleanupCase fullCached = AddCase("full-partial-cached", 1, 150, 1, 0, 600, -1); fullCached.ExpectCached = true; fullCached.ReturnPhase = true;
   EBGCleanupCase fullAwake = AddCase("full-partial-awake-then-cache", 1, 30, 1, 600, 600, 130); fullAwake.ExpectAwake = true; fullAwake.ReturnPhase = true;
   EBGCleanupCase band = AddCase("sim-partial-wakeband", 0, 30, 1, -600, 0, 50); band.WakeBand = true;
-  EBGCleanupCase blocked = AddCase("h3-blocked", 0, 30, 2, 0, -600, -1); blocked.Blocked = true;
+  EBGCleanupCase foreign = AddCase("foreign-item", 0, 30, 2, 0, -600, -1); foreign.ForeignItem = true;
+  // Atomic cleanup: a vanilla US fire-team casualty carrying the ALICE E-tool is removed with
+  // its whole gear in one Tick (body root once, owned ground roots the same tick).
+  EBGCleanupCase etool = AddCase("us-etool-atomic", 0, 30, 1, 300, 300, -1); etool.ETool = true;
+  etool.Squad = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et"; etool.Size = 4;
   AddCase("sim-all-control", 0, 30, 6, -600, -600, -1);
   AddCase("full-all-control", 1, 30, 6, 600, -600, -1);
   // Snapshot rule: a soldier killed while his group is Simulation cached keeps his body
@@ -106,6 +119,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   if (Finished) return;
   Finished = true;
   Check(s_SurvivorDeletes == 0, "no survivor or survivor equipment deleted inside EBG cleanup");
+  Check(s_PartialStrips == 0, "no casualty body was stripped item by item inside EBG cleanup");
   s_Presence.Clear();
   ClearEventMask(EntityEvent.FRAME);
   PrintFormat("[EBG CLEANUP TEST RESULT] checks=%1 failures=%2 cases=%3 reason=%4", Checks, Failures, Cases.Count(), reason);
@@ -172,17 +186,17 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    // Keep the Resource and the spawned entity in locals before casting; the inline form
    // returned null for every case in native runs (2026-10-05).
-   Resource squad = Resource.Load("{E552DABF3636C2AD}Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et");
+   Resource squad = Resource.Load(c.Squad);
    IEntity squadEntity = GetGame().SpawnEntityPrefab(squad, GetGame().GetWorld(), Params(c.Point));
    c.Group = SCR_AIGroup.Cast(squadEntity);
-   if (!Check(c.Group != null, c.Name + " native USSR squad spawned")) { c.Done = true; return; }
+   if (!Check(c.Group != null, c.Name + " native squad spawned")) { c.Done = true; return; }
    c.Phase = 1; c.PhaseAt = Now(); return;
   }
   if (c.Phase == 1)
   {
-   if (!c.Group || c.Group.GetAgentsCount() != 6 || !c.Group.EBG_HasCompletedInitialSpawn())
+   if (!c.Group || c.Group.GetAgentsCount() != c.Size || !c.Group.EBG_HasCompletedInitialSpawn())
    {
-    if (Now() - c.PhaseAt > 30) { Check(false, c.Name + " squad of six completed its initial spawn"); c.Done = true; }
+    if (Now() - c.PhaseAt > 30) { Check(false, string.Format("%1 squad of %2 completed its initial spawn", c.Name, c.Size)); c.Done = true; }
     return;
    }
    int swimming = 0;
@@ -211,12 +225,12 @@ class EXPG_GarrisonGameplay : GenericEntity
   if (c.Phase == 2)
   {
    c.Record = EBG_CacheManager.Get().FindGroup(c.Group);
-   if (!c.Record || c.Record.Members.Count() != 6 || !c.Record.CleanupRegistered || c.Zone.Editing)
+   if (!c.Record || c.Record.Members.Count() != c.Size || !c.Record.CleanupRegistered || c.Zone.Editing)
    {
     if (Now() - c.PhaseAt > 40)
     {
      PrintFormat("[EBG CLEANUP TEST ZONE] case=%1 status='%2' editing=%3 loadHold=%4 reason='%5'", c.Name, c.Zone.Status, c.Zone.Editing, c.Zone.EBG_HasSettingsLoadHold(), c.Zone.EBG_SettingsLoadReason());
-     Check(false, c.Name + " manager enrolled six members with a cleanup ledger");
+     Check(false, string.Format("%1 manager enrolled %2 members with a cleanup ledger", c.Name, c.Size));
      c.Done = true;
     }
     return;
@@ -224,7 +238,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    IEntity leader = c.Group.GetLeaderEntity();
    foreach (EBG_CacheMember enrolled : c.Record.Members)
    {
-    if (c.Casualties.Count() < c.Kills && (c.Kills == 6 || enrolled.Entity != leader))
+    if (c.Casualties.Count() < c.Kills && (c.Kills == c.Size || enrolled.Entity != leader))
     {
      c.Casualties.Insert(enrolled); c.Bodies.Insert(enrolled.Entity); c.BodyIds.Insert(enrolled.Entity.GetID());
     }
@@ -261,14 +275,14 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (Now() - c.KilledAt < 3) return;
    Check(true, c.Name + " native death confirmed as owned EBG corpse");
    PrintFormat("[EBG CLEANUP TEST HOLD] case=%1 held=%2 garbageProtected=%3", c.Name, cleanup.IsHeld(c.Bodies[0]), cleanup.IsGarbageProtected(c.Bodies[0]));
-   if (c.Blocked)
+   if (c.ForeignItem)
    {
     Resource magazine = Resource.Load("{0A84AA5A3884176F}Prefabs/Weapons/Magazines/Magazine_545x39_AK_30rnd_Last_5Tracer.et");
     IEntity magazineEntity = GetGame().SpawnEntityPrefab(magazine, GetGame().GetWorld(), Params(c.Bodies[0].GetOrigin()));
     c.Foreign = magazineEntity;
     SCR_InventoryStorageManagerComponent inventory = SCR_InventoryStorageManagerComponent.Cast(c.Bodies[0].FindComponent(SCR_InventoryStorageManagerComponent));
     bool requested = c.Foreign && inventory && inventory.TryInsertItem(c.Foreign);
-    PrintFormat("[EBG CLEANUP TEST H3 SETUP] case=%1 method=inventory requested=%2", c.Name, requested);
+    PrintFormat("[EBG CLEANUP TEST FOREIGN SETUP] case=%1 method=inventory requested=%2", c.Name, requested);
     c.Phase = 4; c.PhaseAt = Now(); return;
    }
    Leave(c); return;
@@ -279,28 +293,28 @@ class EXPG_GarrisonGameplay : GenericEntity
    bool inside = c.Foreign && EBG_FullCacheGroup.InventoryBelongsTo(c.Foreign, c.Bodies[0]);
    if (c.Foreign && !inside)
    {
-    // Fallback: any unregistered node in the casualty's hierarchy exercises the same SafeTree rejection.
+    // Fallback: any unregistered node in the casualty's hierarchy is the same foreign content.
     c.Bodies[0].AddChild(c.Foreign, -1);
     inside = EBG_FullCacheGroup.InventoryBelongsTo(c.Foreign, c.Bodies[0]);
-    PrintFormat("[EBG CLEANUP TEST H3 SETUP] case=%1 method=child inside=%2", c.Name, inside);
+    PrintFormat("[EBG CLEANUP TEST FOREIGN SETUP] case=%1 method=child inside=%2", c.Name, inside);
    }
    if (!Check(inside && !cleanup.IsHeld(c.Foreign), c.Name + " unregistered magazine inside the first casualty")) { c.Done = true; return; }
-   bool tree = cleanup.CanDeleteTree(c.Bodies[0], c.Record);
-   string why = cleanup.GetLastReason();
-   PrintFormat("[EBG CLEANUP TEST H3 TREE] case=%1 canDelete=%2 reason='%3'", c.Name, tree, why);
-   Check(!tree && why == "Cleanup held: unregistered or protected contents", c.Name + " unregistered content blocks the first casualty's tree");
+   // 0.1.4 rule: no per-item checks; foreign content inside the body goes with the body.
+   Check(cleanup.CanDeleteCasualty(c.Record, c.Casualties[0]), c.Name + " unregistered content does not block the first casualty");
+   RecordOwned(c, cleanup);
+   PrintFormat("[EBG CLEANUP TEST FOREIGN OWNED] case=%1 owned=%2", c.Name, c.OwnedIds.Count());
    Leave(c); return;
   }
   int remaining = Observe(c);
   if (c.Phase >= 10) { StepSnapshot(c, cleanup); return; }
   if (c.Phase == 5)
   {
-   if (c.Blocked) { StepBlocked(c, cleanup); return; }
+   if (c.ForeignItem) { StepForeign(c); return; }
    if (c.WakeBand)
    {
     if (remaining != c.Bodies.Count()) { Check(false, c.Name + " presence inside the wake radius holds cleanup"); c.Done = true; return; }
     if (Now() < c.Deadline) return;
-    // Assert the hold itself, not just a surviving body: the shared one-root-per-scan
+    // Assert the hold itself, not just a surviving body: the shared one-casualty-per-scan
     // allowance alone could keep this body for the window. A deleted item row drops out
     // of the count, and CleanupClearSince stays -1 only while the hold is active.
     int heldRows = 0;
@@ -313,6 +327,16 @@ class EXPG_GarrisonGameplay : GenericEntity
     c.Eligible = Now() + c.Zone.CleanupDelay; c.Deadline = c.Eligible + 90;
     PrintFormat("[EBG CLEANUP TEST LEFT] case=%1 phase=wakeband-cleared eligibleAt=%2 deadline=%3", c.Name, c.Eligible, c.Deadline);
     return;
+   }
+   if (c.ETool && !c.EToolProven && remaining > 0 && Now() >= c.Eligible - 3)
+   {
+    // Just before eligibility: native death births have settled, nothing deleted yet.
+    c.EToolProven = true;
+    bool carriesETool = RecordOwned(c, cleanup);
+    bool provable = cleanup.CanDeleteCasualty(c.Record, c.Casualties[0]);
+    PrintFormat("[EBG CLEANUP TEST ETOOL SETUP] case=%1 owned=%2 etool=%3 provable=%4 reason='%5'", c.Name, c.OwnedIds.Count(), carriesETool, provable, cleanup.GetLastReason());
+    Check(carriesETool, c.Name + " casualty carries the vanilla ALICE E-tool");
+    Check(provable, c.Name + " whole casualty (body, gear and ground roots) proven deletable before any deletion");
    }
    if (remaining > 0)
    {
@@ -389,9 +413,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   foreach (EBG_CacheMember owner : c.Casualties) c.Rows += ledger.CountPersistentMemberObjects(owner);
   c.Eligible = Math.Max(c.KilledAt + c.Zone.CorpseAge, c.LeftAt) + c.Zone.CleanupDelay;
   c.Deadline = c.Eligible + 90;
-  if (c.Kills == 6) c.Deadline = c.Eligible + c.Rows * 0.75 + 30;
+  if (c.Kills == c.Size) c.Deadline = c.Eligible + c.Rows * 0.75 + 30;
   if (c.WakeBand) c.Deadline = c.Eligible + 20;
-  if (c.Blocked) c.Deadline = c.Eligible + 260;
   PrintFormat("[EBG CLEANUP TEST LEFT] case=%1 killedAt=%2 leftAt=%3 eligibleAt=%4 deadline=%5 rows=%6 presenceOffset=%7", c.Name, c.KilledAt, c.LeftAt, c.Eligible, c.Deadline, c.Rows, c.AfterKill);
   c.Phase = 5;
  }
@@ -428,7 +451,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(byEbg == c.BodyIds.Count(), c.Name + " every casualty body deleted by EBG cleanup after players left");
   // The corpse row's death time is taken in the kill frame; deletion never precedes age + clear delay.
   Check(c.DeletedAt >= c.Eligible - 1, c.Name + " body not deleted before corpse age and clear delay");
-  if (c.Kills < 6)
+  if (c.Kills < c.Size)
   {
    bool simCached = c.Record.Simulation && c.Record.Simulation.Suspended;
    bool fullCached = c.Record.Full && c.Record.Full.GetState() == EBG_FullGroupPhase.CACHED;
@@ -442,10 +465,11 @@ class EXPG_GarrisonGameplay : GenericEntity
     if (c.CachedAt < 0) PrintFormat("[EBG CLEANUP TEST FULL REFUSAL] case=%1 rejection='%2' reason='%3'", c.Name, c.Record.LastCacheRejection, c.Record.Reason);
     Check(c.DeletedState == 2 && fullCached && fullMembers == 5, c.Name + " body deleted while the survivors stayed Full cached");
    }
-   if (!c.ExpectAwake && !c.ExpectCached) Check(c.Record.Alive == 5 && SurvivorsAlive(c), c.Name + " survivors untouched by body cleanup");
+   if (!c.ExpectAwake && !c.ExpectCached) Check(c.Record.Alive == c.Size - c.Kills && SurvivorsAlive(c), c.Name + " survivors untouched by body cleanup");
   }
+  if (c.ETool) CheckAtomic(c);
   c.PhaseAt = Now();
-  if (c.Kills == 6) { c.Phase = 9; return; }
+  if (c.Kills == c.Size) { c.Phase = 9; return; }
   if (!c.ReturnPhase) { c.Done = true; return; }
   c.Phase = 6;
   if (c.ExpectAwake) SetPresence(c, -1);
@@ -556,32 +580,66 @@ class EXPG_GarrisonGameplay : GenericEntity
   PrintFormat("[EBG CLEANUP TEST SNAPSHOT] case=%1 heldWhileCached=%2 restored=%3 deletedByEbg=%4 afterLeave=%5", c.Name, held, restored, byEbg, c.DeletedAt - c.LeftAt);
   c.Done = true;
  }
- void StepBlocked(EBGCleanupCase c, EBG_CacheCleanup cleanup)
+ void StepForeign(EBGCleanupCase c)
  {
-  SCR_ChimeraCharacter first = c.Bodies[0];
-  SCR_ChimeraCharacter second = c.Bodies[1];
-  if (!c.SecondDeleted && (!second || Now() > c.Eligible + 90))
+  if (c.Bodies[0] || c.Bodies[1] || c.Foreign)
   {
-   c.SecondDeleted = true;
-   Check(!second && s_EbgDeleted.Contains(c.BodyIds[1]), c.Name + " second casualty deleted by EBG while the first stays blocked");
+   if (Now() > c.Deadline) { Report(c, 1); Check(false, c.Name + " casualties deleted whole by EBG, foreign item included"); c.Done = true; }
+   return;
   }
-  bool firstByEbg = s_EbgDeleted.Contains(c.BodyIds[0]);
-  if (firstByEbg) { Check(false, c.Name + " blocked casualty must never be deleted by EBG"); c.Done = true; return; }
-  bool handedBack = !first || (!cleanup.IsHeld(first) && !cleanup.IsGarbageProtected(first));
-  if (handedBack && c.SecondDeleted)
+  int firstByEbg = 0;
+  if (s_EbgDeleted.Contains(c.BodyIds[0])) firstByEbg = 1;
+  int secondByEbg = 0;
+  if (s_EbgDeleted.Contains(c.BodyIds[1])) secondByEbg = 1;
+  PrintFormat("[EBG CLEANUP TEST FOREIGN] case=%1 owned=%2 present=%3 firstByEbg=%4 secondByEbg=%5 foreignGone=1 afterEligible=%6", c.Name, c.OwnedIds.Count(), PresentOwned(c), firstByEbg, secondByEbg, Now() - c.Eligible);
+  Check(firstByEbg == 1 && secondByEbg == 1, c.Name + " casualties deleted whole by EBG, foreign item included");
+  Check(PresentOwned(c) == 0, c.Name + " nothing of the first casualty left in the world");
+  Check(c.Record.Alive == 4 && SurvivorsAlive(c), c.Name + " survivors untouched by body cleanup");
+  c.Done = true;
+ }
+ // Every entity the cleanup ledger holds for the case's first casualty (body, gear,
+ // owned ground roots). Returns whether the vanilla ALICE E-tool is among them.
+ bool RecordOwned(EBGCleanupCase c, EBG_CacheCleanup cleanup)
+ {
+  array<IEntity> heldEntities = {};
+  cleanup.CollectHeldMemberEntities(c.Casualties[0], heldEntities);
+  c.OwnedIds.Clear();
+  bool etool;
+  foreach (IEntity item : heldEntities)
   {
-   bool inserted = false;
-   if (first)
-   {
-    SCR_GarbageSystem garbage = SCR_GarbageSystem.GetByEntityWorld(first);
-    inserted = garbage && garbage.IsInserted(first);
-   }
-   PrintFormat("[EBG CLEANUP TEST H3 RELEASED] case=%1 afterEligible=%2 bodyPresent=%3 nativeInserted=%4", c.Name, Now() - c.Eligible, first != null, inserted);
-   Check(Now() >= c.Eligible + 110, c.Name + " blocked casualty handed back only after bounded retries");
-   Check(c.Record.Alive == 4 && SurvivorsAlive(c), c.Name + " survivors untouched by blocked cleanup");
-   c.Done = true; return;
+   if (!item) continue;
+   c.OwnedIds.Insert(item.GetID());
+   if (SCR_ResourceNameUtils.GetPrefabName(item) == "{6E35D94130954509}Prefabs/Items/Equipment/Accessories/ETool_ALICE/ETool_ALICE_FreeRoamBuilding_Gadget.et") etool = true;
   }
-  if (Now() > c.Deadline) { Report(c, 1); Check(false, c.Name + " blocked casualty handed back to native garbage after bounded retries"); c.Done = true; }
+  return etool;
+ }
+ int PresentOwned(EBGCleanupCase c)
+ {
+  int present = 0;
+  foreach (EntityID id : c.OwnedIds) { if (GetGame().GetWorld().FindEntityByID(id)) present++; }
+  return present;
+ }
+ // The body and every owned entity are gone, and every outer EBG delete of them ran in the
+ // same Tick call as the body's delete: no partial strip across scans.
+ void CheckAtomic(EBGCleanupCase c)
+ {
+  int bodySerial = -1;
+  int bodyAt = s_EbgDeleted.Find(c.BodyIds[0]);
+  if (bodyAt >= 0) bodySerial = s_EbgDeletedSerial[bodyAt];
+  int outer = 0;
+  int sameTick = 1;
+  foreach (EntityID ownedId : c.OwnedIds)
+  {
+   int deletedAt = s_EbgDeleted.Find(ownedId);
+   if (deletedAt < 0) continue;
+   outer++;
+   if (s_EbgDeletedSerial[deletedAt] != bodySerial) sameTick = 0;
+  }
+  int gone = 0;
+  if (c.OwnedIds.Count() > 1 && PresentOwned(c) == 0) gone = 1;
+  if (bodySerial < 0) sameTick = 0;
+  PrintFormat("[EBG CLEANUP TEST ATOMIC] case=%1 owned=%2 etool=1 gone=%3 outerDeletes=%4 sameTick=%5 partialStrips=%6", c.Name, c.OwnedIds.Count(), gone, outer, sameTick, s_PartialStrips);
+  Check(gone == 1 && sameTick == 1, c.Name + " body and all gear including the E-tool removed together in one cleanup tick");
  }
  void Report(EBGCleanupCase c, int remaining)
  {
@@ -619,11 +677,18 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   s_EbgDeleted.Insert(entity.GetID());
   s_EbgDeletedState.Insert(s_TickState);
+  s_EbgDeletedSerial.Insert(s_TickSerial);
   SCR_ChimeraCharacter wearer = Wearer(entity);
   int living = 0;
   if (wearer && wearer.GetCharacterController() && !wearer.GetCharacterController().IsDead()) living = 1;
   if (wearer && s_Survivors.Contains(wearer.GetID())) living = 1;
-  PrintFormat("[EBG CLEANUP TEST NATIVE DELETE] id=%1 state=%2 prefab='%3' livingWearer=%4", entity.GetID(), s_TickState, SCR_ResourceNameUtils.GetPrefabName(entity), living);
+  PrintFormat("[EBG CLEANUP TEST NATIVE DELETE] id=%1 state=%2 serial=%3 prefab='%4' livingWearer=%5", entity.GetID(), s_TickState, s_TickSerial, SCR_ResourceNameUtils.GetPrefabName(entity), living);
+  // An item taken off a still-present casualty body as its own delete is a partial strip.
+  if (living == 0 && wearer && wearer != entity)
+  {
+   s_PartialStrips++;
+   PrintFormat("[EBG CLEANUP TEST PARTIAL STRIP] id=%1 wearer=%2 prefab='%3'", entity.GetID(), wearer.GetID(), SCR_ResourceNameUtils.GetPrefabName(entity));
+  }
   if (living == 0) return;
   s_SurvivorDeletes++;
   PrintFormat("[EBG CLEANUP TEST SURVIVOR DELETE] id=%1 wearer=%2", entity.GetID(), wearer.GetID());
@@ -650,6 +715,7 @@ modded class EBG_CacheCleanup
   if (record && record.Simulation && record.Simulation.Suspended) state = 1;
   if (record && record.Full && record.Full.GetState() == EBG_FullGroupPhase.CACHED) state = 2;
   EXPG_GarrisonGameplay.s_TickState = state;
+  EXPG_GarrisonGameplay.s_TickSerial++;
   EXPG_GarrisonGameplay.s_InCleanupTick = true;
   super.Tick(record, players, now, transfersChecked);
   EXPG_GarrisonGameplay.s_InCleanupTick = false;

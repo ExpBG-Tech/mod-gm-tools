@@ -40,7 +40,8 @@ Cases (letters used below):
 | C | `full-partial-cached` |
 | D | `full-partial-awake-then-cache` |
 | G | `sim-partial-wakeband` |
-| H | `h3-blocked` |
+| H | `foreign-item` |
+| J | `us-etool-atomic` |
 | E | `sim-all-control` |
 | F | `full-all-control` |
 | I | `sim-death-while-cached` |
@@ -55,12 +56,16 @@ deleted by EBG and survivors stay alive (known limit; sleeping units are hidden
 and untargetable in normal play). Deletions are attributed to `EBG_CacheCleanup.Tick` together
 with the cache state at deletion (0 awake, 1 Simulation cached, 2 Full cached).
 The runner's `Test-UnitCleanupEvidence` requires one distinct
-`[EBG CLEANUP TEST RESULT] ... failures=0 cases=9 reason=complete` line (stdout,
+`[EBG CLEANUP TEST RESULT] ... failures=0 cases=10 reason=complete` line (stdout,
 `console.log` and `script.log` each repeat it), `state=0 whileCached=0` for A and
 D, `state=1 whileCached=1` for B, `state=2 whileCached=1` for C, the I
 `[EBG CLEANUP TEST SNAPSHOT]` line (`heldWhileCached=1 restored=1 deletedByEbg=1`,
-or `knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0`), an `[EBG CLEANUP RELEASE]` line (H), no `[EBG CLEANUP TEST SURVIVOR DELETE]`, no script errors and a clean
-shutdown. The fixture deadline is 400 s of world time; `-UnitCleanup` defaults
+or `knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0`), the H
+`[EBG CLEANUP TEST FOREIGN] ... present=0 firstByEbg=1 secondByEbg=1 foreignGone=1`
+line (an unregistered magazine inside the body is deleted with it), the J
+`[EBG CLEANUP TEST ATOMIC] ... sameTick=1 partialStrips=0` line, no
+`[EBG CLEANUP TEST SURVIVOR DELETE]` or `[EBG CLEANUP TEST PARTIAL STRIP]`, no
+script errors and a clean shutdown. The fixture deadline is 400 s of world time; `-UnitCleanup` defaults
 `-TimeoutSeconds` to 540 and refuses less than 480. Portable verifier cases:
 `tests/Test-GameplayEvidence.ps1`.
 
@@ -87,6 +92,12 @@ Results (2026-10-05):
   (`state=2`) after their 150 s corpse age, E and F six bodies each, H released
   to native garbage after three attempts (`[EBG CLEANUP RELEASE]`), I known limit
   as above. No survivor was deleted.
+- 0.1.4 rule (user decision 2026-10-06): a casualty is its body plus its own
+  loose items. The body is deleted in one native call that takes everything
+  inside it, its dropped weapon in the same tick; no per-item checks. Only a
+  keep component or valuable intel parks a casualty (`[EBG CLEANUP KEEP]`), and
+  an unconfirmed native delete is retried three times before
+  `[EBG CLEANUP RELEASE]`. H now expects both casualties deleted whole.
 - The fixture must keep the spawned entity in a local `IEntity` before casting;
   the inline `Cast(SpawnEntityPrefab(...))` form returned null in native runs.
 
@@ -135,7 +146,7 @@ use; no script errors or VM exceptions in the session log):
 
 GM UI and building coverage (Workbench play with computer use, then native survey):
 
-- Real GM flow: right-click building -> Add Garrison -> "Choose Garrison Squad"
+- Real GM flow: right-click building -> EXPBG Add Garrison -> "Choose Garrison Squad"
   picker -> squad selection. Two defects found and fixed: the picker was never
   bound (`GetTopMenu()` never returns dialogs; now `FindMenuByPreset`), and the
   server refused every vanilla squad (no vanilla group prefab has

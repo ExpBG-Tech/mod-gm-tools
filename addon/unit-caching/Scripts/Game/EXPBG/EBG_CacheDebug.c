@@ -99,12 +99,24 @@ class EBG_CacheDebug
   command.m_iColor = color; command.m_fSize = size; command.m_iFontPropertiesId = 0;
   s_Commands.Insert(command);
  }
+ // Hide only the local widget; the server sample and debug Level are untouched.
+ protected static void Hide()
+ {
+  if (s_Panel) { s_Panel.RemoveFromHierarchy(); }
+  s_Panel = null; s_Commands.Clear();
+ }
  static void Draw(string serverText, int receivedAt)
  {
   if (Closing) { return; }
   if (serverText == "" || !GetGame().GetPlayerController())
   {
    Reset(); return;
+  }
+  // A Game Master tool: shown only while this client's editor is open, never in first person.
+  SCR_EditorManagerEntity editor = SCR_EditorManagerEntity.GetInstance();
+  if (!editor || !editor.IsOpened())
+  {
+   Hide(); return;
   }
   if (!s_Panel)
   {

@@ -11,12 +11,13 @@ class EBG_OptimizerControl
  static bool Disabling;
  static string Message;
  protected static string s_LastReport;
+ protected static string s_LastBlocked;
  protected static ref array<EBG_CacheZone> s_PreparedZones = {};
  static void Reset()
  {
   Preparing = false; Disabling = false; State = 0; Pending = 0; Blocked = 0;
   EnabledZones = 0; DisabledZones = 0;
-  Message = "No global operation"; s_LastReport = "";
+  Message = "No global operation"; s_LastReport = ""; s_LastBlocked = "";
   s_PreparedZones.Clear();
  }
  static bool ResumePreparedSession()
@@ -59,7 +60,12 @@ class EBG_OptimizerControl
  }
  static void Execute(int action)
  {
-  if (!Replication.IsServer() || !EBG_CacheManager.IsPortableWorldReady() || EBG_CacheSnapshot.Loading) return;
+  if (!Replication.IsServer()) return;
+  if (!EBG_CacheManager.IsPortableWorldReady() || EBG_CacheSnapshot.Loading)
+  {
+   if (action >= 1 && action <= 3) Print(string.Format("[EBG GLOBAL] Command %1 dropped: worldReady=%2 snapshotLoading=%3", action, EBG_CacheManager.IsPortableWorldReady(), EBG_CacheSnapshot.Loading), LogLevel.WARNING);
+   return;
+  }
   EBG_CacheManager manager = EBG_CacheManager.Get();
   if (action == 3)
   {
@@ -94,6 +100,8 @@ class EBG_OptimizerControl
   if (action == 1) Message = "Enabled all existing cache zones; individual settings preserved";
   else Message = "Disabled all existing cache zones; existing caches restore through the normal scheduler";
   if (action == 2) EBG_FullSaveGate.RequestRestoreForSave();
+  // Log the accepted command itself before Poll replaces it with zone totals.
+  Publish();
   Poll(manager);
  }
  static void Poll(EBG_CacheManager manager)
@@ -131,12 +139,22 @@ class EBG_OptimizerControl
   HoldZones();
   Pending = 0; Blocked = 0;
   string firstFailure;
+  array<string> blockedLines = {};
   foreach (EBG_CacheGroup record : manager.Records)
   {
    if (record.Recovery != "" || record.PersistenceIssue != "")
    {
     Blocked++;
-    if (firstFailure.IsEmpty()) firstFailure = string.Format("Group %1: %2 %3", record.Id, record.Recovery, record.PersistenceIssue);
+    // Where to look: group id, saved anchor and owning module position (or its deletion).
+    string where = "deleted module";
+    if (record.Zone)
+    {
+     vector moduleOrigin = record.Zone.GetOrigin();
+     where = string.Format("module @ %1, %2", Math.Round(moduleOrigin[0]), Math.Round(moduleOrigin[2]));
+    }
+    string blocked = string.Format("Group %1 @ %2, %3 (%4): %5 %6", record.Id, Math.Round(record.Anchor[0]), Math.Round(record.Anchor[2]), where, record.Recovery, record.PersistenceIssue);
+    if (firstFailure.IsEmpty()) firstFailure = blocked;
+    if (Blocked <= 16) blockedLines.Insert(blocked);
    }
    if (record.Full || record.Simulation || record.FullCleanup || record.PersistentScalarRollbackPending || !record.FullGroupId.IsNull() || !record.FullMemberIds.IsEmpty() || record.WakeRequested || record.ReleaseRequested) Pending++;
   }
@@ -176,6 +194,8 @@ class EBG_OptimizerControl
   else if (Pending == 0) State = 2;
   Message = string.Format("Prepare: zones=%1 pending=%2 blocked=%3", EBG_CacheZone.Zones.Count(), Pending, Blocked);
   if (!firstFailure.IsEmpty()) Message += " | " + firstFailure;
+  if (Blocked > 1) Message += string.Format(" (+%1 more blocked)", Blocked - 1);
+  ReportBlocked(blockedLines);
   if (!Preparing && State == 2)
   {
    State = 5; Disabling = false;
@@ -184,6 +204,16 @@ class EBG_OptimizerControl
   else if (!Preparing && State == 1) State = 4;
   if (State == 2) Message = "Ready to save: all Optimizer AI restored; zones stay paused until explicit Enable or Disable";
   Publish();
+ }
+ // Server log, once per change: every blocked record (first 16) with where to find it.
+ // Diagnostics only; nothing is released or discarded automatically.
+ static void ReportBlocked(array<string> lines)
+ {
+  string key;
+  foreach (string line : lines) key += line + ";";
+  if (key == s_LastBlocked) return;
+  s_LastBlocked = key;
+  foreach (string blocked : lines) Print("[EBG GLOBAL BLOCKED] " + blocked, LogLevel.WARNING);
  }
  static void Publish()
  {

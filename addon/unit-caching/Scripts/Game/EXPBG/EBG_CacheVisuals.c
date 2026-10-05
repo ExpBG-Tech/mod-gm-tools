@@ -689,7 +689,7 @@ class EBG_CacheMapModule : SCR_MapModuleBase
    float labelX = Math.Max(24, Math.Min(x + 12, width - columns * 10 - 24));
    float labelY = Math.Max(190, Math.Min(y, height - 220));
    int rows = WrappedText(orphan.Label, labelX, labelY, columns);
-   WrappedText(string.Format("Saved position @ %1, %2. Recovery data retained. To retry, place or select any cache module, enable Restore for editing, then Save and close.", Math.Round(orphan.Anchor[0]), Math.Round(orphan.Anchor[2])), labelX, labelY + rows * 17, columns);
+   WrappedText(string.Format("Saved position @ %1, %2. Recovery data retained. To retry, place or select any cache module, set Before saving mission to Restore all AI and pause caching, then Save and close.", Math.Round(orphan.Anchor[0]), Math.Round(orphan.Anchor[2])), labelX, labelY + rows * 17, columns);
    drawn = true;
   }
   if (!drawn) { m_Canvas.SetDrawCommands(m_Commands); return; }

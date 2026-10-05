@@ -121,14 +121,15 @@ separately. Source reviewed; native execution pending.
 
 `tests/EBG_UnitCleanupGameplay.c` reuses the generated-world driver name and is
 selected by `-UnitCleanup`, which is mutually exclusive with `-FreshTrim` and
-`-BodyClearance`. It spawns nine real USSR rifle squads, each with its own cache
+`-BodyClearance`. It spawns real USSR rifle squads and one US fire team, each with its own cache
 zone (Affected 40, Wake 60, Sleep 200, clear delay 5), injects player presence
 through `EBG_CacheManager.UpdatePlayers`, and kills with native damage. It
 attributes deletions to `EBG_CacheCleanup.Tick` and records the cache state at
 deletion (0 awake, 1 Simulation cached, 2 Full cached).
 
 Cases: `sim-partial-awake`, `sim-partial-cached`, `full-partial-cached`,
-`full-partial-awake-then-cache`, `sim-partial-wakeband`, `h3-blocked`,
+`full-partial-awake-then-cache`, `sim-partial-wakeband`, `foreign-item` (an
+unregistered magazine inside the body goes with it), `us-etool-atomic`,
 `sim-all-control`, `full-all-control` and `sim-death-while-cached` (a soldier
 killed while his squad is Simulation cached keeps his body until the survivors
 are restored, then cleanup deletes it). Simulation and Full are both covered,
@@ -139,13 +140,15 @@ checks that deletion did not precede corpse age plus the clear delay. Full needs
 the runner passes.
 
 `Test-UnitCleanupEvidence` requires one distinct complete RESULT line (stdout,
-`console.log` and `script.log` each repeat it) with `failures=0` and `cases=9`;
+`console.log` and `script.log` each repeat it) with `failures=0` and `cases=10`;
 `state=0 whileCached=0` for `sim-partial-awake` and
 `full-partial-awake-then-cache`, `state=1 whileCached=1` for `sim-partial-cached`,
 `state=2 whileCached=1` for `full-partial-cached`; the
 `[EBG CLEANUP TEST SNAPSHOT] ... heldWhileCached=1 restored=1 deletedByEbg=1`
-line; an `[EBG CLEANUP RELEASE]` line;
-no `[EBG CLEANUP TEST SURVIVOR DELETE]`; and a clean shutdown. The fixture
+line; the `[EBG CLEANUP TEST FOREIGN] ... present=0 firstByEbg=1 secondByEbg=1
+foreignGone=1` line; the `[EBG CLEANUP TEST ATOMIC] ... sameTick=1
+partialStrips=0` line; no `[EBG CLEANUP TEST SURVIVOR DELETE]` or
+`[EBG CLEANUP TEST PARTIAL STRIP]`; and a clean shutdown. The fixture
 deadline is 400 s of world time; `-UnitCleanup` defaults `-TimeoutSeconds` to 540
 and refuses less than 480.
 

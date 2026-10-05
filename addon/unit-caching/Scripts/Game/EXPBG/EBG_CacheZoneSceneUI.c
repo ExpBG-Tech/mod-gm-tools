@@ -31,3 +31,38 @@ modded class SCR_EditableEntitySceneSlotUIComponent
   return super.UpdateSlot(screenW, screenH, posCenter, posCam);
  }
 }
+
+// Vanilla GM entity list gap (1.8): m_Entities holds weak references and ShowEntries has
+// no null check, so paging between a deletion (cache sleep, casualty cleanup) and the
+// queued Refresh threw NULL 'm_EntityState'. Same page logic, deleted entries skipped and
+// a refresh queued; the refresh latch is cleared first so one exception cannot stick it.
+modded class SCR_EntitiesToolbarEditorUIComponent
+{
+ override protected void ShowEntries(Widget contentWidget, int indexStart, int indexEnd)
+ {
+  Clear();
+  bool skipped;
+  indexEnd = Math.Min(indexEnd, m_Entities.Count());
+  for (int i = indexStart; i < indexEnd; i++)
+  {
+   SCR_EditableEntityComponent entity = m_Entities[i];
+   if (!entity) { skipped = true; continue; }
+   CreateItem(entity);
+  }
+  if (skipped) QueueRefresh();
+ }
+
+ override protected void Refresh()
+ {
+  m_queuedRefresh = false;
+  super.Refresh();
+ }
+}
+
+modded class SCR_EditableEntityUIRuleTracker
+{
+ override bool HasState(SCR_EditableEntityComponent entity)
+ {
+  return entity && super.HasState(entity);
+ }
+}
