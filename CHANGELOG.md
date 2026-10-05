@@ -1,5 +1,60 @@
 # EXPBG GM Tools changelog
 
+## 0.1.4
+
+Fixes from the first full client test on a dedicated server with the production
+modset (ACE, RHS, CDF GameMaster Save, Game Master Enhanced and 110+ other mods).
+
+- Unit Caching: casualty cleanup now simply deletes the body, with everything
+  it carries, and its dropped weapon in the same tick. There are no per-item
+  checks any more, so modded kit (entrenching tool, ACE Overheating weapons,
+  character-mod heads) never blocks a body. Before, kit was removed piece by
+  piece and a body that failed a check was left stripped. Items a player picked
+  up or stored are never touched; bodies with an EBG keep component or valuable
+  intel are still kept. ACE's overheating helper attachment and character-mod
+  heads are accepted in Full cache snapshots. The zone status shows the native-save pause only while Full
+  groups are actually absent, the admin cache monitor is hidden outside the GM
+  editor, the GM entity list no longer throws when entities are deleted while
+  paging, and a blocked Prepare for save names the group, its position and its
+  zone.
+- Garrison: "EXPBG Add Garrison" (renamed so it is distinct from Game Master
+  Enhanced's "Add Garrison") now opens its squad picker on dedicated-server
+  clients; the access check used a server-only editor lookup and always failed on
+  clients. Every refusal now logs one `[EXPG GARRISON]` reason, and feedback also
+  appears in chat for players with hints disabled. Window guards stand directly
+  at the window (nearest window posts are chosen first).
+- Intel Items: reading opens a dedicated window (title, scrollable text, Close /
+  Escape) instead of a hint, so it works with hints disabled. One read per press
+  (repeats within 1 s are ignored). `[br]` in the intel text makes a line break.
+- Ambient Destruction: a CDF save of destroyed buildings loads after a server
+  restart even when native mission persistence already removed the building;
+  ambiguous matches are still refused. Building collapses are paced at least 3 s
+  apart across all zones to avoid client freezes. Diagnostics is an Off /
+  Lifecycle / Counts selector and sliders show whole numbers. Debug rings no
+  longer draw huge wedges near the camera. Removed an invalid material remap
+  from the Afghan truck wreck.
+- Ambient Sounds: the crowd is now "EXPBG Ambient Crowd Sound". Radio, TV, crowd,
+  war and sound modules share the same "On/Off" first and "Debug" last attribute
+  order; saved settings are unaffected. All sound items use one speaker mini icon
+  and the EXPBG badge. The debug legend moved to the right edge and is removed
+  when no debug module remains and when the world ends. Failed-start retries for
+  long-range sounds need at most 50 m of approach. Removed an unused sample.
+- Ambient Civilians: traffic works again. A car's destination town had to be
+  500-5000 m away and also inside the 400 m module radius, which no town can be;
+  journeys may now leave the module radius (exclusion zones still apply), the car
+  is freed from the radius once it departs and is removed out on the road, far
+  from players. Neighbours visit each other's tables: the join range is 150 m, a
+  nearby idle resident is called when a spot opens, and visitors walk back home.
+  Deleting the module no longer leaves an empty civilian group. The debug summary
+  sits at the top centre and the legend on the right, clear of the GM panels and
+  the sound legend, and both are removed when the world ends. Civilian entities
+  are excluded from CDF and vanilla saves with the editor's "not saved" flag
+  instead of the obsolete `Serialize` override.
+- No Game Master Budget: the switch is now "EXPBG Enable Game Master Budgets".
+- Persistent Battlefield: weapon safety on spawn is applied only by the owning
+  peer once the character is registered, removing the RPC errors on mission load
+  and on clients.
+
 ## 0.1.3
 
 - Ambient Sounds: 28 new placeable sounds under the EXPBG Sounds browser category,

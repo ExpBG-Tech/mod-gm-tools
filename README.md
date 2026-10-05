@@ -35,7 +35,7 @@ The only dependency is the base game (`58D0FB3206B6F859`).
 
 ## Modules
 
-- **Garrison**: right-click a building, choose **Add Garrison** and select an
+- **Garrison**: right-click a building, choose **EXPBG Add Garrison** and select an
   infantry squad. One squad takes reachable fixed guard posts and patrols
   indoors. A freshly spawned squad larger than the safe capacity is trimmed;
   existing squads and casualties are never refilled. Caching offers Off,
@@ -46,8 +46,8 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   mission-only.
 - **Unit Caching**: AI Cache Zones and the EXPBG UNIT CACHING CONTROLLER.
   Simulation pauses existing AI; Full removes supported groups and restores only
-  survivors. With Group cleanup on, each AI casualty's body and owned kit is
-  deleted once it reaches the Minimum corpse age and no player has come within
+  survivors. With Group cleanup on, each AI casualty's body (with everything it
+  carries) and its dropped weapon are deleted together once it reaches the Minimum corpse age and no player has come within
   the wake radius of the zone, the squad or the remains for the clear delay, also
   while the rest of its squad is awake, Simulation-cached or Full-cached.
   Survivors are never deleted or refilled.
@@ -62,8 +62,8 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   and spawn weapon safety. It overrides the vanilla `Character_Base` prefab and
   systems config. Bodies owned by Unit Caching cleanup are removed by that
   cleanup; Persistent Battlefield lifetimes apply to other bodies and to remains
-  Unit Caching hands back after failed verification.
-- **No Game Master Budget**: Game Settings switch "Enable Game Master Budgets"
+  Unit Caching hands back when a native delete is refused.
+- **No Game Master Budget**: Game Settings switch "EXPBG Enable Game Master Budgets"
   (ON by default). OFF lifts the Game Master placement budgets for props, AI,
   vehicles, waypoints and systems and raises their displayed limits; switching
   back ON restores them at once. Campaign building budgets are unchanged.
