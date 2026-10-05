@@ -40,6 +40,15 @@ class EII_IntelComponent : ScriptComponent
   if (m_sContent.IsEmpty()) return m_sTitle;
   return m_sTitle + "\n\n" + m_sContent;
  }
+ // A line break typed or pasted into the GM text box arrives as a space (in-game test),
+ // so a typed [br] (or \n) marks one. Display only: stored text keeps the typed marker.
+ static string DisplayText(string text)
+ {
+  string display = text;
+  display.Replace("[br]", "\n");
+  display.Replace("\\n", "\n");
+  return display;
+ }
  static bool ValidText(string title, string content)
  {
   return title.Length() <= TITLE_LIMIT && content.Length() <= CONTENT_LIMIT;
@@ -148,6 +157,6 @@ class EII_InventoryUIInfo : SCR_InventoryUIInfo
   if (!item || !item.GetOwner()) return super.GetInventoryItemDescription(item);
   EII_IntelComponent intel = EII_IntelComponent.Cast(item.GetOwner().FindComponent(EII_IntelComponent));
   if (!intel || intel.GetDescription().IsEmpty()) return super.GetInventoryItemDescription(item);
-  return intel.GetDescription();
+  return EII_IntelComponent.DisplayText(intel.GetDescription());
  }
 }
