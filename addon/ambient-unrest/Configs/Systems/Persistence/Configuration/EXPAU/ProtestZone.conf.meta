@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{8FAD2070A07A0934}Configs/Systems/Persistence/Configuration/EXPAU/ProtestZone.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

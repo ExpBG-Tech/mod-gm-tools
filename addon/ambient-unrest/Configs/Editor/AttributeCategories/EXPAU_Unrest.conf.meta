@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{EA7B0AC9B7AEF08A}Configs/Editor/AttributeCategories/EXPAU_Unrest.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

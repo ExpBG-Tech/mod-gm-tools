@@ -1,0 +1,48 @@
+GenericEntity {
+ ID "9A4CA731A32FBFA8"
+ components {
+  EIR_RackComponent "{06C4305DE56041F8}" {
+  }
+  MeshObject "{7C0243CC63C03D68}" {
+   Object "{3C7169F6D7968307}Assets/Structures/BuildingsParts/Electrical/ElectricCabinet/ElectricCabinetInterior_01.xob"
+  }
+  RigidBody "{B1BF213313F1D915}" {
+   ModelGeometry 1
+   Static 1
+  }
+  ActionsManagerComponent "{6569BE9BA56E4CDD}" {
+   ActionContexts {
+    UserActionContext "{BD81727F1E7ECDDD}" {
+     ContextName "rack"
+     Position PointInfo "{AFBFFE996F272A3A}" {
+      Offset 0 1.2 0
+     }
+     Radius 1.1
+    }
+   }
+   additionalActions {
+    EIR_DownloadAction "{E4D1F88909762099}" {
+     ParentContextList {
+      "rack"
+     }
+     UIInfo SCR_ActionUIInfo "{9BC3976C97C32B6A}" {
+      Name "Download intel"
+     }
+    }
+   }
+  }
+  SCR_EditableEntityComponent "{B56CB5B6C83E80D2}" : "{996046FE206C699A}Prefabs/Editor/Components/Default_SCR_EditableEntityComponent.ct" {
+   m_UIInfo SCR_EditableEntityUIInfo "{305AC76ABC5D7F5F}" {
+    Name "EXPBG Intel - Server Rack"
+    Description "Static server rack. Game Master sets the intel title, text and download time. Players with a USB drive download it; the download stops beyond 3 m."
+    m_Image "{38C2078B7B519EF1}UI/Textures/EXPII/EII_IntelItems.edds"
+    m_aAuthoredLabels { 1 122 157026 }
+   }
+   m_bAutoRegister ALWAYS
+  }
+  RplComponent "{7E97D4FE44EAFE2D}" {
+  }
+  Hierarchy "{B922740373F17767}" {
+  }
+ }
+}

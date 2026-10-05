@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{690232440107FA20}PrefabsEditable/EXPBM/EBM_BriefingBoard.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

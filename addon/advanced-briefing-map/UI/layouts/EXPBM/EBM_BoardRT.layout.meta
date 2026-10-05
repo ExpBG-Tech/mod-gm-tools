@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{636C657BF826EDAA}UI/layouts/EXPBM/EBM_BoardRT.layout"
+ Configurations {
+  LayoutResourceClass PC {}
+  LayoutResourceClass HEADLESS : PC {}
+ }
+}

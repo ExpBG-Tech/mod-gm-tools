@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{B0D011A7D85EC526}PrefabsEditable/EXPAU/EAU_ProtestZone.et"
+ Configurations {
+  EntityTemplateResourceClass PC {
+  }
+  EntityTemplateResourceClass HEADLESS : PC {
+  }
+ }
+}

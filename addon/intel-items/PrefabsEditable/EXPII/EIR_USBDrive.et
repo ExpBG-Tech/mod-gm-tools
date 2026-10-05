@@ -1,0 +1,32 @@
+GenericEntity : "{C95E11C60810F432}Prefabs/Items/Core/Item_Base.et" {
+ ID "508AB2013EEE1E00"
+ components {
+  EIR_DriveComponent "{3A9AC4BBA0D6B371}" {
+  }
+  InventoryItemComponent "{5222EB4D0C73006B}" {
+   Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
+    ItemDisplayName EIR_DriveUIInfo "{5222EB4D07D865FA}" {
+     Name "USB Drive"
+     Description "Empty. Use it at an EXPBG server rack to download intel; hover it here to read what it stores."
+    }
+    ItemPhysAttributes ItemPhysicalAttributes PhysicalAttributes { Weight 0.02 SizeSetupStrategy Manual }
+    m_Size SLOT_1x1
+    m_bStackable 0
+    m_bRefundable 0
+   }
+  }
+  MeshObject "{C342AD143BE58CD6}" {
+   Object "{624487A55A9380C7}Assets/Props/Debris/Electronic/FragmentElectronic_dbr_02.xob"
+  }
+  RigidBody "{E17194F3643BC859}" { Mass 0.02 ModelGeometry 1 }
+  SCR_EditableEntityComponent "{1C5FD9714E60E445}" : "{996046FE206C699A}Prefabs/Editor/Components/Default_SCR_EditableEntityComponent.ct" {
+   m_UIInfo SCR_EditableEntityUIInfo "{53A0645334A46E3B}" {
+    Name "EXPBG USB Drive"
+    Description "Portable drive for server rack intel. Players download rack intel onto it, hand it over, and hover it in the inventory to read it."
+    m_Image "{38C2078B7B519EF1}UI/Textures/EXPII/EII_IntelItems.edds"
+    m_aAuthoredLabels { 1 120 157026 }
+   }
+   m_bAutoRegister ALWAYS
+  }
+ }
+}

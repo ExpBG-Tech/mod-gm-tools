@@ -1,0 +1,50 @@
+GenericEntity : "{DCBC472CDA3EA9B2}Prefabs/Props/Civilian/WallMap_01.et" {
+ ID "527C88289D9C54C0"
+ components {
+  MeshObject "{5872F0EB7FA40561}" {
+   Materials {
+    MaterialAssignClass "{C5FB836E80D3C7C7}" {
+     SourceMaterial "Map_01_Map"
+     AssignedMaterial "{AA3CD43539C7EF56}Assets/EXPBM/EBM_BoardRT.emat"
+    }
+   }
+  }
+  RplComponent "{227AB1D70A562F8E}" : "{B193E926C1935A4C}Prefabs/Editor/Components/Default_RplComponent.ct" {
+  }
+  EBM_BriefingBoardComponent "{A3BE7E0513FB51F5}" {
+  }
+  ActionsManagerComponent "{D15C9B14BBEE6754}" {
+   ActionContexts {
+    UserActionContext "{E847EA01EF7117C0}" {
+     ContextName "default"
+     Position PointInfo "{07B537F3E9F1C8BF}" {
+      Offset 0 0.65 0
+     }
+     Radius 1
+    }
+   }
+   additionalActions {
+    EBM_BriefAction "{BF862F7DD80EE4EB}" {
+     ParentContextList {
+      "default"
+     }
+     UIInfo SCR_ActionUIInfo "{BCAF777B5EAE705C}" {
+      Name "EXPBG: Brief on map"
+     }
+    }
+   }
+  }
+  SCR_EditableEntityComponent "{358246786ABD57B4}" : "{996046FE206C699A}Prefabs/Editor/Components/Default_SCR_EditableEntityComponent.ct" {
+   m_UIInfo SCR_EditableEntityUIInfo "{43A6B9EE500FE0A4}" {
+    Name "EXPBG Briefing Board"
+    Description "Live briefing map. A player uses Brief on map: their map opens and their view, own markers and drawn lines appear on this board for everyone. Closing the map ends the briefing and frees the board."
+    m_Image "{9F4038F6641EAE0A}UI/Textures/EditorPreviews/Auto/Props/Civilian/E_WallMap_01.edds"
+    m_aAuthoredLabels {
+     1 122 157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+  }
+ }
+ scale 2
+}

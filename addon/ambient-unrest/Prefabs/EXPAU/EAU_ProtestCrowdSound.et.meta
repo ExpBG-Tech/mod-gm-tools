@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{E1BA8A82AB3C485B}Prefabs/EXPAU/EAU_ProtestCrowdSound.et"
+ Configurations {
+  EntityTemplateResourceClass PC {
+  }
+  EntityTemplateResourceClass HEADLESS : PC {
+  }
+ }
+}

@@ -83,12 +83,37 @@
         "repository": "ExpBG-Tech/mod-gm-tools",
         "note": "Clean-room rebuild in this repository. Same behaviour as Disable Game Master Budgets (5F2944B7474F043F, ceo_of_bacon, APL-ND); no code, configuration or text from it is reused."
       }
+    },
+    {
+      "name": "unit-scripts",
+      "title": "Unit Scripts",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
+    },
+    {
+      "name": "advanced-briefing-map",
+      "title": "Advanced Briefing Map",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
+    },
+    {
+      "name": "ambient-unrest",
+      "title": "Ambient Unrest",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
     }
   ],
   "merge": [
     "Configs/Editor/AttributeLists/Edit.conf",
     "Configs/Editor/PlaceableEntities/Systems/Systems.conf",
-    "Configs/Systems/Persistence/GameMode/GameMaster.conf"
+    "Configs/Systems/Persistence/GameMode/GameMaster.conf",
+    "Configs/Editor/ActionLists/Context/TempEdit.conf"
   ],
   "relocate": {
     "ambient-sounds/UI/Textures/EXPBG/EXPBG_Workshop_Banner.png": "UI/Textures/EXPBG/EXPBG_Ambient_Sounds_Workshop_Banner.png",

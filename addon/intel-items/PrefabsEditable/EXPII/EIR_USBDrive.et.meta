@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{74CA7EB748CF82EC}PrefabsEditable/EXPII/EIR_USBDrive.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

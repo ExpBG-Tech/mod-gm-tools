@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{67558101DE7E37AA}Prefabs/EXPII/EIR_ServerRack_Base.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

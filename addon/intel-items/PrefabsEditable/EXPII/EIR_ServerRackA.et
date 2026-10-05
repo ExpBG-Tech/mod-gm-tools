@@ -1,0 +1,11 @@
+GenericEntity : "{67558101DE7E37AA}Prefabs/EXPII/EIR_ServerRack_Base.et" {
+ ID "9A4CA731A32FBFA8"
+ components {
+  SCR_EditableEntityComponent "{B56CB5B6C83E80D2}" {
+   m_UIInfo SCR_EditableEntityUIInfo "{305AC76ABC5D7F5F}" {
+    Name "EXPBG Intel - Server Rack A"
+    m_aAuthoredLabels { 1 122 157026 }
+   }
+  }
+ }
+}

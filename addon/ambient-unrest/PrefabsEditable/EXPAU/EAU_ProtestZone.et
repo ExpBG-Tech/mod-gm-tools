@@ -1,0 +1,37 @@
+EAU_ProtestZone {
+ ID "75CEE74251C07581"
+ components {
+  SCR_EditableEntityComponent "{7D513ABF80B2CA42}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{C6EC1056AF8DC58B}" {
+    Name "EXPBG Civil Protest Zone"
+    Description "10-15 unarmed civilians in one group gather at the centre and protest in place: no roaming, raised-hand and pointing gestures, angry crowd audio from EXPBG Ambient Sounds. Rotate the module to aim the crowd. New zones start Off."
+    Icon "{CA1A00000000B001}UI/Textures/EXPAC/EAC_CivilianMarker_UI.edds"
+    m_Image "{7AC98B75C4D54967}UI/Textures/EXPBG/EAS_Crowd_Card.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM
+     157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{2BAAF3C0A40FACA4}" {
+  }
+  Hierarchy "{3BE4BCBF675FD1E4}" {
+  }
+  EAU_ZoneAreaComponent "{D428E53E0ABFABA7}" {
+   m_eShape ELLIPSE
+   m_fHeight 4
+   m_vResolution 32
+   m_bFollowTerrain 0
+   m_bStretchMaterial 0
+   m_Material "{E65E61D1541003E2}Assets/Editor/VirtualArea/VirtualArea.emat"
+   m_bActiveEveryFrameOnInit 0
+   m_bHideInWorkbench 1
+  }
+  EAU_ZoneVisibilityComponent "{B418123E2582672E}" {
+   m_State RENDERED
+  }
+ }
+}

@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{4F3669E88510C238}Configs/Editor/AttributeCategories/EUS_UnitScripts.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

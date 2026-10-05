@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{AA3CD43539C7EF56}Assets/EXPBM/EBM_BoardRT.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

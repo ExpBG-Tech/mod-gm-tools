@@ -1,5 +1,56 @@
 # EXPBG GM Tools changelog
 
+## 0.1.5 (unreleased)
+
+New modules:
+- Unit Scripts: right-click AI soldiers or squads for EXPBG Hold Position,
+  EXPBG Freeze (static, head follows nearby players) and EXPBG Release Unit
+  Scripts; an EXPBG Unit Scripts attribute tab adds seven vanilla ambient
+  animations. Squads get EXPBG Night Discipline: Light Discipline (flashlights
+  off, worn night vision on) or Terror Tactics (flashlights on, facing nearby
+  players). Scripts end when the unit is hurt or a player takes control.
+  Mission-only; scripted squads are not enrolled by Unit Caching.
+- Advanced Briefing Map: a placeable EXPBG briefing board. One player at a time
+  uses "EXPBG: Brief on map"; their map opens and the board shows the world map
+  with their view, markers and drawn lines live for everyone nearby. Closing the
+  map, walking away or disconnecting frees the board.
+- Ambient Unrest: "EXPBG Civil Protest Zone" gathers 10-15 unarmed civilians in
+  one group inside the zone; they stand still and protest with vanilla raised-
+  hand, pointing and arm-sweep gestures while an angry-crowd loop from Ambient
+  Sounds plays. Off, delete and world end remove the crowd; saves keep only the
+  zone settings.
+- Intel Items: EXPBG server racks (A/B) with GM-set intel title, text and
+  download time (5-900 s), and a placeable EXPBG USB Drive. A player carrying a
+  drive uses "Download intel"; a progress bar shows to that player only; moving
+  more than 3 m away, dying or pressing again stops it. The intel is stored on
+  the drive, travels with it and shows when hovering the drive. Rack and drive
+  text are not yet kept by CDF or native saves.
+
+Fixes and changes:
+- Unit Caching: the game's own autosave and saves work while cache zones are on,
+  as long as no group is cached or being restored; after every Full-cached group
+  has woken, normal saving is allowed again on its own.
+- Unit Caching: every Game Master, including voted ones, sees cache zone icons,
+  rings, map labels and Full-cached group icons; the testing monitor and group
+  ids are for logged-in admins only.
+- Unit Caching: groups waking at the same moment come back a few at a time (up
+  to 12 soldiers at once, then about 4 per second); a single group still wakes
+  immediately.
+- Unit Caching: new controller action "Release blocked groups (escape)" for a
+  Prepare for save that stays Blocked; soldiers already brought back are kept
+  and never doubled. A zone stuck on "Restoring saved module settings" logs what
+  it waits for after 10 s and resumes after 60 s if the game's save system never
+  started.
+- Ambient Civilians: deleting the last civilians module no longer leaves its
+  traffic cars and drivers behind (removed out of sight and far from players,
+  never a car a player used). A traffic slot is no longer lost when a driver
+  dies and the game later cleans up the car. The debug summary sits below the
+  Game Master compass.
+- Ambient Sounds: debug rings and the sound legend hide while the entity
+  browser, an attributes window or the pause menu is open.
+- Persistent Battlefield: bodies stay while a player is within 80 m (was 50 m),
+  as in the last standalone release.
+
 ## 0.1.4
 
 Fixes from the first full client test on a dedicated server with the production
