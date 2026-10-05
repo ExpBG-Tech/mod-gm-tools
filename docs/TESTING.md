@@ -7,6 +7,11 @@
 - Native compile: `build/pack-floorfix-20261005-0130/` compiled all seven modules as one
   Game module with no script errors (stock obsolete warnings only, plus the
   existing `EAC_SessionLifecycle` Serialize warning).
+- Workbench via Enfusion MCP (installed pack, 2026-10-05): project and NET
+  handlers compiled without script errors; GM_Eden loaded with every module
+  prefab placed; play mode initialized Ambient Sounds, Ambient Destruction and
+  the Unit Caching controller/zone with no script errors. Interactive GM use was
+  not exercised (no UI control).
 - Garrison contracts in the pack: `build/contracts-20261005-011102-720/` passed.
 - Garrison default world run in the pack: `build/gameplay-20261005-013118-511/`
   59 checks, 0 failures, runner passed: four guards, Simulation sleep/wake, two Full cycles
