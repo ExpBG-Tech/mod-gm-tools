@@ -1,5 +1,36 @@
 # EXPBG GM Tools changelog
 
+## 0.1.2
+
+- New module: No Game Master Budget. A Game Settings switch, "Enable Game Master
+  Budgets" (ON by default), lifts the Game Master placement budgets for props,
+  AI, vehicles, waypoints and systems when OFF; campaign building budgets are
+  unchanged. Same behaviour as the Disable Game Master Budgets mod, rebuilt from
+  scratch (no code reused): toggling now applies and restores the budget limits
+  immediately, and the switch is read from the replicated game mode so late
+  joiners and new missions never act on a stale value.
+
+- Unit Caching Group cleanup now works per casualty. A managed AI soldier's body
+  and owned kit are deleted once that casualty reaches the Minimum corpse age and
+  no player has come within the wake radius of the zone, the squad or the remains
+  for the clear delay. The rest of the squad no longer has to die, and cleanup
+  also runs while survivors are Simulation-cached or Full-cached. Survivors are
+  never deleted or refilled; caching and restoration are unchanged. Bodies of an
+  eliminated squad now go one by one as each reaches its own corpse age.
+- A soldier killed by script while his group is Simulation-cached (hidden and
+  untargetable) is not confirmed dead while the group sleeps; his body is kept
+  and never deleted by the cleanup. Known limit; normal play cannot reach it.
+- Remains that cannot be verified as safe to delete (unregistered or transferred
+  contents, unapproved modded items, or a refused deletion) are retried at most
+  three times, a minute apart, then handed back to the game's body cleanup
+  (vanilla or Persistent Battlefield) with one `[EBG CLEANUP RELEASE]` log line.
+  Remains protected by an EBG cleanup keep component or holding valuable intel
+  stay protected as before (`[EBG CLEANUP KEEP]`), also when the same body or
+  container holds other unverifiable items. Other casualties keep
+  draining meanwhile.
+- Debug group lines and zone markers show casualty cleanup progress for groups
+  with survivors.
+
 ## 0.1.1
 
 - First Workshop publication of the EXPBG GM Tools pack; content identical to

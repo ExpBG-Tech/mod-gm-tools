@@ -4,6 +4,7 @@ param(
  [switch]$OrchestratorSlotGranted,
  [switch]$FreshTrim,
  [switch]$BodyClearance,
+ [switch]$UnitCleanup,
  [string]$FixturePath = '',
  [ValidateRange(300,600)][int]$TimeoutSeconds = 360
 )
@@ -37,8 +38,29 @@ function Test-BodyClearanceEvidence([string]$Text) {
   $Text -match '\[EXPG BODY CHECK\] pass=1 native wall deletion acknowledged' -and
   $Text -match '\[EXPG BODY CHECK\] pass=1 same point and geometry clear after wall deletion'
 }
+function Test-UnitCleanupEvidence([string]$Text) {
+ # Same stock GM_Eden teardown tolerance as Test-GameplayEvidence, only after the first result marker.
+ # stdout, console.log and script.log each repeat the result; require one distinct result line.
+ $results = @([regex]::Matches($Text, '\[EBG CLEANUP TEST RESULT\][^\r\n]*') | ForEach-Object { $_.Value.TrimEnd() } | Sort-Object -Unique)
+ if ($results.Count -ne 1) { return $false }
+ $result = $Text.IndexOf('[EBG CLEANUP TEST RESULT]')
+ $checked = $Text.Substring(0, $result) + ($Text.Substring($result) -replace "(?m)^.*SCRIPT\s+\(E\): 'SCR_BaseResupplySupportStationComponent' needs a entity catalog manager!\r?$", '')
+ if ($Text -notmatch 'Game destroyed' -or $checked -match 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed') { return $false }
+ if ($Text -match '\[EBG CLEANUP TEST SURVIVOR DELETE\]') { return $false }
+ return $Text -match '\[EBG CLEANUP TEST RESULT\] checks=[1-9]\d* failures=0 cases=9 reason=complete' -and
+  $Text -match '\[EBG CLEANUP TEST DELETED\] case=sim-partial-awake .*state=0 whileCached=0' -and
+  $Text -match '\[EBG CLEANUP TEST DELETED\] case=sim-partial-cached .*state=1 whileCached=1' -and
+  $Text -match '\[EBG CLEANUP TEST DELETED\] case=full-partial-cached .*state=2 whileCached=1' -and
+  $Text -match '\[EBG CLEANUP TEST DELETED\] case=full-partial-awake-then-cache .*state=0 whileCached=0' -and
+  ($Text -match '\[EBG CLEANUP TEST SNAPSHOT\] case=sim-death-while-cached heldWhileCached=1 restored=1 deletedByEbg=1' -or
+   $Text -match '\[EBG CLEANUP TEST SNAPSHOT\] case=sim-death-while-cached knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0') -and
+  $Text -match '\[EBG CLEANUP RELEASE\] '
+}
 if (!$OrchestratorSlotGranted) { throw 'Explicit orchestrator native-slot handoff required. This launches a diagnostic server.' }
-if ($BodyClearance -and $FreshTrim) { throw 'Select one fixture kind.' }
+if (([int][bool]$FreshTrim + [int][bool]$BodyClearance + [int][bool]$UnitCleanup) -gt 1) { throw 'Select one fixture kind.' }
+# The unit-cleanup fixture runs 400 s of world time plus GM_Eden startup and shutdown.
+if ($UnitCleanup -and !$PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 540 }
+if ($UnitCleanup -and $TimeoutSeconds -lt 480) { throw 'Unit-cleanup fixture needs -TimeoutSeconds 480 or more to keep its result and diagnostics.' }
 $repo = Split-Path -Parent $PSScriptRoot
 $config = & "$repo/tools/Get-LocalConfig.ps1"
 $project = & "$repo/tools/Get-ProjectConfig.ps1"
@@ -50,6 +72,7 @@ Assert-NativeSlot
 if (!$FixturePath) {
  $FixturePath = Join-Path $PSScriptRoot 'EXPG_GarrisonGameplay.c'
  if ($BodyClearance) { $FixturePath = Join-Path $PSScriptRoot 'EXPG_BodyClearance.c' }
+ if ($UnitCleanup) { $FixturePath = Join-Path $PSScriptRoot 'EBG_UnitCleanupGameplay.c' }
 }
 $FixturePath = (Resolve-Path -LiteralPath $FixturePath).Path
 if (!(Test-Path -LiteralPath $FixturePath -PathType Leaf)) { throw 'FixturePath must identify a frozen gameplay script.' }
@@ -120,7 +143,7 @@ $process.StartInfo = $start
 Assert-NativeSlot
 if (!$process.Start()) { throw 'Diagnostic server failed to start.' }
 $started = $process.StartTime.ToUniversalTime()
-$receipt = [ordered]@{source=$source;run=$run;freshTrim=[bool]$FreshTrim;bodyClearance=[bool]$BodyClearance;pid=$process.Id;startedUtc=$started.ToString('o');executable=$engine;arguments=$arguments;timeoutSeconds=$TimeoutSeconds;timedOut=$false;ownedProcessStopped=$false;nativeExitCode=$null;passed=$false}
+$receipt = [ordered]@{source=$source;run=$run;freshTrim=[bool]$FreshTrim;bodyClearance=[bool]$BodyClearance;unitCleanup=[bool]$UnitCleanup;pid=$process.Id;startedUtc=$started.ToString('o');executable=$engine;arguments=$arguments;timeoutSeconds=$TimeoutSeconds;timedOut=$false;ownedProcessStopped=$false;nativeExitCode=$null;passed=$false}
 $receipt | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$run/run.json"
 $stdout = $process.StandardOutput.ReadToEndAsync()
 $stderr = $process.StandardError.ReadToEndAsync()
@@ -140,10 +163,12 @@ try {
  $text = $output + "`n" + ((Get-ChildItem -LiteralPath $run -Recurse -Filter '*.log' -File | Where-Object Name -ne 'native-output.log' | Get-Content -Raw) -join "`n")
  $evidencePassed = Test-GameplayEvidence $text ([bool]$FreshTrim)
  if ($BodyClearance) { $evidencePassed = Test-BodyClearanceEvidence $text }
+ if ($UnitCleanup) { $evidencePassed = Test-UnitCleanupEvidence $text }
  $receipt.passed = !$receipt.timedOut -and $process.ExitCode -eq 0 -and $evidencePassed
- $text -split "`n" | Where-Object { $_ -match '\[EXPG|SCRIPT\s+\(E\)|Can.t compile' } | Write-Output
+ $text -split "`n" | Where-Object { $_ -match '\[EXPG|\[EBG CLEANUP|SCRIPT\s+\(E\)|Can.t compile' } | Write-Output
 } finally {
  $receipt | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$run/result.json"
 }
 if (!$receipt.passed) { throw "Gameplay fixture not passed; inspect $run" }
+if ($UnitCleanup) { "PASS: bounded native Unit Caching cleanup fixture only (injected presence, no connected player, no GM UI, no save/load). Evidence: $run"; return }
 "PASS: bounded native server smoke only. No GM UI, player-distance crossing, combat, multiplayer/JIP or persistence proof. Evidence: $run"

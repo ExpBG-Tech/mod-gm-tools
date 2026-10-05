@@ -112,3 +112,19 @@ original design; no GME scripts, resources or generated positions are imported.
 The Garrison ledger supplies post/patrol ownership around Optimizer's existing
 Full survivor transaction. It is not a portable CDF snapshot bridge. Prepare for
 Save restores surviving soldiers and releases ordinary squads before admission.
+
+## Unit Caching casualty cleanup
+Cleanup is per casualty. A dead, death-confirmed, never-possessed member's corpse
+and only that member's owned rows are deletable after Minimum corpse age, player
+clearance (Wake radius around the module, every member and every held remain) and
+the continuous clear delay. The same check runs for awake, Simulation-suspended
+and Full-cached records, never during Full transitions or recovery. Every node of
+a deleted tree must belong to the same dead member, and the root must still be on
+the ground, on that body or in that member's own container. One root is deleted
+per 0.5 s scan across the server. A root that fails verification three times is
+released to native garbage handling, unless its tree holds a keep component, a
+mission-protected item or valuable intel anywhere (checked over the whole tree,
+not only the first blocker met), which stays protected. A record with nothing
+owned left settles and costs O(members) per tick; a casualty whose body is gone
+and who has nothing left to delete no longer counts as mature, so a younger
+casualty waits on the O(members) corpse-age hold without player-distance scans.

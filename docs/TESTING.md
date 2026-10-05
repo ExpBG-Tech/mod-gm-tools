@@ -1,5 +1,96 @@
 # EXPBG GM Tools validation gates
 
+## No Game Master Budget (0.1.2, GM UI)
+
+Workbench play on GM_Eden with the installed `local-20261005-111422-291` build
+(2026-10-05, computer use): Scenario properties -> Game -> "Enable Game Master
+Budgets" defaults to Yes. Set to No: log `[EXPBG NO BUDGET] Game Master budgets
+enabled=0`; a placed US rifle squad left the AI budget at 0% (limits raised 500x)
+and the panel read back No. Set to Yes: `enabled=1` and the AI budget showed 4%
+immediately. No script errors. Not covered: dedicated server/JIP replication,
+campaign building, save/load of the switch.
+
+## Unit Caching per-casualty cleanup (0.1.2, native)
+
+Fixture `tests/EBG_UnitCleanupGameplay.c`, selected with the runner switch
+`-UnitCleanup` (build the pack with `build.ps1 -NonInteractive` first):
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -UnitCleanup -TimeoutSeconds 540 -OrchestratorSlotGranted
+```
+
+Cases (letters used below):
+
+| | Case |
+| --- | --- |
+| A | `sim-partial-awake` |
+| B | `sim-partial-cached` |
+| C | `full-partial-cached` |
+| D | `full-partial-awake-then-cache` |
+| G | `sim-partial-wakeband` |
+| H | `h3-blocked` |
+| E | `sim-all-control` |
+| F | `full-all-control` |
+| I | `sim-death-while-cached` |
+
+The letters match the fixture source. Each case spawns a real USSR rifle squad
+with its own cache zone (Affected 40, Wake 60, Sleep 200, clear delay 5), kills
+one, two or all six soldiers with native damage, and moves an injected player
+presence away. Case I kills one soldier only after his squad is Simulation
+cached. A scripted kill of a suspended character does not complete native death
+while the squad sleeps, so the fixture gates only safety for I: the body is never
+deleted by EBG and survivors stay alive (known limit; sleeping units are hidden
+and untargetable in normal play). Deletions are attributed to `EBG_CacheCleanup.Tick` together
+with the cache state at deletion (0 awake, 1 Simulation cached, 2 Full cached).
+The runner's `Test-UnitCleanupEvidence` requires one distinct
+`[EBG CLEANUP TEST RESULT] ... failures=0 cases=9 reason=complete` line (stdout,
+`console.log` and `script.log` each repeat it), `state=0 whileCached=0` for A and
+D, `state=1 whileCached=1` for B, `state=2 whileCached=1` for C, the I
+`[EBG CLEANUP TEST SNAPSHOT]` line (`heldWhileCached=1 restored=1 deletedByEbg=1`,
+or `knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0`), an `[EBG CLEANUP RELEASE]` line (H), no `[EBG CLEANUP TEST SURVIVOR DELETE]`, no script errors and a clean
+shutdown. The fixture deadline is 400 s of world time; `-UnitCleanup` defaults
+`-TimeoutSeconds` to 540 and refuses less than 480. Portable verifier cases:
+`tests/Test-GameplayEvidence.ps1`.
+
+The Full cases need `-worldSystemsConfig
+{8DDC2A311929D52F}Configs/Systems/GameMasterSystems.conf`, which
+`Run-Gameplay.ps1` passes. Workbench World Editor play does not use that
+systems config, so Full caching cannot be exercised there.
+
+Expected on 0.1.1 source: A, B, C, D, the second half of G, H and the final
+deletion of I fail; E and F pass. If I fails only its "(precondition)" check,
+the squad woke by itself after the cached death; that run is inconclusive for I,
+not a cleanup result. Expected after the per-casualty change: all pass.
+
+Results (2026-10-05):
+
+- Before, on the 0.1.1 cleanup code (`build/pack-review-20261005-0715`, run
+  `build/gameplay-20261005-104816-409`, first eight cases): E/F whole-squad
+  controls deleted all six bodies; every partial case (A, B, C, D, G, H) ended
+  with `remaining=1`, H with `held=1 garbageProtected=1 nativeInserted=0`.
+- After (`build/local-20261005-111422-291`, run
+  `build/gameplay-20261005-112252-503`): `checks=83 failures=0 cases=9`, runner
+  verifier PASS. A deleted 32.5 s after leaving, D 33.6 s, G after the wake band
+  was left, B while Simulation cached (`state=1`) and C while Full cached
+  (`state=2`) after their 150 s corpse age, E and F six bodies each, H released
+  to native garbage after three attempts (`[EBG CLEANUP RELEASE]`), I known limit
+  as above. No survivor was deleted.
+- The fixture must keep the spawned entity in a local `IEntity` before casting;
+  the inline `Cast(SpawnEntityPrefab(...))` form returned null in native runs.
+
+Separate open gates, each reported on its own:
+
+1. A real GM session on a server launched with GameMasterSystems, in both
+   Simulation and Full modes: kill one AI, walk beyond the yellow Wake ring, see
+   the body disappear and "bodies cleaned" increment, return, and see the
+   survivors restore with no refill. Not yet run.
+2. Prepare for Save, save and reload with a living record whose casualty was
+   cleaned: no PersistenceIssue, the casualty stays dead, no respawn. Not yet run.
+3. Portable tests and `build.ps1` passed (`local-20261005-111422-291`); Garrison
+   contracts passed (`build/contracts-20261005-112707-872`); the Garrison default
+   world run passed 59/0 with four guards and both Full cycles
+   (`build/gameplay-20261005-112714-928`).
+
 ## Pack 0.1.1 published Unlisted (2026-10-05)
 
 Workshop `FC1402F65B2F4A45` 0.1.1 (tag `v0.1.1`, commit `08d29f3`) was

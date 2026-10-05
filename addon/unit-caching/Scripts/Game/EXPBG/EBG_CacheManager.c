@@ -11,6 +11,12 @@ class EBG_CacheMember
  bool WasPlayer;
  float DiedAt;
  float LastHealth = -1;
+ // Cleanup cache of the member's confirmed corpse-row death time: -1 unknown,
+ // -2 no confirmed row and no body. Runtime only; never persisted.
+ float CleanupDeathTime = -1;
+ // Cleanup: a body-less casualty with nothing left to delete. Re-armed with the
+ // record's settled flag. Runtime only; never persisted.
+ bool CleanupDrained;
 }
 enum EBG_CacheRecordState { ACTIVE, SIM_CACHED, FULL_CACHED, PENDING, RECOVERY, ELIMINATED }
 class EBG_CacheGroup
@@ -38,6 +44,10 @@ class EBG_CacheGroup
  int Alive;
  int Dead;
  bool CleanupRegistered;
+ // Per-casualty cleanup bookkeeping. Diagnostics only: never a cache or sleep gate.
+ bool CleanupCasualtiesSettled;
+ string CleanupStatus;
+ string CleanupPhase;
  ref EBG_SimulationState Simulation;
  ref EBG_FullCacheGroup Full;
  UUID FullGroupId;
@@ -69,7 +79,7 @@ class EBG_CacheGroup
   if (Alive == 0 && Dead == Members.Count()) return EBG_CacheRecordState.ELIMINATED;
   return EBG_CacheRecordState.ACTIVE;
  }
- string DebugState()
+ string DebugState(bool cleanupDetail = true)
  {
   string state = "Active";
   if (Full) state = EBG_CacheFullCoordinator.Status(this);
@@ -80,6 +90,13 @@ class EBG_CacheGroup
    else state = "Recovery retained; survivors restored";
   }
   if (Reason != "" && Reason != state) state += " | " + Reason;
+  // Records with survivors show casualty cleanup separately; eliminated records
+  // already carry the cleanup reason in Reason (EBG_CacheManager.Tick).
+  if (Alive > 0)
+  {
+   if (cleanupDetail && CleanupStatus != "") state += " | " + CleanupStatus;
+   else if (!cleanupDetail && CleanupPhase != "") state += " | Casualty cleanup: " + CleanupPhase;
+  }
   return state;
  }
  void DebugStatus(float now)
@@ -93,9 +110,11 @@ class EBG_CacheGroup
   }
   if (!Zone || EBG_CacheDebug.Level == 0) { m_DebugLast = ""; m_DebugNext = 0; return; }
   string message = string.Format("%1 alive / %2 dead | %3", Alive, Dead, DebugState());
-  string logState = DebugState();
+  string logState = DebugState(false);
+  bool countdown = Reason.StartsWith("Sleep countdown:") || Reason.StartsWith("Safety cooldown:");
   if (Reason.StartsWith("Sleep countdown:")) logState = "Waiting for continuous clear delay";
   if (Reason.StartsWith("Safety cooldown:")) logState = "Safety cooldown | " + LastCacheRejection;
+  if (countdown && Alive > 0 && CleanupPhase != "") logState += " | Casualty cleanup: " + CleanupPhase;
   string logKey = string.Format("%1/%2/%3", Alive, Dead, logState);
   if (logKey == m_DebugLast || now < m_DebugNext) return;
   m_DebugLast = logKey; m_DebugNext = now + 5;
@@ -916,13 +935,31 @@ class EBG_CacheManager
     record.Reason = EBG_CacheFullCoordinator.Status(record);
     if (record.RegroupReason != "") record.Reason += " | " + record.RegroupReason;
     if (fullState == EBG_CacheRecordState.RECOVERY || record.RegroupReason != "") CountBlocked(zone, record);
+    // Casualty remains outlive the survivors' Full snapshot. Survivor rows were
+    // forgotten at capture (ForgetPrefabMember); only dead members' rows remain
+    // deletable. Never during a Full transition, recovery or a transfer token.
+    if (fullState == EBG_CacheRecordState.FULL_CACHED && !record.FullCleanup && record.CleanupRegistered && EBG_CacheCleanup.Instance)
+     EBG_CacheCleanup.Instance.Tick(record, Players, now);
+    else
+    {
+     // No cleanup tick: continuous clearance restarts and stale progress is hidden.
+     record.CleanupClearSince = -1; record.CleanupStatus = ""; record.CleanupPhase = "";
+    }
     continue;
    }
-   if (record.CacheState() == EBG_CacheRecordState.RECOVERY) { zone.RecoveryCount++; CountBlocked(zone, record); continue; }
+   if (record.CacheState() == EBG_CacheRecordState.RECOVERY)
+   {
+    zone.RecoveryCount++; CountBlocked(zone, record);
+    record.CleanupClearSince = -1; record.CleanupStatus = ""; record.CleanupPhase = "";
+    continue;
+   }
    if (record.Simulation && record.Simulation.Suspended)
    {
     zone.CachedCount++;
     record.Reason = "Simulation cached";
+    // Corpses of members that died before suspension are not in the snapshot.
+    // Cleanup touches no Reason/ClearSince/LastUnsafe, so caching is unchanged.
+    if (record.CleanupRegistered && EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.Tick(record, Players, now);
     continue;
    }
    if (zone.Enabled && !record.CleanupRegistered && record.PersistenceIssue == "")

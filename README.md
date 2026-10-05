@@ -1,6 +1,6 @@
 # EXPBG GM Tools
 
-One Arma Reforger Game Master modpack by M.Pac and K.Edgar. It bundles seven
+One Arma Reforger Game Master modpack by M.Pac and K.Edgar. It bundles eight
 modules into a single Workshop item and engine project
 (`FC1402F65B2F4A45`, Unlisted). Each module keeps its own source folder under
 [`addon/`](addon) so it can be maintained on its own.
@@ -14,6 +14,7 @@ modules into a single Workshop item and engine project
 | Ambient Destruction | `addon/ambient-destruction` | `mod-ambient-destruction` 0.0.9 |
 | Ambient Sounds | `addon/ambient-sounds` | `mod-ambient-sounds` 0.2.9 |
 | Persistent Battlefield | `addon/persistent-battlefield` | `mod-persistent-battlefield` 1.0.5 |
+| No Game Master Budget | `addon/no-gm-budget` | Rebuilt here; same behaviour as Disable Game Master Budgets by ceo_of_bacon (no code reused) |
 
 Exact source commits and former Workshop IDs are recorded in
 [`tools/pack.json`](tools/pack.json). Module folders keep the original class
@@ -45,7 +46,11 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   mission-only.
 - **Unit Caching**: AI Cache Zones and the EXPBG UNIT CACHING CONTROLLER.
   Simulation pauses existing AI; Full removes supported groups and restores only
-  survivors.
+  survivors. With Group cleanup on, each AI casualty's body and owned kit is
+  deleted once it reaches the Minimum corpse age and no player has come within
+  the wake radius of the zone, the squad or the remains for the clear delay, also
+  while the rest of its squad is awake, Simulation-cached or Full-cached.
+  Survivors are never deleted or refilled.
 - **Intel Items**: placeable intel with GM-authored title and text.
 - **Ambient Civilians**: civilian population module and exclusion zones.
 - **Ambient Destruction**: permanent building damage, rubble and road wrecks.
@@ -53,15 +58,25 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   modules start OFF.
 - **Persistent Battlefield**: body/wreck lifetime rules, reconnect retention
   and spawn weapon safety. It overrides the vanilla `Character_Base` prefab and
-  systems config.
+  systems config. Bodies owned by Unit Caching cleanup are removed by that
+  cleanup; Persistent Battlefield lifetimes apply to other bodies and to remains
+  Unit Caching hands back after failed verification.
+- **No Game Master Budget**: Game Settings switch "Enable Game Master Budgets"
+  (ON by default). OFF lifts the Game Master placement budgets for props, AI,
+  vehicles, waypoints and systems and raises their displayed limits; switching
+  back ON restores them at once. Campaign building budgets are unchanged.
 
 ## CDF Game Master Save
 
-The existing CDF companions depend on the standalone mods and are not
-compatible with the pack. The guards in Unit Caching and Garrison check for a
-reserved pack companion identity (`07BC942D90324CD9`, not yet built). Until it
-exists, Full caching refuses new removals while CDF is loaded and Garrison
-caching stays off; Simulation caching and restoration still work.
+The standalone CDF companions depend on the standalone mods and are not
+compatible with the pack. Use [EXPBG CDF Compat](https://reforger.armaplatform.com/workshop/07BC942D90324CD9)
+([source](https://github.com/ExpBG-Tech/mod-cdf-compat), `07BC942D90324CD9`)
+together with CDF Game Master Save instead. The guards in Unit Caching and
+Garrison check for that identity: without it, Full caching refuses new removals
+while CDF is loaded and Garrison caching stays off. With it, Unit Caching Full
+snapshots, Intel Items and Ambient Destruction are saved in CDF files; Garrison
+Full caching stays refused under CDF (choose Simulation). Simulation caching and
+restoration always work.
 
 ## Building
 

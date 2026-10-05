@@ -53,4 +53,40 @@ foreach ($invalid in @($body.Replace('verifiedBlock=1','verifiedBlock=0'), $body
  if (Test-BodyClearanceEvidence $invalid) { throw 'Incomplete body-clearance proof accepted.' }
 }
 if ((Test-BodyClearanceEvidence $full) -or (Test-GameplayEvidence $body $false)) { throw 'Distinct fixture kinds accepted as one another.' }
-'PASS: complete Full/trim evidence required; wrong case, casualty, transforms, errors and incomplete runs rejected. No engine launched.'
+$cleanupFunction = $runner.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-UnitCleanupEvidence' }, $true)
+if (!$cleanupFunction) { throw 'Missing unit-cleanup verifier.' }
+. ([scriptblock]::Create($cleanupFunction.Extent.Text))
+$cleanup = @'
+[EBG CLEANUP TEST DELETED] case=sim-partial-awake bodies=1 byEbg=1 state=0 whileCached=0 afterLeave=40 afterDeath=43 cachedAt=-1
+[EBG CLEANUP TEST DELETED] case=sim-partial-cached bodies=1 byEbg=1 state=1 whileCached=1 afterLeave=152 afterDeath=155 cachedAt=97
+[EBG CLEANUP TEST DELETED] case=full-partial-cached bodies=1 byEbg=1 state=2 whileCached=1 afterLeave=153 afterDeath=156 cachedAt=99
+[EBG CLEANUP TEST DELETED] case=full-partial-awake-then-cache bodies=1 byEbg=1 state=0 whileCached=0 afterLeave=40 afterDeath=43 cachedAt=-1
+[EBG CLEANUP TEST SNAPSHOT] case=sim-death-while-cached heldWhileCached=1 restored=1 deletedByEbg=1
+[EBG CLEANUP RELEASE] group=6 member=31 attempts=3 rows=4 nativeLifetimeRequested=1 root=id=0x1 blocker='Cleanup held: Unowned'
+[EBG CLEANUP TEST RESULT] checks=70 failures=0 cases=9 reason=complete
+Game destroyed
+'@
+if (!(Test-UnitCleanupEvidence $cleanup)) { throw 'Complete unit-cleanup proof rejected.' }
+# The runner concatenates stdout, logs/console.log and logs/script.log: each repeats the result.
+if (!(Test-UnitCleanupEvidence ($cleanup + "`n" + $cleanup + "`n" + $cleanup))) { throw 'Unit-cleanup proof repeated across stdout, console.log and script.log rejected.' }
+if (!(Test-UnitCleanupEvidence ($cleanup.Replace('Game destroyed', $teardown + "`nGame destroyed")))) { throw 'Stock teardown line after the cleanup result rejected.' }
+foreach ($invalid in @(
+ $cleanup.Replace('failures=0', 'failures=1'),
+ $cleanup.Replace('reason=complete', 'reason=timeout'),
+ $cleanup.Replace('cases=9', 'cases=8'),
+ $cleanup.Replace('state=2 whileCached=1', 'state=0 whileCached=0'),
+ $cleanup.Replace('state=1 whileCached=1', 'state=0 whileCached=0'),
+ $cleanup.Replace('state=0 whileCached=0', 'state=1 whileCached=1'),
+ $cleanup.Replace('state=2 whileCached=1', 'state=1 whileCached=1'),
+ ($cleanup -replace '(?m)^\[EBG CLEANUP TEST DELETED\] case=full-partial-awake-then-cache.*\r?\n', ''),
+ $cleanup.Replace('heldWhileCached=1', 'heldWhileCached=0'),
+ ($cleanup -replace '(?m)^\[EBG CLEANUP TEST SNAPSHOT\].*\r?\n', ''),
+ ($cleanup -replace '(?m)^\[EBG CLEANUP RELEASE\].*\r?\n', ''),
+ ($cleanup + "`n[EBG CLEANUP TEST SURVIVOR DELETE] id=0x2 wearer=0x3"),
+ ($cleanup + "`n[EBG CLEANUP TEST RESULT] checks=1 failures=1 cases=9 reason=timeout"),
+ ("SCRIPT (E): failure`n" + $cleanup),
+ $cleanup.Replace('Game destroyed', ''))) {
+ if (Test-UnitCleanupEvidence $invalid) { throw 'Incomplete unit-cleanup proof accepted.' }
+}
+if ((Test-GameplayEvidence $cleanup $false) -or (Test-BodyClearanceEvidence $cleanup) -or (Test-UnitCleanupEvidence $full) -or (Test-UnitCleanupEvidence $body)) { throw 'Unit-cleanup and other fixture kinds accepted as one another.' }
+'PASS: complete Full/trim, body-clearance and unit-cleanup evidence required; wrong case, casualty, cache state, survivor deletion, errors and incomplete runs rejected. No engine launched.'

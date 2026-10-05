@@ -75,6 +75,14 @@
         "project": "EXPBGPersistentBattlefield",
         "workshopId": "6A32DB878B264D05"
       }
+    },
+    {
+      "name": "no-gm-budget",
+      "title": "No Game Master Budget",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Clean-room rebuild in this repository. Same behaviour as Disable Game Master Budgets (5F2944B7474F043F, ceo_of_bacon, APL-ND); no code, configuration or text from it is reused."
+      }
     }
   ],
   "merge": [
@@ -90,6 +98,6 @@
   "cdfCompanionReserved": {
     "id": "07BC942D90324CD9",
     "name": "EXPBG GM Tools CDF Compatibility",
-    "note": "Reserved identity checked by Unit Caching and Garrison save guards. Not yet built or published; the standalone CDF companions require the standalone mods and cannot be combined with this pack."
+    "note": "Identity checked by Unit Caching and Garrison save guards. Built as EXPBG CDF Compat in ExpBG-Tech/mod-cdf-compat; the standalone CDF companions require the standalone mods and cannot be combined with this pack."
   }
 }
