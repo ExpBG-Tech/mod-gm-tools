@@ -32,6 +32,10 @@ class EAS_Runtime
  protected float m_LastExplosion = -100000;
  protected float m_NextDebug;
  protected SCR_EditorManagerEntity m_DebugEditor;
+ protected static const string DEBUG_CANVAS_NAME = "EAS_DebugRanges";
+ protected static const string DEBUG_LEGEND_NAME = "EAS_DebugLegend";
+ protected static const int LEGEND_WIDTH = 360;
+ protected static const int LEGEND_HEIGHT = 100;
  protected CanvasWidget m_DebugCanvas;
  protected TextWidget m_DebugLegend;
  protected ref array<ref LineDrawCommand> m_DebugLines = {};
@@ -111,8 +115,42 @@ class EAS_Runtime
   ClearDebug();
   m_NextDebug = 0;
   m_DebugModules.RemoveItem(module);
+  // A deleting owner may already read as null in the weak list; drop such
+  // entries so the last disable can still release the overlay and the tick.
+  for (int i = m_DebugModules.Count() - 1; i >= 0; i--) if (!m_DebugModules[i]) m_DebugModules.Remove(i);
   if (module && enabled && m_DebugModules.Count() < 32) { m_DebugModules.Insert(module); Wake(); }
   if (!enabled) FinishIfIdle();
+ }
+
+ // World cleanup (disconnect, mission change) can end before the next tick
+ // notices the world change: release the instance and any named overlay widget.
+ static void ShutdownForWorldCleanup()
+ {
+  if (Instance) Instance.Shutdown();
+  RemoveDebugWidgets();
+ }
+
+ protected static bool DebugWanted(IEntity entity)
+ {
+  EAS_AmbientModule module = EAS_AmbientModule.Cast(entity);
+  if (module) return module.DebugEnabled == 1;
+  EAS_RadioModule finite = EAS_RadioModule.Cast(entity);
+  return finite && finite.DebugEnabled == 1;
+ }
+
+ // Bounded sweep by name: a widget that lost its script reference is still removed.
+ protected static void RemoveDebugWidgets()
+ {
+  if (!GetGame()) return;
+  WorkspaceWidget workspace = GetGame().GetWorkspace();
+  if (!workspace) return;
+  for (int i = 0; i < 8; i++)
+  {
+   Widget stale = workspace.FindAnyWidget(DEBUG_LEGEND_NAME);
+   if (!stale) stale = workspace.FindAnyWidget(DEBUG_CANVAS_NAME);
+   if (!stale) return;
+   stale.RemoveFromHierarchy();
+  }
  }
 
  void CancelPending(EAS_AmbientModule module)
@@ -373,35 +411,46 @@ class EAS_Runtime
   WorkspaceWidget workspace = GetGame().GetWorkspace();
   CameraManager cameras = GetGame().GetCameraManager();
   SCR_ManualCamera camera = SCR_CameraEditorComponent.GetCameraInstance();
+  // Deleted owners and switched-off modules no longer keep the overlay alive.
+  for (int i = m_DebugModules.Count() - 1; i >= 0; i--) if (!DebugWanted(m_DebugModules[i])) m_DebugModules.Remove(i);
   // IsOpened retains the previous state while the native editor closes.
   // Require its actual camera too, so an owned GM role cannot draw in player view.
   if (!workspace || m_DebugModules.IsEmpty() || !editor || editor.IsLimited() || !editor.IsOpened() || editor.IsInTransition() || editor.IsModeChangeRequested() || editor.GetCurrentMode() != EEditorMode.EDIT || !camera || !cameras || cameras.CurrentCamera() != camera || (mapEntity && mapEntity.IsOpen())) { ClearDebug(); return; }
   float width = workspace.DPIUnscale(workspace.GetWidth());
   float height = workspace.DPIUnscale(workspace.GetHeight());
-  if (!m_DebugCanvas)
+  if (!m_DebugCanvas || !m_DebugLegend)
   {
+   // Recreate both together; never overwrite a reference to a live widget.
+   ClearDebug();
+   RemoveDebugWidgets();
    m_DebugCanvas = CanvasWidget.Cast(workspace.CreateWidgetInWorkspace(WidgetType.CanvasWidgetTypeID, 0, 0, width, height,
     WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.NOFOCUS, null, 19));
    if (!m_DebugCanvas) return;
+   m_DebugCanvas.SetName(DEBUG_CANVAS_NAME);
    m_DebugEditor = editor;
    m_DebugEditor.GetOnDeactivate().Insert(ClearDebug);
    m_DebugEditor.GetOnClosed().Insert(ClearDebug);
-   m_DebugLegend = TextWidget.Cast(workspace.CreateWidgetInWorkspace(WidgetType.TextWidgetTypeID, 24, height - 54, width - 48, 30,
+   m_DebugLegend = TextWidget.Cast(workspace.CreateWidgetInWorkspace(WidgetType.TextWidgetTypeID, 0, 0, LEGEND_WIDTH, LEGEND_HEIGHT,
     WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.NOFOCUS | WidgetFlags.NO_LOCALIZATION, null, 20));
-   if (m_DebugLegend)
-   {
-    m_DebugLegend.SetFont("{EABA4FE9D014CCEF}UI/Fonts/RobotoCondensed/RobotoCondensed_Bold.fnt");
-    m_DebugLegend.SetExactFontSize(16);
-    m_DebugLegend.SetColorInt(0xFFFFFFFF);
-    m_DebugLegend.SetOutline(2, 0xEE000000);
-    m_DebugLegend.SetText("EXPBG sound ranges | Green: activation | Blue: spread | Yellow: audible range and latest source");
-   }
+   if (!m_DebugLegend) { ClearDebug(); return; }
+   m_DebugLegend.SetName(DEBUG_LEGEND_NAME);
+   m_DebugLegend.SetFont("{EABA4FE9D014CCEF}UI/Fonts/RobotoCondensed/RobotoCondensed_Bold.fnt");
+   m_DebugLegend.SetExactFontSize(16);
+   m_DebugLegend.SetColorInt(0xFFFFFFFF);
+   m_DebugLegend.SetOutline(2, 0xEE000000);
+   m_DebugLegend.SetTextWrapping(true);
+   m_DebugLegend.SetText("EXPBG sound ranges\nGreen: activation\nBlue: spread\nYellow: audible range and latest source");
   }
   FrameSlot.SetSize(m_DebugCanvas, width, height);
   m_DebugCanvas.GetScreenSize(m_DebugWidth, m_DebugHeight);
   m_DebugCanvas.SetSizeInUnits(Vector(m_DebugWidth, m_DebugHeight, 0));
   m_DebugCanvas.SetZoom(1); m_DebugCanvas.SetOffsetPx(vector.Zero);
-  if (m_DebugLegend) { FrameSlot.SetPos(m_DebugLegend, 24, height - 54); FrameSlot.SetSize(m_DebugLegend, width - 48, 30); }
+  // Right edge, upper middle: clear of the GM top bar, the bottom-left scenario
+  // buttons, the bottom-right entity panel, the civilians legends (bottom) and the
+  // top-left civilians/cache panels.
+  float legendWidth = Math.Min(LEGEND_WIDTH, width - 48);
+  FrameSlot.SetPos(m_DebugLegend, width - legendWidth - 24, Math.Max(120, height * 0.38));
+  FrameSlot.SetSize(m_DebugLegend, legendWidth, LEGEND_HEIGHT);
   m_DebugCommands.Clear();
   foreach (IEntity entity : m_DebugModules)
   {
@@ -490,5 +539,15 @@ class EAS_Runtime
   ClearDebug();
   if (m_Diagnostics) m_Diagnostics.Report("war", Now(), 0, 0, 0, 0, true);
   if (Instance == this) Instance = null;
+ }
+}
+
+modded class ArmaReforgerScripted
+{
+ // Screen-space debug widgets live in the global workspace, not in the world.
+ override protected void OnBeforeWorldCleanup()
+ {
+  EAS_Runtime.ShutdownForWorldCleanup();
+  super.OnBeforeWorldCleanup();
  }
 }

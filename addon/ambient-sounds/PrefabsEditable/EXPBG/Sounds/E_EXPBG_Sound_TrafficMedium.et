@@ -5,10 +5,10 @@ EAS_SoundModule {
    m_EntityType SYSTEM
    m_UIInfo SCR_EditableEntityUIInfo "{5C1D8B064E0CB9DA}" {
     Name "#EAS-SoundTrafficMedium_Name"
-    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Description "Placed ambient sound. Loops while On. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
     Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
     IconSetName "Notification_Sound_Unmuted"
-    m_Image "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_Image "{9FA40A6AFCC72D32}UI/Textures/EXPBG/EAS_SoundEffects_Card.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
    }
    m_bAutoRegister ALWAYS

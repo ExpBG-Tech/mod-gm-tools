@@ -51,8 +51,11 @@ class EAS_RadioState
  bool RecoverAfterApproach(float distance, float range)
  {
   if (m_StartFailures < 3 || m_ApproachRecoveryUsed) return false;
+  // Approach by 20% of the range and end that far inside it, capped at 50 m:
+  // unchanged up to 250 m, while a 1500 m sound needs 50 m, not 300 m.
+  float margin = Math.Clamp(range * 0.2, 1, 50);
   // Positive comparisons also reject NaN. Unknown metadata failures use -1.
-  if (!(range > 0 && distance >= 0 && distance <= range * 0.8 && m_FailedDistance - distance >= Math.Max(1, range * 0.2))) return false;
+  if (!(range > 0 && distance >= 0 && distance <= range - margin && m_FailedDistance - distance >= margin)) return false;
   m_StartFailures = 0; m_FailedDistance = -1; m_ApproachRecoveryUsed = true;
   return true; // Keep the last backoff deadline, random history and one-shot state.
  }

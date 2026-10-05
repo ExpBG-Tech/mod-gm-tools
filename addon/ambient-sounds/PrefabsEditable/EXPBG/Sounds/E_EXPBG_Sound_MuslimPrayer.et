@@ -5,7 +5,7 @@ EAS_SoundModule {
    m_EntityType SYSTEM
    m_UIInfo SCR_EditableEntityUIInfo "{E61D375A3DD3D4F1}" {
     Name "#EAS-SoundMuslimPrayer_Name"
-    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Description "Placed ambient sound. Loops while On. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
     Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
     IconSetName "Notification_Sound_Unmuted"
     m_Image "{7AC98B75C4D54967}UI/Textures/EXPBG/EAS_Crowd_Card.edds"

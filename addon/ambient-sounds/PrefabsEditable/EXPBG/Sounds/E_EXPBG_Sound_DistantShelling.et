@@ -5,7 +5,7 @@ EAS_SoundModule {
    m_EntityType SYSTEM
    m_UIInfo SCR_EditableEntityUIInfo "{2FB233006A9880FA}" {
     Name "#EAS-SoundDistantShelling_Name"
-    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Description "Placed ambient sound. Loops while On. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
     Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
     IconSetName "Notification_Sound_Unmuted"
     m_Image "{EEB3B9AECAEB416C}UI/Textures/EXPBG/EAS_War_Card.edds"

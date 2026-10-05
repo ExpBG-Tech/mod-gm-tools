@@ -5,7 +5,7 @@ EAS_SoundModule {
    m_EntityType SYSTEM
    m_UIInfo SCR_EditableEntityUIInfo "{9E80D7CA3476B1CE}" {
     Name "#EAS-SoundChinese1_Name"
-    Description "Placed ambient sound. Loops while enabled. Enabled, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
+    Description "Placed ambient sound. Loops while On. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
     Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
     IconSetName "Notification_Sound_Unmuted"
     m_Image "{5F27F1E24582AD5B}UI/Textures/EditorPreviews/Auto/Props/Civilian/E_RadioSmall_01_black.edds"

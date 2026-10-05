@@ -5,10 +5,11 @@ EAS_CrowdModule {
    m_EntityType SYSTEM
    m_UIInfo SCR_EditableEntityUIInfo "{DD6A9E773051417A}" {
     Name "#EAS-Crowd_Name"
-    Description "Local crowd ambience. Choose a crowd recording, volume and audible distance."
-    Icon "{2AD36DB5D2C07CB7}UI/Textures/Editor/ContentBrowser/ContentBrowser_Type_Group.edds"
+    Description "Local crowd ambience. On/Off, Recording, Volume, Audible distance and Loop are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
     m_Image "{7AC98B75C4D54967}UI/Textures/EXPBG/EAS_Crowd_Card.edds"
-    m_aAuthoredLabels { ENTITYTYPE_SYSTEM 157026 EAS_CROWD }
+    m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_CROWD }
    }
    m_bAutoRegister ALWAYS
    m_Flags 65

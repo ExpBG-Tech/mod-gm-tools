@@ -7,7 +7,7 @@ StringTable {
   }
   CustomStringTableItem "{1AABE502830C4B58}" {
    Id "EAS-Crowd_Name"
-   Target_en_us "EXPBG Crowd Module"
+   Target_en_us "EXPBG Ambient Crowd Sound"
   }
   CustomStringTableItem "{5BA8EBB7E8AD4305}" {
    Id "EAS-RadioBlack_Name"

@@ -10,8 +10,9 @@ EAS_RadioModule {
    m_EntityType SYSTEM
    m_UIInfo SCR_EditableEntityUIInfo "{A8AFCA6A969B8020}" {
     Name "#EAS-RadioANGRC160_Name"
-    Description "Physical radio. Enabled, Recording, Volume and Loop are controlled by Game Master."
-    Icon "{434AB803877743B4}UI/Textures/EditorPreviews/Auto/Props/Military/Radios/E_RadioStation_ANGRC160_01.edds"
+    Description "Physical radio. On/Off, Recording, Volume and Loop are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
     m_Image "{434AB803877743B4}UI/Textures/EditorPreviews/Auto/Props/Military/Radios/E_RadioStation_ANGRC160_01.edds"
     m_aAuthoredLabels {
      ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_RADIO

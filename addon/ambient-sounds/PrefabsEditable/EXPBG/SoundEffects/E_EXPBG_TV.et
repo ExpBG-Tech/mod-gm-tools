@@ -13,8 +13,9 @@ EAS_TVModule {
    m_EntityType SYSTEM
    m_UIInfo SCR_EditableEntityUIInfo "{EE011866A66042AE}" {
     Name "#EAS-TV_Name"
-    Description "Emergency alert sound from a physical television. Configure volume, looping and the pause between repeats."
-    Icon "{1018B005A47862BF}UI/Textures/EditorPreviews/Auto/Props/Furniture/E_TVSet_01.edds"
+    Description "Emergency alert sound from a physical television. On/Off, Volume, Loop and Pause are controlled by Game Master."
+    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
+    IconSetName "Notification_Sound_Unmuted"
     m_Image "{1018B005A47862BF}UI/Textures/EditorPreviews/Auto/Props/Furniture/E_TVSet_01.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
    }

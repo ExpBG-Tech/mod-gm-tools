@@ -228,7 +228,6 @@
 // | EAS_Radio_MysteryRussian | Mysterious Russian radio transmission |
 // | EAS_Radio_RussianChatter | Russian Radio Chatter, Version 1 |
 // | EAS_EmergencyAlert | United States Emergency Alert System Sound effect |
-// | EAS_WindowsXP_Startup | Microsoft Windows XP Startup Sound; reserved, no runtime event |
 //
 // The [Mixkit Sound Effects license](https://mixkit.co/license/modal/sfxFree/)
 // permits incorporation into a larger video-game end product but prohibits
