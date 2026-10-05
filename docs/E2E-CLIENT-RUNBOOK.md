@@ -126,8 +126,40 @@ Findings / TODO:
 | Intel place + attributes | PASS | title/text/diagnostics saved; server `[EII] diagnostics enabled` |
 | Intel read | FAIL (design) | server logs `[EII] read` (3x per 0.3 s press: no debounce) but the text is shown with `SCR_HintManagerComponent.ShowCustomHint`; this profile has hints disabled (`m_bHintsEnabled 0`), so nothing is displayed. Needs a dedicated read UI. Garrison replies also use hints. Multiline text: the newline became a space in the attribute box. |
 | EXPBG Add Garrison | FAIL (modset) | with Game Master Enhanced loaded our context entry opens no picker and logs nothing; GME's own "Add Garrison" ("Choose garrison") works. Add bail-out diagnostics to EXPG_OpenPicker / Perform. GME garrison groups are then "Regroup held" (blocked) by unit caching. |
-| Player action key | note | this profile maps PerformAction to left mouse; actions only fire with the weapon holstered (`x`). |
+| Player action key | note | corrected 2026-10-06: `InputUserSettings.conf` binds PerformAction to `mouse:button1` (right mouse, filter "pressed"); `x` toggles weapon raised/lowered. |
 | Admin cache monitor | note | stays on screen in first person (text says it needs GM open). |
 | CDF save | PASS | `[CDF][GMSave] Sauvegarde 'E2E_Pack_1' (17 entites)`; EAS session-save x5, `[EII] CDF captured`, `[EAD STATE] reason=save-snapshot`; sha256 84b31b0c...; GME garrison groups skipped as author-less |
 | CDF cold load (server restart) | FAIL | vanilla persistence is active on GM_Eden and restores GM entities before CDF; load refused by `[EAD CDF HOLD] Missing or ambiguous building: PierShed_01` (EAD_BuildingSnapshot.Preflight: building already gone via native persistence, fresh ledger has no history). No GM-facing message. Fix: missing original + saved Destroyed = satisfied; keep failing on >1 match. |
 | Sound debug legend | note | the client legend widget survives a rejoin to a fresh server (leak). |
+
+### Session log, part 3: focused re-test of 0.1.4 / CDF Compat 0.1.2 (2026-10-06)
+
+Restarted retail server (same profile, vanilla persistence on) and client; both downloaded the
+Workshop updates (GM Tools 0.1.3 -> 0.1.4, CDF Compat 0.1.1 -> 0.1.2). 0 `SCRIPT (E)` from EXPBG code.
+
+| Area | Result | Evidence |
+|---|---|---|
+| CDF cold load after restart (E2E_Pack_1) | PASS | `[EAD RESTORE] nativeSatisfied=11 of 46 saved buildings were already absent`, `Chargement : 17 entites recreees, 0 echecs`, `[EAD CDF LOAD FINALIZED] success=1`, `[EBG CDF LOAD FINALIZED] success=1` |
+| Browser names/previews | PASS | "EXPBG Ambient Crowd Sound" with the AMBIENT CROWD SOUND card; 7 sound-effect modules show SOUND EFFECTS; speaker mini icon + EXPBG badge on every sound item. Items from other EXPBG-labelled mods (Cpt. Zeus, Rifleman, Spawn Point, Field Arsenal...) also appear under the EXPBG filter. |
+| No GM Budget label | PASS | "EXPBG Enable Game Master Budgets" is the last row of Scenario properties -> Game (scroll to the very bottom). |
+| Entity dialog title | not ours | the vanilla character dialog also reads "Editing: Scenario properties". |
+| Destruction attributes | PASS | Layout seed integer field; Server diagnostics Off/Lifecycle/Counts selector. |
+| Destruction disable | PASS | `[EAD STATE] ... enabled=0`, `[EAD COUNTS] records=33 live=0 ... created=33 deleted=33 failures=0` |
+| Destruction delete | PASS | `[EAD STATE] reason=delete ... live=0 ... failures=0`, no errors |
+| Per-casualty cleanup (US fire team, production modset) | PASS | 4x `[EBG CLEANUP REMOVED] ... body=1 roots=2` (body + dropped weapon) after the player left 700 m; nothing left on the road. |
+| EXPBG Add Garrison with GME | PASS | map/building menu lists "Add Garrison" (GME) and "EXPBG Add Garrison"; ours opens "Choose Garrison Squad", server `[EXPG GARRISON] server reply to player 1`, client shows it in chat; guards on the window wall. With CDF loaded the CDF Compat guard holds Full: "Full cache held: CDF saves cannot keep Garrison Full survivors. Choose Simulation or Off." |
+| Intel `[br]` | PASS | inventory hover shows the text on separate lines with the empty line kept. |
+| Intel read window | not exercised | "Read intel" prompt shown; PerformAction is right mouse "pressed" and the injected right click did not trigger it (no `[EII] read` with diagnostics on). Needs one manual check. |
+| Civilians traffic | PASS | `traffic reserved_parties=3 pending=0 despawned=0 trips=2/0 failures=0 live_cars=3` |
+| Civilians conversations | PASS | Detailed diagnostics after ~5 min: `invite none=2 stale=0 far=7 ok=1`, `table_joined=1 table_invited=1`, `join cand=3 ... ok=1` (was ok=0 after 40 min). |
+| Civilians module delete | PASS with note | `[EAC controller] removed ... reserved=6`; summary and legend disappear. `[EAC TRAFFIC] controller removed; 3 parties retained; protected cleanup resumes with a replacement controller`: by design the traffic cars and drivers stay until another civilians module is placed (decision needed). Empty-group removal not visually confirmed. |
+| Civilians debug layout | PASS (minor) | summary top centre, legend right at 57-72%, clear of the sound legend; the summary block overlaps the GM compass. |
+| PB weapon safety | PASS | 0 `unregistred item ... SCR_CharacterControllerComponent` on server and client (was 28 on load). |
+| Zone status save-pause text | PASS | shown only with a Full group absent (cached or pending restore). |
+| Admin cache monitor | PASS | not drawn in first person. |
+| Native AUTO save | by design | `[EBG MISSION SAVE] Refused incomplete metadata: Restore ALL zones for editing before saving` -> `[PERSISTENCE] Save failed` while any zone is enabled; decision needed (see GMO #21). |
+
+Minor UI notes: the EXPBG sound legend overlaps the entity browser's Filters panel while the browser
+is open; the testing-only cache monitor overlaps the browser's top-left cards.
+Mouse look by injected input: large cursor jumps barely rotate the view, 20 px steps rotate it well.
+

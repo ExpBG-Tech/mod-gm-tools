@@ -43,7 +43,7 @@ Native gates for the 0.1.4 source: build `local-20261005-183149-156` compiled wi
 - [s] "Layout seed" and "Server diagnostics" shown as decimal sliders: integer / selector.
 - [s] Debug rings may render as a huge white dome.
 - [s] Issue drafts EAD #5 (AfghanTruck material remap), EAD #6 (collapse pacing).
-- [ ] Re-test disable/enable and module deletion cleanup in the client (not reached in the first session).
+- [x] Re-test disable/enable and module deletion cleanup in the client (M3: disable live=0 deleted=33, delete clean).
 
 ### Ambient sounds / No GM Budget
 - [s] Rename "EXPBG Crowd Module" to **EXPBG Ambient Crowd Sound**.
@@ -67,21 +67,28 @@ Native gates for the 0.1.4 source: build `local-20261005-183149-156` compiled wi
 
 ### Persistent Battlefield
 - [x] Weapon safety sent RPCs through unregistered controllers (server x28 on load, client proxies): owner-only, waits for RplId (uncommitted, in source).
-- [ ] Re-test vehicle wreck persistence and corpse protection near players (not reached).
+- [ ] Re-test vehicle wreck persistence and corpse protection near players (not modified in 0.1.4; outside M3 scope).
 - [ ] Decision needed: corpse protection 50 m (pack) vs 80 m (standalone 1.0.6) - PB #4.
 
 ### Cross-cutting
-- [ ] Entity property dialogs are titled "Editing: Scenario properties" (check whether vanilla or a mod causes it).
-- [ ] Restore `ReforgerEngineSettings.conf` from `.local/e2e/settings-backup` after the final client test.
+- [-] Entity property dialogs are titled "Editing: Scenario properties": vanilla character dialog shows it too; not EXPBG.
+- [x] Restore `ReforgerEngineSettings.conf` from `.local/e2e/settings-backup` after the final client test (done 2026-10-06).
 - [ ] Update CHANGELOG, README, Workshop description, docs/TESTING.md, E2E runbook.
 
 ## M2: Release
-- [ ] mod-cdf-compat: update `tools/pack.json` blob for `Scripts/Game/EAD_CDF/EAD_CDF.c` (new `c43d59b91cbec3cd29e133b41a171a2d4b677eac`) + CDF_CHANGELOG/CHANGELOG entry (GM-visible refusal dialog).
-- [ ] Commit per module, push, `release.ps1 -Publish -Interactive` (listing text changes), GitHub release.
-- [ ] CDF Compat: bump pin to the new GM Tools tag, release if changed.
+- [x] GM Tools 0.1.4 published 2026-10-06 (interactive, listing updated; receipt `artifacts/workshop-local-20261005-190453-993`, uploaded + packageVerified + listingMatchesPrepared). GitHub release v0.1.4 with source zip. Pre-release native gates: build, contracts, UnitCleanup (95 checks), audio sweep standard (all PASS, `build/audio-sweep-20261005-184731-046`).
+- [x] CDF Compat 0.1.2 published 2026-10-06 (GM-visible EAD refusal dialog, pin to GM Tools 0.1.4 `a73dace`, `localChanges.originBlob` provenance). GitHub release v0.1.2.
 
 ## M3: Focused re-test (only modified areas)
-- [ ] Rejoin flow from the runbook; cleanup (US squad with E-tool), Garrison with GME loaded, Intel read UI, CDF cold load after restart, civilians conversations/traffic/leak, renamed/relabelled browser items, debug legends, audio sweep.
+- [x] Done 2026-10-06 on Workshop 0.1.4 / CDF Compat 0.1.2 (runbook session log part 3): CDF cold load after restart, cleanup (US fire team: body + weapon per casualty), EXPBG Add Garrison with GME, intel `[br]`, civilians traffic + conversations + module removal, destruction attributes/disable/delete, renamed/relabelled browser items and previews, No GM Budget label, PB weapon-safety RPCs, zone status text, cache monitor; audio sweep standard PASS before release; `ReforgerEngineSettings.conf` restored.
+- [ ] Intel read window: one manual check (PerformAction is right mouse in this profile; injected input could not trigger it).
+
+### New findings from M3 (to file as issues in M5)
+- [ ] Civilians: deleting the last module keeps traffic parties (cars + drivers) until a replacement module is placed (by design in `EAC_TrafficDirector.Drain`); decide whether removal should clean them up out of sight.
+- [ ] Civilians: debug summary at the top centre overlaps the GM compass.
+- [ ] Sounds: the EXPBG sound legend overlaps the entity browser Filters panel while the browser is open.
+- [ ] Unit Caching: every vanilla AUTO save fails while any cache zone is enabled (`Restore ALL zones for editing before saving` -> `[PERSISTENCE] Save failed`); decide (see GMO #21).
+- [-] Entity dialogs titled "Editing: Scenario properties": also on the vanilla character dialog, not caused by EXPBG.
 
 ## M4: Old world cleanup (user confirms Workshop removal clicks)
 - [ ] Remove 6 standalone Workshop items: GM Optimizer F3B7C6FB18AB1F79, Intel Items E110000000000001, Ambient Civilians A9C45E82D6710B3F, Ambient Destruction E2A47D19C8B6503F, Ambient Sounds A93E9F6271894A3C, Persistent Battlefield 6A32DB878B264D05 (old CDF companions stay).
