@@ -9,7 +9,15 @@ class EAC_ActivityStation
  // is also retired when the second position fills and when the spot is released, so
  // this is a backstop rather than the mechanism, and may span a full dwell.
  protected static const float INVITE_SECONDS = 280;
- protected static const float INVITE_RANGE = 60;
+ // How far a neighbour may walk to take the free position: the invitation range,
+ // the join candidate range and the visiting leash in CanApproach all use it.
+ // It was 60 m, the same as the routine leash, and a small village never had two
+ // active residents that close: the live Morton run (5 active, 10 homes, 400 m
+ // module) logged `invite none=40 far=41 ok=0 | join cand=10 far=10 ok=0` with
+ // table_started=10 and table_joined=0 over forty minutes. 150 m is a short walk
+ // across a village, and the entry deadline already scales with distance (240 s
+ // cap). Each join is still one native path and the usual approach gates.
+ static const float JOIN_RANGE = 150;
  protected static EAC_ActivityStation s_OpenStation;
  protected static float s_OpenStationUntil;
  protected static BaseWorld s_World;
@@ -43,6 +51,10 @@ class EAC_ActivityStation
  {
   int count; if (m_First) count++; if (m_Second) count++; return count;
  }
+
+ // The household whose shared spot this is. A resident sitting down at another
+ // household's spot is visiting and may walk up to JOIN_RANGE (CanApproach).
+ EAC_HouseholdRecord GetHome() { return m_Home; }
 
  int Assign(EAC_ResidentClaim claim)
  {
@@ -127,7 +139,7 @@ class EAC_ActivityStation
    EAC_RoutineStats.RecordInvite(EAC_RoutineStats.INVITE_STALE);
    return false;
   }
-  if (vector.Distance(station.m_Transform[3], position) >= INVITE_RANGE)
+  if (vector.Distance(station.m_Transform[3], position) >= JOIN_RANGE)
   {
    EAC_RoutineStats.RecordInvite(EAC_RoutineStats.INVITE_FAR);
    return false;
@@ -162,7 +174,7 @@ class EAC_ActivityStation
   if (!Replication.IsServer() || !claim || !claim.Resident || !claim.Character || !claim.Home || !claim.Home.BuildingEntity || !claim.Group) return null;
   AIPathfindingComponent path = AIPathfindingComponent.Cast(claim.Group.FindComponent(AIPathfindingComponent));
   if (!path) { EAC_RoutineStats.RecordAcquire(EAC_RoutineStats.ACQ_NOPATH); return null; }
-  EAC_ActivityStation nearest; float nearestDistance = 60; bool homeHasStation;
+  EAC_ActivityStation nearest; float nearestDistance = JOIN_RANGE; bool homeHasStation;
   foreach (EAC_ActivityStation existing : s_Stations)
   {
    if (existing.m_Home == claim.Home) homeHasStation = true;
@@ -257,6 +269,13 @@ class EAC_ActivityStation
   s_OpenStationUntil = GetGame().GetWorld().GetWorldTime() * 0.001 + INVITE_SECONDS;
   EAC_RoutineStats.RecordTable(1, 0, 0);
   EAC_RoutineStats.RecordAcquire(EAC_RoutineStats.ACQ_CREATED);
+  // The invitation is only read when a neighbour starts its next routine, which
+  // could be minutes away; ask the nearest idle resident in reach to start now.
+  // One bounded pass over the tracked residents per spot opened (rare); it only
+  // clears a cooldown, the ordinary start ladder still decides everything.
+  EAC_AmbientModule module = EAC_AmbientModule.GetActive();
+  if (module && module.GetSpawner() && module.GetSpawner().CallToStation(module, claim, station.m_Transform[3], probeNow))
+   EAC_RoutineStats.RecordInvite(EAC_RoutineStats.INVITE_CALLED);
   return station;
  }
 

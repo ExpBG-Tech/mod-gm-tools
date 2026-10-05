@@ -352,6 +352,7 @@ class EAC_PedestrianSpawner
    EAC_SchedulerStats.RecordCreationRollback();
    SCR_EntityHelper.DeleteEntityAndChildren(group); m_Pending.Fail("group ownership registration failed"); return true;
   }
+  EAC_SessionLifecycle.Keep(group);
   group.SetFaction(GetGame().GetFactionManager().GetFactionByKey(EAC_AmbientModule.CIV_FACTION));
   SCR_AIGroupSettingsComponent settings = SCR_AIGroupSettingsComponent.Cast(group.FindComponent(SCR_AIGroupSettingsComponent));
   if (!settings) { m_Pending.Fail("group settings component missing"); return true; }
@@ -647,9 +648,14 @@ class EAC_PedestrianSpawner
    return true;
   }
   // Point the wander at the next scene while no reservation is held; the
-  // activity owns its own approach once one is.
+  // activity owns its own approach once one is. A resident outside its own leash
+  // (back from a neighbour's shared spot, EAC_ActivityStation.JOIN_RANGE) aims
+  // home first: no routine starts out there, and the walker only accepts legs
+  // that bring it nearer.
   vector goal;
-  if (!activation.Activity && EAC_SceneItinerary.Peek(module, claim, goal)) activation.Walking.SetGoal(goal);
+  bool outsideLeash = !activation.Activity && claim.Home.BuildingEntity != null && vector.Distance(claim.Character.GetOrigin(), claim.Home.BuildingEntity.GetOrigin()) > module.RoutineRange;
+  if (outsideLeash) activation.Walking.SetGoal(claim.Home.BuildingEntity.GetOrigin());
+  else if (!activation.Activity && EAC_SceneItinerary.Peek(module, claim, goal)) activation.Walking.SetGoal(goal);
   else activation.Walking.ClearGoal();
   if (!activation.Emerge.IsActive()) activation.Walking.Step(module, activation);
   return false;
@@ -666,11 +672,14 @@ class EAC_PedestrianSpawner
   if (!Replication.IsServer()) return;
   foreach (EAC_PedestrianActivation activation : m_Tracked) { activation.Walking.Stop(); activation.Shelter.Stop(); activation.ClearSince = 0; if (activation.Activity) activation.Activity.RequestStop(); }
   GetGame().GetCallqueue().Remove(DrainActivities);
-  if (GetActivityCount() > 0) GetGame().GetCallqueue().CallLater(DrainActivities, 500, true);
+  if (GetActivityCount() > 0 || HasOwnedGroup()) GetGame().GetCallqueue().CallLater(DrainActivities, 500, true);
  }
 
  // One shared cleanup pump survives removal of the last configuration module.
- // It stops once helpers are gone or a module resumes ordinary monitoring.
+ // It stops once helpers and owned groups are gone or a module resumes ordinary
+ // monitoring. While owned groups remain it keeps running (one pass over at most
+ // 200 records every half second) so a group emptied later in the gap - a
+ // resident deleted or killed by someone else - is removed as well.
  protected void DrainActivities()
  {
   if (!GetGame() || GetGame().GetWorld() != m_World || !Replication.IsServer() || EAC_AmbientModule.GetActive())
@@ -685,7 +694,49 @@ class EAC_PedestrianSpawner
    activation.Activity = null;
    if (m_ActivityCount > 0) m_ActivityCount--;
   }
-  if (GetActivityCount() == 0) GetGame().GetCallqueue().Remove(DrainActivities);
+  RemoveEmptyGroup();
+  EAC_SessionLifecycle.Sync(now);
+  if (GetActivityCount() == 0 && !HasOwnedGroup()) GetGame().GetCallqueue().Remove(DrainActivities);
+ }
+
+ protected bool HasOwnedGroup()
+ {
+  foreach (EAC_PedestrianActivation activation : m_Tracked)
+   if (activation.Claim && activation.Claim.Group) return true;
+  return false;
+ }
+
+ // A controller gap must not strand an empty "Non-Combatant(s)" group in the GM
+ // entity list. Live run 2026-10-06: the module was deleted with reserved=3 and an
+ // empty civilian group stayed for the rest of the session, because every path
+ // that deletes an emptied group (MaintainNext, Rollback, ClearExcluded and the
+ // sleep cache) only runs under an active controller. Same owned-group guards as
+ // ClearExcluded: this claim's own group, server authority, no player, no agents,
+ // no children, deletable. A living actor keeps its group (an unfinished pending
+ // spawn may not have joined it yet); a corpse does not. One deletion per pump
+ // tick. The claim keeps its reservation; a replacement controller's ordinary
+ // maintenance then finds actor and group absent and releases it.
+ protected bool RemoveEmptyGroup()
+ {
+  foreach (EAC_PedestrianActivation activation : m_Tracked)
+  {
+   EAC_ResidentClaim claim = activation.Claim;
+   if (!claim || !claim.Group) continue;
+   SCR_AIGroup group = claim.Group;
+   if (group.GetAgentsCount() != 0 || group.GetPlayerCount() != 0 || group.GetChildren()) continue;
+   ChimeraCharacter actor = ChimeraCharacter.Cast(claim.Character);
+   if (actor)
+   {
+    CharacterControllerComponent controller = actor.GetCharacterController();
+    if (controller && !controller.IsDead()) continue;
+   }
+   RplComponent groupRpl = RplComponent.Cast(group.FindComponent(RplComponent));
+   if (!groupRpl || groupRpl.IsProxy() || !groupRpl.IsOwner() || !EBG_PrefabFullCache.CanDeleteFullEntity(group)) continue;
+   EAC_SchedulerStats.RecordDespawn();
+   SCR_EntityHelper.DeleteEntityAndChildren(group);
+   return true;
+  }
+  return false;
  }
 
  // The authoritative scan. Debug lines and every fixture assert against this;
@@ -700,6 +751,43 @@ class EAC_PedestrianSpawner
 
  // The maintained count, exposed so a fixture can prove it agrees with the scan.
  int GetTrackedActivityCount() { return m_ActivityCount; }
+
+ // A resident has just opened a shared indoor spot (EAC_ActivityStation.Acquire).
+ // Offer its free position to the nearest idle resident in reach by clearing that
+ // resident's routine cooldown, exactly as RecoverIdle does: its ordinary start
+ // ladder (TryActivity -> Start -> BeginLeg -> InviteOpen) then takes the
+ // invitation within seconds instead of whenever its own rest happens to end.
+ // One bounded pass over the tracked list (<= 200) per spot opened. Nothing is
+ // created here and no placement, ownership, budget or approach gate is skipped.
+ bool CallToStation(EAC_AmbientModule module, EAC_ResidentClaim host, vector spot, float now)
+ {
+  if (!IsOwner(module) || !host) return false;
+  float reach = EAC_ActivityStation.JOIN_RANGE;
+  EAC_PedestrianActivation best;
+  float bestDistance = reach;
+  foreach (EAC_PedestrianActivation activation : m_Tracked)
+  {
+   if (activation == m_Pending || activation.ExclusionRemoval || activation.SessionRemoval || activation.PlayerTouched || activation.Activity) continue;
+   EAC_ResidentClaim claim = activation.Claim;
+   if (!claim || claim == host || !claim.Committed || claim.Cache || !claim.Character || !claim.Group || !claim.Home || !claim.Home.BuildingEntity) continue;
+   if (claim.AlarmUntil > now || claim.Resident.Dead || CompartmentAccessComponent.GetVehicleIn(claim.Character)) continue;
+   // The two leashes the start will apply anyway: BeginLeg needs the resident
+   // near its own home, and CanApproach the spot within visiting reach of it.
+   vector home = claim.Home.BuildingEntity.GetOrigin();
+   vector position = claim.Character.GetOrigin();
+   if (vector.Distance(position, home) > module.RoutineRange || vector.Distance(spot, home) > reach) continue;
+   float distance = vector.Distance(position, spot);
+   if (distance >= bestDistance) continue;
+   best = activation; bestDistance = distance;
+  }
+  if (!best) return false;
+  best.Claim.Resident.NextRoutineAt = 0;
+  // Zero is TryActivity's "never armed" sentinel and would add its ten-second
+  // arming wait; a time already past is what "no cooldown" means (ForceOne).
+  if (best.NextActivity == 0 || best.NextActivity > now) best.NextActivity = now - 1;
+  best.Walking.ResetBackoff();
+  return true;
+ }
 
  protected bool TryActivity(EAC_AmbientModule module, EAC_PedestrianActivation activation, array<IEntity> observers)
  {
@@ -1182,6 +1270,8 @@ class EAC_PedestrianSpawner
    if (!actor) { m_Pending.Fail("qualified character prefab spawn failed"); return; }
    // Same as the group above: untracked, so it cannot wait for another tick.
    if (!module.TrackResidentCharacter(m_Pending.Claim, actor)) { EAC_SchedulerStats.RecordCreationRollback(); SCR_EntityHelper.DeleteEntityAndChildren(actor); m_Pending.Fail("character ownership registration failed"); return; }
+   // Out of GM saves and vanilla persistence from the first frame it is owned.
+   EAC_SessionLifecycle.Keep(actor);
    m_Pending.SettleUntil = now + 1;
    if (!m_Pending.Bind()) { m_Pending.Fail("missing lifecycle component"); return; }
    if (m_Pending.Aborting) return;
@@ -1454,5 +1544,17 @@ class EAC_PedestrianSpawner
    if (activation.Walking.EAC_ContainsSessionHelper(candidate) || activation.Shelter.EAC_ContainsSessionHelper(candidate) || activation.Emerge.EAC_ContainsSessionHelper(candidate)) return true;
   }
   return false;
+ }
+
+ // Every helper EAC_ContainsSessionHelper answers for, for EAC_SessionLifecycle.Sync.
+ void EAC_KeepSessionHelpers()
+ {
+  foreach (EAC_PedestrianActivation activation : m_Tracked)
+  {
+   if (activation.Activity) activation.Activity.EAC_KeepSessionHelpers();
+   activation.Walking.EAC_KeepSessionHelpers();
+   activation.Shelter.EAC_KeepSessionHelpers();
+   activation.Emerge.EAC_KeepSessionHelpers();
+  }
  }
 }

@@ -463,4 +463,5 @@ class EAC_VanillaSeat
  }
 
  bool EAC_ContainsSessionHelper(SCR_EditableEntityComponent candidate) { return EAC_SessionLifecycle.ContainsOwned(candidate, m_Waypoint); }
+ void EAC_KeepSessionHelpers() { EAC_SessionLifecycle.Keep(m_Waypoint); }
 }

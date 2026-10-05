@@ -77,6 +77,13 @@ class EAC_ExclusionZone : GenericEntity
  static bool AnyTransitBlocked()
  {
   if (EAC_AmbientModule.GetActive()) return true; // Route segments must stay inside its area.
+  return AnyJourneyTransitBlocked();
+ }
+
+ // The same question for a car journey, which may leave the module area: only
+ // automatic geography and manual transit-blocking zones can stop it.
+ static bool AnyJourneyTransitBlocked()
+ {
   if (EAC_AutoExclusions.AnyTransitBlocked()) return true;
   if (s_Zones.IsEmpty()) return false;
   bool blocked = false;
@@ -141,6 +148,18 @@ class EAC_ExclusionZone : GenericEntity
  static bool IsPopulationAllowed(vector position)
  {
   if (EAC_AmbientModule.IsOutsidePopulationArea(position)) return false;
+  return IsJourneyPointAllowed(position);
+ }
+
+ // Civilian cars are placed inside the module area, then drive out of town and
+ // are removed once far away and unseen (one-way traffic). The module disc is an
+ // admission boundary for people and parked cars, not a wall for a departing car:
+ // with the default 400 m radius every other town is outside it, and requiring the
+ // destination inside the disc left no legal journey at all (live run 2026-10-06:
+ // `traffic admission last=town_goal`, trips=0/0 for 40 minutes in Morton).
+ // Automatic geography and manual zones still apply in full.
+ static bool IsJourneyPointAllowed(vector position)
+ {
   if (!EAC_AutoExclusions.IsPopulationAllowed(position)) return false;
   // After automatic geography, an empty manual-zone list needs no extra work.
   if (s_Zones.IsEmpty()) return true;
@@ -193,6 +212,12 @@ class EAC_ExclusionZone : GenericEntity
  {
   // A disc is convex: both endpoints inside means the straight segment stays inside.
   if (EAC_AmbientModule.IsOutsidePopulationArea(from) || EAC_AmbientModule.IsOutsidePopulationArea(to)) return false;
+  return IsJourneyTransitAllowed(from, to);
+ }
+
+ // Segment test for a departing car: see IsJourneyPointAllowed.
+ static bool IsJourneyTransitAllowed(vector from, vector to)
+ {
   if (!EAC_AutoExclusions.IsTransitAllowed(from, to)) return false;
   // Same fast path as IsPopulationAllowed. The population-only case is handled by
   // the BlockTransit != 1 skip in the loop below rather than by a second cached

@@ -60,6 +60,11 @@ class EAC_TrafficParty
  bool Reserved, PlayerTouched, WantDespawn, Retire, Deleting;
  bool ExclusionRemoval, SessionRemoval;
  bool Moved, StallRetry, StallRecovered;
+ // Set when the first drive order is placed. From then on the journey may leave
+ // the module area: only manual transit zones retire the party, and distance plus
+ // visibility remove it, instead of the module disc treating "out of town" as an
+ // exclusion that deletes the car in front of a player at the boundary.
+ bool Departed;
  ResourceName CarPrefab;
  IEntity Car;
  SCR_AIGroup Group;

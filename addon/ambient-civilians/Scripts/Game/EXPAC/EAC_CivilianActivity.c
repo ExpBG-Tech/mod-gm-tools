@@ -293,7 +293,8 @@ class EAC_CivilianActivity
   // Someone nearby is already sitting at a shared spot with a free position.
   // Joining them is the social behaviour the station exists for, and the only
   // path by which its second position is ever taken.
-  if (EAC_ActivityStation.InviteOpen(m_Actor.GetOrigin(), now) && !EAC_ActivityProfiles.NeedsTable(m_Routine))
+  bool invited = EAC_ActivityStation.InviteOpen(m_Actor.GetOrigin(), now);
+  if (invited && !EAC_ActivityProfiles.NeedsTable(m_Routine))
   {
    EAC_RoutineDefinition joined = EAC_RoutineCatalog.SelectTable(m_Claim.Resident);
    if (joined) { m_Routine = joined; EAC_RoutineStats.RecordTable(0, 0, 1); }
@@ -378,7 +379,9 @@ class EAC_CivilianActivity
   // what makes the walk between them readable rather than a shuffle.
   m_LegSpacing = 8;
   if (m_Leg > 0 && module) { m_LegSpacing = module.RoutineLegSpacing; }
-  if (EAC_ActivityProfiles.NeedsTable(m_Routine) && !FurnitureAnchor(module, params.Transform))
+  // An open invitation in reach goes to the waiting neighbour's shared spot.
+  // Taking a furniture seat somewhere else instead left the host sitting alone.
+  if (EAC_ActivityProfiles.NeedsTable(m_Routine) && (invited || !FurnitureAnchor(module, params.Transform)))
   {
    int slot;
    // Audit B2. `deferred` means the interior probe budget for this tick ran out
@@ -573,7 +576,12 @@ class EAC_CivilianActivity
   // Split so a table occupation records which clause refused it. Outdoor
   // routines are not counted; they have their own anchor counters.
   bool table = m_Station != null;
-  if (vector.Distance(start, destination) > module.RoutineRange) { EAC_RoutineStats.RecordApproach(EAC_RoutineStats.APR_RANGE); return false; }
+  // Taking the free position at another household's shared spot is a visit, and
+  // may reach EAC_ActivityStation.JOIN_RANGE (see the note there). The walker
+  // brings a visitor back inside its own leash afterwards (EAC_PedestrianWalk).
+  float reach = module.RoutineRange;
+  if (table && m_Station.GetHome() != m_Claim.Home) reach = Math.Max(reach, EAC_ActivityStation.JOIN_RANGE);
+  if (vector.Distance(start, destination) > reach) { EAC_RoutineStats.RecordApproach(EAC_RoutineStats.APR_RANGE); return false; }
   // Both rules apply per stop, against the spacing this stop demands: 8 m for
   // stop 0, RoutineLegSpacing for every later stop in a chain.
   if (!EAC_ActivityProfiles.SeparatedBy(m_Claim.Resident, destination, m_LegSpacing)) { EAC_RoutineStats.RecordApproach(EAC_RoutineStats.APR_ANCHOR); return false; }
@@ -585,7 +593,7 @@ class EAC_CivilianActivity
   // neighbours' records, whose positions sit beyond that record's centre, so a
   // hard 60 reserved spots and then rejected them - the beat was wasted and the
   // resident went inert. One configurable radius now governs both.
-  if (!m_Claim.Home.BuildingEntity || vector.Distance(destination, m_Claim.Home.BuildingEntity.GetOrigin()) > module.RoutineRange) { EAC_RoutineStats.RecordApproach(EAC_RoutineStats.APR_LEASH); return false; }
+  if (!m_Claim.Home.BuildingEntity || vector.Distance(destination, m_Claim.Home.BuildingEntity.GetOrigin()) > reach) { EAC_RoutineStats.RecordApproach(EAC_RoutineStats.APR_LEASH); return false; }
   // A place the native pathing already failed to reach this mission. Every
   // destination passes through here, so one check covers the station slot, the
   // surveyed spot, the anchor probes and the legacy ring alike.
@@ -1204,5 +1212,13 @@ class EAC_CivilianActivity
   if (EAC_SessionLifecycle.ContainsOwned(candidate, m_Point) || EAC_SessionLifecycle.ContainsOwned(candidate, m_Approach)) return true;
   // The world furniture and the seat's borrowed root are not owned helpers.
   return m_VanillaSeat && m_VanillaSeat.EAC_ContainsSessionHelper(candidate);
+ }
+
+ // The same helpers, for EAC_SessionLifecycle.Sync.
+ void EAC_KeepSessionHelpers()
+ {
+  EAC_SessionLifecycle.Keep(m_Point);
+  EAC_SessionLifecycle.Keep(m_Approach);
+  if (m_VanillaSeat) m_VanillaSeat.EAC_KeepSessionHelpers();
  }
 }

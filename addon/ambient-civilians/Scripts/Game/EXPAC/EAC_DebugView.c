@@ -130,6 +130,31 @@ class EAC_DebugView
  static const int MAX_POINTS = 64;
  static const float SNAPSHOT_TTL = 3;
  protected static const ResourceName FONT = "{EABA4FE9D014CCEF}UI/Fonts/RobotoCondensed/RobotoCondensed_Bold.fnt";
+ // Screen layout, in DPI-unscaled workspace units. The live run on 2026-10-06 had
+ // the old full-width legend rows (height - 94 and height - 60) and the top-left
+ // summary overlapping the Unit Caching monitor (top-left), the GM scenario panel
+ // and the old Ambient Sounds legend (bottom-left). Regions now in use by others:
+ // top-left (Unit Caching), bottom-left (GM panel), bottom-right corner (GM entity
+ // panel) and the right edge between 25 % and 50 % of the height (Ambient Sounds
+ // legend). This view uses two free regions instead:
+ //  - the summary panel at top centre, just below the GM top toolbar;
+ //  - the legend on the right edge directly above the GM entity panel, its
+ //    bottom at 72 % of the height and its top never above 50 %.
+ static const int PANEL_WIDTH = 340;
+ static const int PANEL_MARGIN = 24;
+ static const int PANEL_TOP = 64;
+ static const int PANEL_HEIGHT = 180;
+ static const float LEGEND_BOTTOM_SHARE = 0.72;
+ static const float LEGEND_TOP_MIN_SHARE = 0.5;
+ static const int LEGEND_LINE = 24;
+ static const int LEGEND_HEADER = 44;
+ // One row per drawn marker kind: HOME, ACTIVE, PENDING, REJECTED, NO_GO
+ // (CACHED is never drawn).
+ static const int LEGEND_ROWS = 5;
+ // Workspace widgets outlive the world that created them. Every live view is
+ // listed here (weak entries, removed by the destructor) so world cleanup can
+ // remove its widgets even when the owning editor entity is torn down late.
+ protected static ref array<EAC_DebugView> s_Live = {};
  protected float m_NextRequest;
  protected float m_Expires;
  protected TextWidget m_Summary;
@@ -220,7 +245,24 @@ class EAC_DebugView
   m_Expires = 0;
  }
 
- void ~EAC_DebugView() { Clear(); }
+ void EAC_DebugView() { s_Live.Insert(this); }
+ void ~EAC_DebugView() { Clear(); s_Live.RemoveItem(this); }
+
+ // Disconnect, mission end or world change: no widget of this view may survive
+ // into the next world (the Ambient Sounds legend was seen doing exactly that).
+ static void ShutdownForWorldCleanup()
+ {
+  foreach (EAC_DebugView view : s_Live) if (view) view.Clear();
+ }
+
+ // Top of the legend block on the right edge: its bottom sits at 72 % of the
+ // height, just above the GM entity panel, and it never rises into the Ambient
+ // Sounds legend's band (right edge, 25-50 %), even on a short screen.
+ static float LegendTop(float height)
+ {
+  float top = height * LEGEND_BOTTOM_SHARE - LEGEND_HEADER - LEGEND_LINE * LEGEND_ROWS;
+  return Math.Max(top, height * LEGEND_TOP_MIN_SHARE + 4);
+ }
 
  static bool EditingAttributes()
  {
@@ -246,26 +288,32 @@ class EAC_DebugView
   if (!workspace) return;
   float width = workspace.DPIUnscale(workspace.GetWidth());
   float height = workspace.DPIUnscale(workspace.GetHeight());
+  // See PANEL_WIDTH: summary at top centre, legend on the right edge above the
+  // GM entity panel.
+  float columnWidth = Math.Min(PANEL_WIDTH, width - 2 * PANEL_MARGIN);
+  float columnLeft = width - PANEL_MARGIN - columnWidth;
+  float legendTop = LegendTop(height);
   if (level > 0)
   {
-   // A small corner panel of numbers, not a log: see EAC_AmbientModule.BuildOverlayStats.
-   m_Summary = MakeText(24, 110, Math.Min(340, width - 48), 190, 15, 0xFFFFFFFF);
+   // A small panel of numbers, not a log: see EAC_AmbientModule.BuildOverlayStats.
+   m_Summary = MakeText((width - columnWidth) * 0.5, PANEL_TOP, columnWidth, PANEL_HEIGHT, 15, 0xFFFFFFFF);
    if (m_Summary) m_Summary.SetText("EXPBG Ambient Civilians\n" + summary);
   }
   if (!draw) return;
   m_Ranges = new EAC_DebugRanges();
   m_Ranges.Build(centers, radii);
-  TextWidget rangeLegend = MakeText(24, height - 94, width - 48, 30, 16, 0xFFFFFFFF);
+  TextWidget rangeLegend = MakeText(columnLeft, legendTop, columnWidth, LEGEND_HEADER, 16, 0xFFFFFFFF);
   if (rangeLegend)
   {
    if (!centers.IsEmpty()) rangeLegend.SetText(string.Format("Module population boundary: %1 m. Players activate civilians only inside this area.", radii[0]));
    m_Legend.Insert(rangeLegend);
   }
+  int row;
   for (int k = 0; k <= EAC_DebugKind.NO_GO; k++)
   {
    if (k == EAC_DebugKind.CACHED) continue;
-   int column = (width - 48) / 6;
-   TextWidget legend = MakeText(24 + k * column, height - 60, column, 30, 20, MarkerColor(k));
+   TextWidget legend = MakeText(columnLeft, legendTop + LEGEND_HEADER + row * LEGEND_LINE, columnWidth, LEGEND_LINE, 18, MarkerColor(k));
+   row++;
    if (legend) legend.SetText(MarkerLabel(k));
    m_Legend.Insert(legend);
   }
@@ -312,6 +360,17 @@ class EAC_DebugView
    m_Markers[i].SetVisible(visible);
    if (visible) { FrameSlot.SetPos(m_Markers[i], screen[0], screen[1]); m_ScreenPoints.Insert(screen); }
   }
+ }
+}
+
+// The editor entity's own teardown normally clears its view first; this covers a
+// world that ends (disconnect, mission end) before that destructor runs.
+modded class ArmaReforgerScripted
+{
+ override protected void OnBeforeWorldCleanup()
+ {
+  EAC_DebugView.ShutdownForWorldCleanup();
+  super.OnBeforeWorldCleanup();
  }
 }
 

@@ -656,4 +656,5 @@ class EAC_CivilianShelter
  }
 
  bool EAC_ContainsSessionHelper(SCR_EditableEntityComponent candidate) { return EAC_SessionLifecycle.ContainsOwned(candidate, m_Order); }
+ void EAC_KeepSessionHelpers() { EAC_SessionLifecycle.Keep(m_Order); }
 }

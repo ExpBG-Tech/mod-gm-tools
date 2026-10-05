@@ -58,8 +58,11 @@ class EAC_TrafficRoute
   if (vector.Distance(start, destination) < 250 || vector.Distance(start, destination) > 5000) return false;
   start[1] = world.GetSurfaceY(start[0], start[2]);
   destination[1] = world.GetSurfaceY(destination[0], destination[2]);
+  // The car is placed inside the module area; the journey itself may leave it
+  // (see EAC_ExclusionZone.IsJourneyPointAllowed), so only the start is held to
+  // the module disc and the rest to automatic and manual exclusions.
   reason = "road_exclusion";
-  if (!EAC_ExclusionZone.IsPopulationAllowed(start) || !EAC_ExclusionZone.IsPopulationAllowed(destination) || !EAC_ExclusionZone.IsTransitAllowed(start, destination)) return false;
+  if (!EAC_ExclusionZone.IsPopulationAllowed(start) || !EAC_ExclusionZone.IsJourneyPointAllowed(destination) || !EAC_ExclusionZone.IsJourneyTransitAllowed(start, destination)) return false;
   reason = "road_ok";
   return true;
  }

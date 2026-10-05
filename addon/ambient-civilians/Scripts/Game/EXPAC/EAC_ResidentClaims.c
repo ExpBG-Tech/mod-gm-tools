@@ -215,6 +215,22 @@ class EAC_ResidentClaims
   return false;
  }
 
+ // The entities EAC_ContainsSessionEntity answers for, for EAC_SessionLifecycle.Sync:
+ // the exact owned actor of every claim that has not been handed over, and its
+ // group only while that group holds nothing else.
+ void EAC_KeepSessionEntities()
+ {
+  foreach (int id, EAC_ResidentClaim claim : m_Claims)
+  {
+   if (claim.EAC_SessionTransferred()) continue;
+   EAC_SessionLifecycle.Keep(claim.Character);
+   if (claim.OptimizerMember) EAC_SessionLifecycle.Keep(claim.OptimizerMember.Entity);
+   if (!claim.Group) continue;
+   SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.GetEditableEntity(claim.Group);
+   if (editable && EAC_SessionGroupExclusive(editable, claim)) EAC_SessionLifecycle.Keep(claim.Group);
+  }
+ }
+
  protected bool EAC_SessionGroupExclusive(SCR_EditableEntityComponent editable, EAC_ResidentClaim claim)
  {
   if (claim.Group.GetAgentsCount() > 1 || claim.Group.GetPlayerCount() > 0 || claim.Group.GetChildren()) return false;

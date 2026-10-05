@@ -568,6 +568,9 @@ class EAC_AmbientModule : GenericEntity
   s_NextHouseScan = now + 0.5;
   // Editor/CDF attributes restore synchronously before this shared tick.
   EAC_FinishSessionSettingsLoad();
+  // GM-save exclusion flags follow ownership at 1 Hz (self-throttled; one pass
+  // over the ledgers). See EAC_SessionLifecycle.
+  EAC_SessionLifecycle.Sync(now);
   // Everything below runs at 2 Hz. STEP_FRAME measures the whole of it.
   int tickStart = System.GetTickCount();
   EAC_SchedulerStats.BeginTick();

@@ -66,6 +66,10 @@ class EAC_TrafficDirector
  protected ref TraceParam m_HiddenTrace = new TraceParam();
  protected ref array<IEntity> m_HiddenExcluded = {};
  protected ref array<vector> m_PathScratch = {};
+ // PickTown's three best destination towns and their ranks, retained so an
+ // admission attempt every two seconds allocates nothing.
+ protected ref array<vector> m_GoalScratch = {};
+ protected ref array<float> m_GoalRank = {};
  protected float m_PeakSpeed;
  protected ref map<string, int> m_AdmissionResults = new map<string, int>();
  protected string m_LastAdmission, m_LastRoute;
@@ -241,7 +245,12 @@ class EAC_TrafficDirector
  // and several of them exist around one journey (audit item 3).
  protected IEntity Spawn(ResourceName prefab, vector position, vector direction, bool counted = false)
  {
-  if (EAC_AmbientModule.IsOutsidePopulationArea(position)) return null;
+  // Groups, cars and crews appear only inside the module area. Orders are not
+  // population: a departed car's drive, pull-over and dismount waypoints lie on
+  // its journey, which may leave the area (EAC_TrafficParty.Departed). Refusing
+  // them there failed the dismount order of a car outside the disc and left a
+  // seated crew that CanRemove could never clear.
+  if (counted && EAC_AmbientModule.IsOutsidePopulationArea(position)) return null;
   Resource resource = Resource.Load(prefab);
   if (!resource || !resource.IsValid()) return null;
   EntitySpawnParams params = new EntitySpawnParams(); params.TransformMode = ETransformMode.WORLD;
@@ -249,6 +258,22 @@ class EAC_TrafficDirector
   IEntity created = GetGame().SpawnEntityPrefab(resource, m_World, params);
   if (created && counted) EAC_SchedulerStats.RecordTrafficSpawn();
   return created;
+ }
+
+ // One switch for every placement and segment test a party makes. Before its
+ // first drive order everything stays inside the module area exactly as before;
+ // a departed car may be anywhere on its journey, so only automatic and manual
+ // exclusions apply to its kerb, dismount, stroll and return-boarding points.
+ protected static bool PointAllowed(EAC_TrafficParty party, vector position)
+ {
+  if (party && party.Departed) return EAC_ExclusionZone.IsJourneyPointAllowed(position);
+  return EAC_ExclusionZone.IsPopulationAllowed(position);
+ }
+
+ protected static bool TransitAllowed(EAC_TrafficParty party, vector from, vector to)
+ {
+  if (party && party.Departed) return EAC_ExclusionZone.IsJourneyTransitAllowed(from, to);
+  return EAC_ExclusionZone.IsTransitAllowed(from, to);
  }
 
  protected bool Relevant(vector position, array<IEntity> observers, float range)
@@ -332,6 +357,7 @@ class EAC_TrafficDirector
    getIn.SetEntity(party.Car); getIn.SetAllowance(true, false, true);
   }
   party.Order.SetCompletionRadius(5); party.Group.AddWaypoint(party.Order);
+  EAC_SessionLifecycle.Keep(party.Order);
   return true;
  }
 
@@ -415,7 +441,7 @@ class EAC_TrafficDirector
    if (vector.Distance(candidate, projected) > 2) continue;
    // Reject anything that landed back inside the carve we are avoiding.
    if (vector.Distance(projected, party.Car.GetOrigin()) < 2.5) continue;
-   if (!EAC_ExclusionZone.IsTransitAllowed(party.Car.GetOrigin(), projected)) continue;
+   if (!TransitAllowed(party, party.Car.GetOrigin(), projected)) continue;
    goal = projected; return true;
   }
   return false;
@@ -519,7 +545,7 @@ class EAC_TrafficDirector
   if (!EAC_TrafficRoute.ProjectLane(points, road.GetWidth(), near, near + forward * 20, goal, direction, true)) return false;
   goal[1] = m_World.GetSurfaceY(goal[0], goal[2]);
   if (vector.DistanceXZ(goal, party.Car.GetOrigin()) > 25 || vector.DistanceXZ(goal, party.Car.GetOrigin()) < 6) return false;
-  return EAC_ExclusionZone.IsPopulationAllowed(goal);
+  return PointAllowed(party, goal);
  }
 
  // One-way model: the trip is over but a player still has the car in view, so the
@@ -537,7 +563,7 @@ class EAC_TrafficDirector
    vector goal = party.Car.GetOrigin() + vector.FromYaw(angle) * 18;
    goal[1] = m_World.GetSurfaceY(goal[0], goal[2]);
    if (!EAC_ActivityStation.OffRoad(goal, 1) || !EAC_PedestrianSpawner.IsClear(m_World, goal)) continue;
-   if (!EAC_ExclusionZone.IsPopulationAllowed(goal) || !EAC_ExclusionZone.IsTransitAllowed(party.Car.GetOrigin(), goal)) continue;
+   if (!PointAllowed(party, goal) || !TransitAllowed(party, party.Car.GetOrigin(), goal)) continue;
    if (!PlaceOrder(party, "{750A8D1695BD6998}Prefabs/AI/Waypoints/AIWaypoint_Move.et", goal)) return false;
    party.Phase = EAC_TrafficPhase.WALK; party.Since = now; party.PendingReason = "stroll";
    return true;
@@ -600,7 +626,7 @@ class EAC_TrafficDirector
     if (!mesh.IsTileValid(position) || !path.GetClosestPositionOnNavmesh(position, "2 2 2", projected) || vector.Distance(position, projected) > 2) continue;
     party.PendingReason = "despawn_exit_clearance"; party.PendingPosition = projected;
     // Navmesh-projected dismount point: roads are exactly where this runs.
-    if (!EAC_ExclusionZone.IsPopulationAllowed(projected) || !EAC_ExclusionZone.IsTransitAllowed(party.Car.GetOrigin(), projected) || !EAC_PedestrianSpawner.IsNavmeshClear(m_World, projected)) continue;
+    if (!PointAllowed(party, projected) || !TransitAllowed(party, party.Car.GetOrigin(), projected) || !EAC_PedestrianSpawner.IsNavmeshClear(m_World, projected)) continue;
     party.PendingReason = "despawn_exit_target_visible";
     if (!Hidden(party, projected, observers)) continue;
     party.PendingReason = "despawn_exit_recheck";
@@ -737,11 +763,14 @@ class EAC_TrafficDirector
   {
    // The native path is needed only by transit screening or the stop diagnostic.
    // With no blocking zone, skip copying the full path on every driving tick.
-   bool sweepRoute = EAC_ExclusionZone.AnyTransitBlocked();
+   // A driving party has departed: the module disc is no longer a transit limit
+   // (EAC_TrafficParty.Departed), so only real transit-blocking zones sweep.
+   bool sweepRoute = EAC_ExclusionZone.AnyJourneyTransitBlocked();
+   if (!party.Departed) sweepRoute = EAC_ExclusionZone.AnyTransitBlocked();
    m_PathScratch.Clear();
    if (sweepRoute) party.Movement.GetCurrentPath(m_PathScratch);
    string blockedReason;
-   if (!EAC_ExclusionZone.IsTransitAllowed(party.Car.GetOrigin(), party.Destination)) blockedReason = "destination_exclusion";
+   if (!TransitAllowed(party, party.Car.GetOrigin(), party.Destination)) blockedReason = "destination_exclusion";
    bool allowed = blockedReason.IsEmpty();
    vector previous = party.Car.GetOrigin();
    // Scan the nearest PATH_SCAN_LIMIT points only. The native path holds the part
@@ -759,7 +788,7 @@ class EAC_TrafficDirector
    if (sweepRoute) scan = PathScanCount(m_PathScratch.Count());
    for (int i = 0; allowed && i < scan; i++)
    {
-    allowed = EAC_ExclusionZone.IsTransitAllowed(previous, m_PathScratch[i]); previous = m_PathScratch[i];
+    allowed = TransitAllowed(party, previous, m_PathScratch[i]); previous = m_PathScratch[i];
     if (!allowed) blockedReason = "path_exclusion";
    }
    if (!allowed || party.AlarmUntil > now)
@@ -822,9 +851,13 @@ class EAC_TrafficDirector
   {
    vector current = party.Position;
    if (party.Car) current = party.Car.GetOrigin();
-   excluded = !module.ContainsPopulationPosition(current) || EAC_ExclusionZone.IsManualPopulationExcluded(current, true);
+   // Before departure the module disc retires a party like any other owned
+   // population (a moved or shrunk module). A departed car is expected to leave
+   // the disc on its way out of town; distance and visibility remove it then.
+   bool bounded = !party.Departed;
+   excluded = (bounded && !module.ContainsPopulationPosition(current)) || EAC_ExclusionZone.IsManualPopulationExcluded(current, true);
    foreach (EAC_TrafficOccupant member : party.Crew)
-    if (member.Actor && (!module.ContainsPopulationPosition(member.Actor.GetOrigin()) || EAC_ExclusionZone.IsManualPopulationExcluded(member.Actor.GetOrigin(), true))) excluded = true;
+    if (member.Actor && ((bounded && !module.ContainsPopulationPosition(member.Actor.GetOrigin())) || EAC_ExclusionZone.IsManualPopulationExcluded(member.Actor.GetOrigin(), true))) excluded = true;
   }
   if (excluded)
   {
@@ -857,6 +890,7 @@ class EAC_TrafficDirector
    party.PendingReason = "group_spawn";
    party.Group = SCR_AIGroup.Cast(Spawn("{000CD338713F2B5A}Prefabs/AI/Groups/Group_Base.et", party.Position, party.Direction, true));
    if (!party.Group) { party.Fail("group spawn"); return true; }
+   EAC_SessionLifecycle.Keep(party.Group);
    party.Group.SetDeleteWhenEmpty(false); party.Group.SetCanDeleteIfNoPlayer(false);
    Faction faction = GetGame().GetFactionManager().GetFactionByKey(EAC_AmbientModule.CIV_FACTION);
    if (!faction) { party.Fail("CIV unavailable"); return true; }
@@ -894,6 +928,7 @@ class EAC_TrafficDirector
    party.PendingReason = "car_spawn";
    party.Car = Spawn(party.CarPrefab, party.Position + "0 0.25 0", party.Direction, true);
    if (!party.Car || !party.BindCar() || !party.Controlled()) { party.Fail("vehicle capabilities or ownership"); return true; }
+   EAC_SessionLifecycle.Keep(party.Car);
    FactionAffiliationComponent carFaction = FactionAffiliationComponent.Cast(party.Car.FindComponent(FactionAffiliationComponent));
    if (carFaction) carFaction.SetAffiliatedFactionByKey(EAC_AmbientModule.CIV_FACTION);
    if (!party.Controlled()) { party.Fail("vehicle ownership changed"); return true; }
@@ -972,6 +1007,7 @@ class EAC_TrafficDirector
    row.Actor = SCR_ChimeraCharacter.Cast(Spawn(row.Prefab, position, party.Direction, true));
    if (!row.Actor) { party.Fail("crew spawn"); return true; }
    row.Bind();
+   EAC_SessionLifecycle.Keep(row.Actor);
    if (!party.Controlled()) { party.Fail("crew control"); return true; }
    AIControlComponent control = AIControlComponent.Cast(row.Actor.FindComponent(AIControlComponent));
    FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(row.Actor.FindComponent(FactionAffiliationComponent));
@@ -999,7 +1035,7 @@ class EAC_TrafficDirector
    if (party.CarControl) party.CarControl.SetPersistentHandBrake(false);
    party.Movement.SetCruiseSpeed(EAC_TrafficParty.CruiseRequest(module.TrafficSpeed, party.Speed()));
    if (!PlaceOrder(party, "{750A8D1695BD6998}Prefabs/AI/Waypoints/AIWaypoint_Move.et", party.Destination)) party.Fail("drive order");
-   else { party.Phase = EAC_TrafficPhase.DRIVE; party.PendingReason = ""; party.Since = now; party.ProgressAt = now; party.ProgressPosition = party.Car.GetOrigin(); party.Moved = false; party.StallRetry = false; party.StallRecovered = false; if (m_JourneysStarted < 1000000) m_JourneysStarted++; }
+   else { party.Phase = EAC_TrafficPhase.DRIVE; party.Departed = true; party.PendingReason = ""; party.Since = now; party.ProgressAt = now; party.ProgressPosition = party.Car.GetOrigin(); party.Moved = false; party.StallRetry = false; party.StallRecovered = false; if (m_JourneysStarted < 1000000) m_JourneysStarted++; }
    return true;
   }
   if (party.Phase == EAC_TrafficPhase.DRIVE)
@@ -1089,7 +1125,7 @@ class EAC_TrafficDirector
    if (party.AlarmUntil > now || party.WantDespawn || party.Retire) return true;
    vector goal = party.Car.GetOrigin() + Vector(-party.Direction[2], 0, party.Direction[0]) * 10;
    goal[1] = m_World.GetSurfaceY(goal[0], goal[2]);
-   if (EAC_PedestrianSpawner.IsClear(m_World, goal) && EAC_ExclusionZone.IsTransitAllowed(party.Car.GetOrigin(), goal))
+   if (EAC_PedestrianSpawner.IsClear(m_World, goal) && TransitAllowed(party, party.Car.GetOrigin(), goal))
     if (PlaceOrder(party, "{750A8D1695BD6998}Prefabs/AI/Waypoints/AIWaypoint_Move.et", goal)) { party.Phase = EAC_TrafficPhase.WALK; party.Since = now; }
    return true;
   }
@@ -1122,7 +1158,7 @@ class EAC_TrafficDirector
    {
     vector old = party.Destination; party.Destination = party.ReturnDestination; party.ReturnDestination = old;
    }
-   if (!EAC_ExclusionZone.IsTransitAllowed(party.Car.GetOrigin(), party.Destination)) { party.Retire = true; return true; }
+   if (!TransitAllowed(party, party.Car.GetOrigin(), party.Destination)) { party.Retire = true; return true; }
    vector returnGoal;
    // Same carve hazard as the first boarding order; REST simply retries later.
    if (!BoardingGoal(party, returnGoal)) { party.PendingReason = "boarding_navmesh"; return false; }
@@ -1131,6 +1167,49 @@ class EAC_TrafficDirector
    return true;
   }
   return false;
+ }
+
+ // Destination town for a car leaving `home`. Bounded: one pass over at most
+ // EAC_SettlementIndex.MAX_CENTRES centres, keeping the best three in two small
+ // retained arrays.
+ //
+ // The car drives out of town, so the module area does not constrain the
+ // destination (EAC_ExclusionZone.IsJourneyPointAllowed); requiring it inside the
+ // disc is what left `town_goal` refusing every attempt in the live run. Towns
+ // whose centre lies beyond the traffic despawn distance from the module area are
+ // preferred, so the car is normally removed on the road, far away and unseen,
+ // rather than parked in view of the village it left; the nearest town 500 m or
+ // more away remains the fallback. Rotating over the best three keeps one town
+ // centre the road lookup cannot reach (100 m tolerance) from refusing every
+ // admission from this village.
+ protected bool PickTown(EAC_AmbientModule module, vector home, out vector goal)
+ {
+  m_GoalScratch.Clear(); m_GoalRank.Clear();
+  float preferred = Math.Min(module.TrafficSleepDistance + module.SettlementRadius, 4500);
+  vector centre = module.GetOrigin();
+  int townCount = EAC_SettlementIndex.GetCount();
+  for (int i = 0; i < townCount; i++)
+  {
+   vector candidate = EAC_SettlementIndex.GetCentreAt(i);
+   float distance = vector.Distance(home, candidate);
+   if (distance < 500 || distance > 5000 || !EAC_ExclusionZone.IsJourneyPointAllowed(candidate)) continue;
+   float rank = distance;
+   if (vector.DistanceXZ(centre, candidate) < preferred) rank += 100000;
+   int slot = m_GoalRank.Count();
+   while (slot > 0 && m_GoalRank[slot - 1] > rank) slot--;
+   if (slot >= 3) continue;
+   if (slot == m_GoalRank.Count()) { m_GoalScratch.Insert(candidate); m_GoalRank.Insert(rank); }
+   else { m_GoalScratch.InsertAt(candidate, slot); m_GoalRank.InsertAt(rank, slot); }
+   if (m_GoalScratch.Count() > 3) { m_GoalScratch.RemoveOrdered(3); m_GoalRank.RemoveOrdered(3); }
+  }
+  int choices = m_GoalScratch.Count();
+  if (choices == 0) return false;
+  // Never rotate a preferred town together with a fallback one.
+  int preferredCount;
+  foreach (float ranked : m_GoalRank) if (ranked < 100000) preferredCount++;
+  if (preferredCount > 0) choices = preferredCount;
+  goal = m_GoalScratch[m_GoalCursor++ % choices];
+  return true;
  }
 
  protected void Admit(EAC_AmbientModule module, array<IEntity> observers, float now)
@@ -1159,15 +1238,8 @@ class EAC_TrafficDirector
    home = null;
   }
   if (!home) { RecordAdmission("home_range"); return; }
-  vector goal; bool found; float nearestTown = float.MAX;
-  int townCount = EAC_SettlementIndex.GetCount();
-  for (int i = 0; i < townCount; i++)
-  {
-   vector candidate = EAC_SettlementIndex.GetCentreAt(i);
-   float distance = vector.Distance(home.Position, candidate);
-   if (distance < 500 || distance > 5000 || distance >= nearestTown || !EAC_ExclusionZone.IsPopulationAllowed(candidate)) continue;
-   goal = candidate; found = true; nearestTown = distance;
-  }
+  vector goal;
+  bool found = PickTown(module, home.Position, goal);
   // Terrains without server-side map labels still get a bounded road journey.
   // This fallback is not evidence that the road endpoint belongs to another town.
   if (!found && !EAC_SettlementIndex.HasData())
@@ -1233,6 +1305,21 @@ class EAC_TrafficDirector
     if (EAC_SessionLifecycle.ContainsOwned(candidate, row.Actor)) return true;
   }
   return false;
+ }
+
+ // The entities EAC_ContainsSessionEntity answers for, for EAC_SessionLifecycle.Sync.
+ void EAC_KeepSessionEntities()
+ {
+  foreach (EAC_TrafficParty party : m_Parties)
+  {
+   if (party.EAC_SessionTransferred()) continue;
+   EAC_SessionLifecycle.Keep(party.Car);
+   EAC_SessionLifecycle.Keep(party.Order);
+   foreach (EAC_TrafficOccupant row : party.Crew) EAC_SessionLifecycle.Keep(row.Actor);
+   if (!party.Group) continue;
+   SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.GetEditableEntity(party.Group);
+   if (editable && EAC_SessionGroupExclusive(editable, party)) EAC_SessionLifecycle.Keep(party.Group);
+  }
  }
 
  protected bool EAC_SessionGroupExclusive(SCR_EditableEntityComponent editable, EAC_TrafficParty party)

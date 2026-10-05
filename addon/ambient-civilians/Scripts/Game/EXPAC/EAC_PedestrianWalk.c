@@ -397,8 +397,16 @@ class EAC_PedestrianWalk
   }
   if (homeLength > leash)
   {
-   EAC_RoutineStats.RecordWalk(EAC_RoutineStats.WLK_LEASH);
-   return;
+   // A resident already outside its leash - back from a neighbour's shared spot,
+   // which may lie EAC_ActivityStation.JOIN_RANGE away - may take a leg that
+   // brings it at least two metres nearer home. Otherwise no leg would ever be
+   // legal out there and it would stand at the neighbour's door until cached.
+   float actorHome = vector.Distance(homeOrigin, actorOrigin);
+   if (actorHome <= leash || homeLength > actorHome - 2)
+   {
+    EAC_RoutineStats.RecordWalk(EAC_RoutineStats.WLK_LEASH);
+    return;
+   }
   }
   // A wander leg may cross a road but never ends on one: the destination is where
   // the resident stands until the next order. One metre beyond the edge keeps the
@@ -436,4 +444,5 @@ class EAC_PedestrianWalk
  }
 
  bool EAC_ContainsSessionHelper(SCR_EditableEntityComponent candidate) { return EAC_SessionLifecycle.ContainsOwned(candidate, m_Waypoint); }
+ void EAC_KeepSessionHelpers() { EAC_SessionLifecycle.Keep(m_Waypoint); }
 }

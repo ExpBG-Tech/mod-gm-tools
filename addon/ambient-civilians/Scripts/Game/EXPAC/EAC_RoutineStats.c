@@ -8,7 +8,9 @@ class EAC_RoutineStats
  // the navmesh, so the native move would start nowhere (H3, run 93 diagnosis).
  static const int APR_RANGE = 0, APR_ANCHOR = 1, APR_NEAR = 2, APR_ROAD = 3, APR_TRANSIT = 4, APR_ZONE = 5, APR_LEASH = 6, APR_NAV = 7, APR_OK = 8, APR_BODY = 9, APR_RETIRED = 10, APR_NAV_START = 11, APR_REASONS = 12;
  static const int VREJ_COOLDOWN = 0, VREJ_CLAIM = 1, VREJ_ALARM = 2, VREJ_STALE = 3, VREJ_CONTROL = 4, VREJ_OPTIMIZER = 5, VREJ_POSSESSED = 6, VREJ_FAR = 7, VREJ_REASONS = 8;
- static const int INVITE_NONE = 0, INVITE_STALE = 1, INVITE_FAR = 2, INVITE_OK = 3, INVITE_REASONS = 4;
+ // INVITE_CALLED is not an InviteOpen verdict: a newly opened shared spot asked
+ // the nearest idle resident in reach to start its next routine now.
+ static const int INVITE_NONE = 0, INVITE_STALE = 1, INVITE_FAR = 2, INVITE_OK = 3, INVITE_CALLED = 4, INVITE_REASONS = 5;
  static const int ACQ_NOPATH = 0, ACQ_HOMEHAS = 1, ACQ_MAXSTATIONS = 2, ACQ_NOINTERIOR = 3, ACQ_PLACEMENT = 4;
  // ACQ_BUDGET: the interior probe ladder ran out of its per-call budget before it
  // finished (audit B2). NOT a refusal - the next call resumes the sweep.
@@ -909,6 +911,7 @@ class EAC_RoutineStats
   result += " stale=" + s_Invite[INVITE_STALE].ToString();
   result += " far=" + s_Invite[INVITE_FAR].ToString();
   result += " ok=" + s_Invite[INVITE_OK].ToString();
+  result += " called=" + s_Invite[INVITE_CALLED].ToString();
   result += " | join cand=" + s_Join[JOIN_CANDIDATE].ToString();
   result += " far=" + s_Join[JOIN_FAR].ToString();
   result += " nav=" + s_Join[JOIN_NAVMESH].ToString();
