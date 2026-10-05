@@ -1,5 +1,33 @@
 # EXPBG GM Tools validation gates
 
+## Pack 0.1.1 published Unlisted (2026-10-05)
+
+Workshop `FC1402F65B2F4A45` 0.1.1 (tag `v0.1.1`, commit `08d29f3`) was
+registered through Workbench **Publish Project**; backend processing succeeded.
+The UI bundle's `data.pak`, project and preview matched the prepared package
+and the live listing matched the prepared metadata. The receipt keeps
+`packageVerified=false` only because the first-publication dialog has no
+change-note field. Custom license needs a root `license.txt`; Workbench copied
+`addon/ambient-sounds/license.txt` into the frozen stage (not into `data.pak`).
+
+GM UI session on the installed 0.1.1 build (GM_Eden, Workbench play, computer
+use; no script errors or VM exceptions in the session log):
+
+- Ambient Civilians: placed from the browser, attributes open; theme prepared
+  and a civilian group appeared after a player avatar was placed nearby.
+- Ambient Destruction: placed, enabled in attributes; a burnt BTR road wreck
+  appeared inside the zone.
+- Unit Caching: zone tab reads "EXPBG Unit Caching"; enabled Simulation cache
+  hid a fire team while the player was teleported about 2 km away and restored
+  it at the same positions on return.
+- Ambient Sounds: War module enabled with Debug; range rings shown and `[EAS
+  DIAG]` lines show firefight/explosion clips scheduled, played and released.
+- Garrison: Add Garrison -> picker -> Fire Team on a Le Moule house; the
+  4-man team spawned and initialized inside.
+- Not exercised in this UI: Intel Items (GM_Eden's browser offers no Object
+  tab and its type filters did not respond to mouse input) and Persistent
+  Battlefield body/wreck lifetimes (only its reconnect identity cache logged).
+
 ## Pack 0.1.0 status (2026-10-05)
 
 GM UI and building coverage (Workbench play with computer use, then native survey):
