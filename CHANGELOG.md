@@ -1,5 +1,12 @@
 # EXPBG GM Tools changelog
 
+## 0.1.1
+
+- First Workshop publication of the EXPBG GM Tools pack; content identical to
+  0.1.0. The 0.1.0 publish attempt ended before any upload (the Workbench
+  publishing window closed; the Workshop item did not exist afterwards), and
+  that version stays retired under the release guard.
+
 ## 0.1.0
 
 - EXPBG GM Tools becomes one modpack: Garrison, Unit Caching (formerly GM Optimizer
