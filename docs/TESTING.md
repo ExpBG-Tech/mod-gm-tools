@@ -4,19 +4,23 @@
 
 - Portable: `tests/Test-Tools.ps1` passes with the assembled pack (843 files,
   three merged overrides, no duplicate GUIDs).
-- Native compile: `build/pack-20261005-0110/` compiled all seven modules as one
+- Native compile: `build/pack-floorfix-20261005-0130/` compiled all seven modules as one
   Game module with no script errors (stock obsolete warnings only, plus the
   existing `EAC_SessionLifecycle` Serialize warning).
 - Garrison contracts in the pack: `build/contracts-20261005-011102-720/` passed.
-- Garrison default world run in the pack: `build/gameplay-20261005-011108-804/`
-  59 checks, 0 failures: four guards, Simulation sleep/wake, two Full cycles
+- Garrison default world run in the pack: `build/gameplay-20261005-013118-511/`
+  59 checks, 0 failures, runner passed: four guards, Simulation sleep/wake, two Full cycles
   (4 then 3 survivors, exact world transforms and assignments), real casualty not
   refilled, crouch/stand, body turn and head aim, Force Move release.
+- Fixed: `build/gameplay-20261005-012655-973/` released a garrison after the
+  casualty's helmet landed on a neighbouring post and the floor-support trace
+  hit it. `Supported` now uses the native CharacterAI collision mask, like
+  `ClearBody`; both world runs above use that build.
 - The runner tolerates only the stock `SCR_BaseResupplySupportStationComponent`
   catalog error when GM_Eden tears down after the fixture result; any other
   error, or that line earlier, still fails.
 - Garrison 12->9 fresh-trim world run in the pack:
-  `build/gameplay-20261005-012302-098/` 101 checks, 0 failures: twelve real
+  `build/gameplay-20261005-013453-823/` 101 checks, 0 failures, runner passed: twelve real
   native members reduced to nine originals in the same group with the leader,
   three fresh members deleted, both Full cycles (9 then 8), casualty not
   refilled, stance/look and Force Move release. Earlier attempts exposed two

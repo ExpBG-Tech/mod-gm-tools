@@ -303,6 +303,9 @@ class EXPG_BuildingPlan
   trace.Start = position + Vector(0, tolerance, 0);
   trace.End = position - Vector(0, tolerance + 0.2, 0);
   trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  // Same native AI character collision matrix as ClearBody: a casualty's helmet
+  // landing on a neighbouring post is not floor and must not release the squad.
+  trace.LayerMask = EPhysicsLayerDefs.CharacterAI;
   if (excludeEntities) { trace.ExcludeArray = excludeEntities; }
   else { trace.Exclude = exclude; }
   float hit = GetGame().GetWorld().TraceMove(trace, null);
