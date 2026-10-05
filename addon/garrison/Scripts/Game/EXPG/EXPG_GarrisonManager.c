@@ -264,7 +264,7 @@ class EXPG_GarrisonManager
   reason = "Structure analysis is still running; choose the squad again shortly";
   if (!plan || !plan.Done) { return false; }
   plan.LastUsed = Now();
-  if (!plan.Valid()) { reason = "Structure changed; close and reopen Add Garrison"; return false; }
+  if (!plan.Valid()) { reason = "Structure changed; close and reopen EXPBG Add Garrison"; return false; }
   if (!plan.Error.IsEmpty()) { reason = plan.Error; return false; }
   int fitting = PlacementCount(count, plan.Slots.Count());
   reason = "Structure has no verified safe infantry positions";

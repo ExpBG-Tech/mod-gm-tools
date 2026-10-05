@@ -551,7 +551,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    EXPG_BuildingNode sample = plan.Nodes[n];
    if (n < 128 || sample.Entrance || sample.Reachable || plan.Slots.Contains(n))
-    PrintFormat("[EXPG PLAN NODE] index=%1 position=%2 entrance=%3 reachable=%4 links=%5 score=%6 selected=%7", n, sample.Position, sample.Entrance, sample.Reachable, sample.Links.Count(), sample.Score, plan.Slots.Contains(n));
+    PrintFormat("[EXPG PLAN NODE] index=%1 position=%2 entrance=%3 reachable=%4 links=%5 score=%6 selected=%7 range=%8", n, sample.Position, sample.Entrance, sample.Reachable, sample.Links.Count(), sample.Score, plan.Slots.Contains(n), sample.Range);
    // Diagnose ground-level entry candidates without changing production state.
    if (detailed >= 128 || Math.AbsFloat(sample.Position[1] - plan.Origin[1]) > 1) continue;
    for (int side = 0; side < 4; side++)

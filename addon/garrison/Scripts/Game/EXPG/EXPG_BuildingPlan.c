@@ -3,6 +3,8 @@ class EXPG_BuildingNode
 {
  vector Position;
  vector Look;
+ // Window posts: metres to the watched window (or to the open view's exit).
+ float Range = 1000;
  int Column;
  int Score;
  bool Entrance;
@@ -592,54 +594,81 @@ class EXPG_BuildingPlan
    node.Look = vector.Direction(node.Position, m_SentinelLooks[s]).Normalized();
    return;
   }
-  // Stand back from a furniture-blocked window (1-3 m), or watch a door from
-  // roughly 2 m inside. The candidate already passed body/floor/reachability.
+  // Watch a window from 0.4-3 m (the nearest window wins; SelectSlots takes the
+  // nearest window posts first), or a door from roughly 2 m inside. Only sampled
+  // nodes qualify: each already passed floor, standing-body clearance, ceiling,
+  // interior and entrance-reachability checks, so no position is synthesized.
+  // 0.4 m from the pane centre is about a body against a thin wall; it keeps the
+  // muzzle near the window plane and the yaw well defined.
   foreach (EXPG_BuildingOpening opening : m_Openings)
   {
    vector eye = node.Position + "0 1.5 0";
    vector delta = opening.Position - eye;
    float horizontal = delta[0] * delta[0] + delta[2] * delta[2];
    float maximum = 9;
-   float minimum = 1;
+   float minimum = 0.16;
    if (opening.Door) { minimum = 2.25; maximum = 6.25; }
-   if (horizontal < minimum || horizontal > maximum || Math.AbsFloat(delta[1]) > 0.75 || !SeesOpening(eye, opening)) continue;
+   if (horizontal < minimum || horizontal > maximum || Math.AbsFloat(delta[1]) > 0.75) continue;
    int score = 80;
    if (opening.Door) score = 90;
-   if (node.Score >= score) continue;
+   if (node.Score > score || (node.Score == score && (opening.Door || horizontal >= node.Range * node.Range))) continue;
+   if (!SeesOpening(eye, opening)) continue;
    node.Score = score;
+   if (opening.Door) { node.Look = delta.Normalized(); continue; }
+   // Level gaze: at close range the pane centre is often well above or below the eye.
+   delta[1] = 0;
    node.Look = delta.Normalized();
+   node.Range = Math.Sqrt(horizontal);
   }
+  if (node.Score >= 80) return;
+  // Open window holes: the nearest clear outward view wins. Its range is where
+  // the view leaves the building bounds (eaves add about the same per building).
+  vector viewer = node.Position + "0 1.5 0";
+  float nearest = 1000;
   for (int yaw = 0; yaw < 360; yaw += 45)
   {
    vector direction = vector.FromYaw(yaw);
+   float reach = 0.25;
+   while (reach < 4 && Inside(viewer + direction * reach)) reach += 0.25;
+   if (reach >= nearest || Inside(viewer + direction * reach)) { continue; }
    TraceParam sight = new TraceParam();
-   sight.Start = node.Position + "0 1.5 0";
+   sight.Start = viewer;
    sight.End = sight.Start + direction * 4;
    sight.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
-   if (Inside(sight.End)) { continue; }
    if (GetGame().GetWorld().TraceMove(sight, null) < 0.999) { continue; }
-   if (node.Score < 80) { node.Score = 80; node.Look = direction; }
+   nearest = reach;
+   node.Score = 80;
+   node.Look = direction;
+   node.Range = reach;
   }
  }
 
  protected void SelectSlots()
  {
   // At most 32 places; greedy spacing over a bounded graph avoids a large solver.
+  // Window posts (80) are taken nearest-first in three range bands, so the 1.2 m
+  // spacing keeps the guard at the window rather than the first grid hit behind it.
   array<int> priorities = {100, 90, 80, 70, 60, 0};
+  array<float> bands = {1.25, 2.0, 1000.0};
   foreach (int priority : priorities)
   {
-   for (int i = 0; i < Nodes.Count() && Slots.Count() < 32; i++)
+   foreach (int band, float limit : bands)
    {
-    EXPG_BuildingNode node = Nodes[i];
-    if (!node.Reachable || !node.Interior || node.Score != priority) { continue; }
-    bool occupied;
-    foreach (int selected : Slots)
+    if (priority != 80 && band < 2) { continue; }
+    for (int i = 0; i < Nodes.Count() && Slots.Count() < 32; i++)
     {
-     if (vector.DistanceSq(node.Position, Nodes[selected].Position) < 1.44) { occupied = true; break; }
+     EXPG_BuildingNode node = Nodes[i];
+     if (!node.Reachable || !node.Interior || node.Score != priority || node.Range > limit) { continue; }
+     // Also skips nodes already selected in an earlier band (distance zero).
+     bool occupied;
+     foreach (int selected : Slots)
+     {
+      if (vector.DistanceSq(node.Position, Nodes[selected].Position) < 1.44) { occupied = true; break; }
+     }
+     if (occupied) { continue; }
+     Slots.Insert(i);
+     FixedSlots.Insert(priority > 0);
     }
-    if (occupied) { continue; }
-    Slots.Insert(i);
-    FixedSlots.Insert(priority > 0);
    }
   }
   if (Slots.IsEmpty()) { Error = "No connected, clear indoor positions were found"; }

@@ -42,6 +42,28 @@ class EXPG_BuildingPlanTest
   return passed;
  }
 
+ // A window post nearer its window wins over an earlier-scanned one behind it.
+ static bool WindowPreference()
+ {
+  EXPG_SlotSelectionFixture plan = new EXPG_SlotSelectionFixture();
+  array<vector> positions = {"0 0 0", "0.75 0 0", "5 0 0"};
+  array<float> ranges = {2.5, 0.6, 1.0};
+  foreach (int i, vector position : positions)
+  {
+   EXPG_BuildingNode node = new EXPG_BuildingNode();
+   node.Position = position;
+   node.Reachable = true;
+   node.Interior = true;
+   node.Score = 80;
+   node.Range = ranges[i];
+   plan.Nodes.Insert(node);
+  }
+  plan.Select();
+  bool passed = plan.Slots.Count() == 2 && plan.Slots[0] == 1 && plan.Slots[1] == 2 && plan.FixedSlots[0] && plan.FixedSlots[1];
+  PrintFormat("[EXPG WINDOW SLOT RESULT] pass=%1 expected=2 actual=%2", passed, plan.Slots.Count());
+  return passed;
+ }
+
  // Native fixtures authored before reservation implementation. NOT RUN.
  static bool ReservationGeometry()
  {
@@ -99,6 +121,7 @@ class EXPG_BuildingPlanTest
   bool passed = plan.Nodes[0].Reachable && plan.Nodes[1].Reachable && plan.Nodes[2].Reachable;
   passed = passed && ReservationGeometry() && NeighborColumns();
   passed = SlotSelection() && passed;
+  passed = WindowPreference() && passed;
   passed = passed && !plan.Nodes[3].Reachable && !plan.Nodes[4].Reachable;
   array<int> route = {};
   passed = passed && plan.Route(0, 2, route) && route.Count() == 3;

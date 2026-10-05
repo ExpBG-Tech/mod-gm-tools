@@ -16,6 +16,19 @@ class EXPG_EditorTicket
  }
 }
 
+// Local feedback for the acting Game Master only. Profiles can disable hints, so
+// every line also enters the local chat history (vanilla system-message style).
+class EXPG_Feedback
+{
+ static void Show(string message)
+ {
+  Print("[EXPG GARRISON] " + message);
+  SCR_HintManagerComponent.ShowCustomHint(message, "EXPBG Garrison", 8);
+  SCR_ChatPanelManager chat = SCR_ChatPanelManager.GetInstance();
+  if (chat) chat.ShowHelpMessage("EXPBG Garrison: " + message);
+ }
+}
+
 [BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
 class EXPG_AddGarrisonContextAction : SCR_BaseContextAction
 {
@@ -56,8 +69,10 @@ class EXPG_AddGarrisonContextAction : SCR_BaseContextAction
  override void Perform(SCR_EditableEntityComponent hoveredEntity, notnull set<SCR_EditableEntityComponent> selectedEntities, vector cursorWorldPosition, int flags, int param = -1)
  {
   SCR_DestructibleBuildingEntity building = FindBuilding(cursorWorldPosition);
+  if (!building) { EXPG_Feedback.Show("Picker not opened: no building under the cursor. Right-click the building again."); return; }
   SCR_PlacingEditorComponent placing = SCR_PlacingEditorComponent.Cast(SCR_PlacingEditorComponent.GetInstance(SCR_PlacingEditorComponent));
-  if (building && placing) placing.EXPG_OpenPicker(building, m_Browser);
+  if (!placing) { EXPG_Feedback.Show("Picker not opened: the editor placing component is unavailable in this mode."); return; }
+  placing.EXPG_OpenPicker(building, m_Browser);
  }
 }
 
@@ -92,17 +107,35 @@ modded class SCR_PlacingEditorComponent
   return m_EXPG_Dialog;
  }
 
- protected bool EXPG_Authorized()
+ protected bool EXPG_Authorized() { return EXPG_AuthorizationFailure().IsEmpty(); }
+
+ // Empty when authorized, otherwise the reason. The core's per-player editor
+ // registry exists only on the server (vanilla CreateEditorManager/OnGameStart
+ // return early on RplMode.Client), so a dedicated-server client must compare
+ // with its local editor instance; requiring the registry there failed silently.
+ protected string EXPG_AuthorizationFailure()
  {
   SCR_EditorManagerEntity editor = GetManager();
-  if (!editor || editor.IsLimited() || !editor.IsOpened() || !editor.HasMode(EEditorMode.EDIT) || editor.GetCurrentMode() != EEditorMode.EDIT) return false;
+  if (!editor) return "no editor manager";
+  if (editor.IsLimited()) return "the editor is limited; full Game Master rights are required";
+  if (!editor.IsOpened()) return "the editor is closed";
+  if (!editor.HasMode(EEditorMode.EDIT) || editor.GetCurrentMode() != EEditorMode.EDIT) return "the editor is not in Edit mode";
   SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
-  return core && core.GetEditorManager(editor.GetPlayerID()) == editor;
+  if (!core) return "the editor core is unavailable";
+  if (RplSession.Mode() == RplMode.Client)
+  {
+   if (core.GetEditorManager() != editor) return "the editor is not the local Game Master editor";
+  }
+  else if (core.GetEditorManager(editor.GetPlayerID()) != editor) return string.Format("the editor is not registered for player %1", editor.GetPlayerID());
+  return string.Empty;
  }
 
  void EXPG_OpenPicker(IEntity building, SCR_EditorContentBrowserDisplayConfig browser)
  {
-  if (!building || !browser || !EXPG_Authorized()) return;
+  string failure = EXPG_AuthorizationFailure();
+  if (!building) failure = "the building no longer exists";
+  else if (!browser) failure = "the squad browser configuration is missing from the action";
+  if (!failure.IsEmpty()) { EXPG_Feedback.Show("Picker not opened: " + failure + "."); return; }
   SetInstantPlacing(null);
   SetSelectedPrefab(ResourceName.Empty);
   SetPlacingFlag(EEditorPlacingFlags.CHARACTER_PLAYER, false);
@@ -115,12 +148,18 @@ modded class SCR_PlacingEditorComponent
   vector transform[4];
   building.GetWorldTransform(transform);
   super.SetInstantPlacing(SCR_EditorPreviewParams.CreateParams(transform));
-  if (!SCR_ContentBrowserEditorComponent.OpenBrowserLabelConfigInstance(browser)) SetInstantPlacing(null);
-  else
+  if (!SCR_ContentBrowserEditorComponent.OpenBrowserLabelConfigInstance(browser))
   {
-   m_EXPG_Dialog = EXPG_FindBrowser();
-   Rpc(EXPG_BeginServer, m_EXPG_ClientNonce, buildingRpl, building.GetID(), building.GetOrigin());
+   // Clear the nonce first: the server never saw it, so no cancel is sent.
+   m_EXPG_ClientNonce = 0;
+   SetInstantPlacing(null);
+   EXPG_Feedback.Show("Picker not opened: the editor content browser is unavailable.");
+   return;
   }
+  m_EXPG_Dialog = EXPG_FindBrowser();
+  // Not fatal: EXPG_PickerDialog finds the dialog again on selection.
+  if (!m_EXPG_Dialog) Print("[EXPG GARRISON] picker dialog not found right after opening; it will be looked up again on selection", LogLevel.WARNING);
+  Rpc(EXPG_BeginServer, m_EXPG_ClientNonce, buildingRpl, building.GetID(), building.GetOrigin());
  }
 
  override void SetInstantPlacing(SCR_EditorPreviewParams param)
@@ -145,15 +184,26 @@ modded class SCR_PlacingEditorComponent
    SetInstantPlacing(null);
    return super.SetSelectedPrefab(prefab, onConfirm, showBudgetMaxNotification, recipients, sourceAction);
   }
-  if (m_EXPG_Selecting) return false;
+  if (m_EXPG_Selecting)
+  {
+   Print("[EXPG GARRISON] squad choice ignored: the server has not answered the previous choice yet");
+   return false;
+  }
   SCR_PlacingEditorComponentClass data = SCR_PlacingEditorComponentClass.Cast(GetEditorComponentData());
-  if (!data || !EXPG_Authorized())
+  string failure = EXPG_AuthorizationFailure();
+  if (!data) failure = "the editor prefab catalog is unavailable";
+  if (!failure.IsEmpty())
   {
    SetInstantPlacing(null);
+   EXPG_Feedback.Show("Squad choice cancelled: " + failure + ".");
    return false;
   }
   int prefabID = data.GetPrefabID(prefab);
-  if (prefabID < 0) return false;
+  if (prefabID < 0)
+  {
+   EXPG_Feedback.Show("That squad is not in the editor catalog; choose another squad.");
+   return false;
+  }
   m_EXPG_Selecting = true;
   Rpc(EXPG_SelectServer, m_EXPG_ClientNonce, prefabID);
   return false; // Keep native picker open until server accepts, allowing analysis/budget retries.
@@ -162,8 +212,10 @@ modded class SCR_PlacingEditorComponent
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
  protected void EXPG_BeginServer(int nonce, RplId buildingRpl, EntityID buildingStatic, vector expectedOrigin)
  {
-  if (Replication.IsClient() || nonce <= m_EXPG_LastNonce) return;
-  if (!EXPG_Authorized()) { EXPG_Reject(nonce, "Game Master access is no longer active."); return; }
+  if (Replication.IsClient()) { Print("[EXPG GARRISON] picker request ignored: received on a client"); return; }
+  if (nonce <= m_EXPG_LastNonce) { Print(string.Format("[EXPG GARRISON] picker request ignored: stale request %1 (last %2)", nonce, m_EXPG_LastNonce)); return; }
+  string failure = EXPG_AuthorizationFailure();
+  if (!failure.IsEmpty()) { EXPG_Reject(nonce, "Game Master access check failed on the server: " + failure + "."); return; }
   m_EXPG_LastNonce = nonce;
   EXPG_ClearServer();
   float now = EXPG_Now();
@@ -201,14 +253,15 @@ modded class SCR_PlacingEditorComponent
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
  protected void EXPG_CancelServer(int nonce)
  {
-  if (!Replication.IsClient() && nonce == m_EXPG_ServerNonce) EXPG_ClearServer();
+  if (!Replication.IsClient() && nonce == m_EXPG_ServerNonce) { EXPG_ClearServer(); return; }
+  Print(string.Format("[EXPG GARRISON] picker cancel ignored: request %1 is not the active request %2", nonce, m_EXPG_ServerNonce));
  }
 
  protected void EXPG_ExpireServer()
  {
   Rpc(EXPG_CompleteOwner, m_EXPG_ServerNonce);
   EXPG_ClearServer();
-  EXPG_Reply("Garrison selection expired. Open Add Garrison again.");
+  EXPG_Reply("Garrison selection expired. Open EXPBG Add Garrison again.");
  }
 
  protected void EXPG_ClearServer()
@@ -224,14 +277,16 @@ modded class SCR_PlacingEditorComponent
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
  protected void EXPG_SelectServer(int nonce, int prefabID)
  {
-  if (Replication.IsClient()) return;
-  if (!m_EXPG_Ticket.Matches(nonce, EXPG_Now())) { EXPG_Reject(nonce, "Garrison selection expired or was cancelled. Open Add Garrison again."); return; }
+  if (Replication.IsClient()) { Print("[EXPG GARRISON] squad choice ignored: received on a client"); return; }
+  if (!m_EXPG_Ticket.Matches(nonce, EXPG_Now())) { EXPG_Reject(nonce, "Garrison selection expired or was cancelled. Open EXPBG Add Garrison again."); return; }
   IEntity building = m_EXPG_Building;
-  if (!EXPG_Authorized() || !building || building.IsDeleted())
+  string failure = EXPG_AuthorizationFailure();
+  if (!building || building.IsDeleted()) failure = "the selected building no longer exists";
+  if (!failure.IsEmpty())
   {
    EXPG_ClearServer();
    Rpc(EXPG_CompleteOwner, nonce);
-   EXPG_Reply("Game Master access or the selected building changed.");
+   EXPG_Reply("Garrison was not placed: " + failure + ".");
    return;
   }
   SCR_PlacingEditorComponentClass data = SCR_PlacingEditorComponentClass.Cast(GetEditorComponentData());
@@ -272,7 +327,7 @@ modded class SCR_PlacingEditorComponent
    EXPG_Reply("The squad exceeds the editor budget or cannot be placed here.");
    return;
   }
-  if (!m_EXPG_Ticket.Consume(nonce, EXPG_Now())) return;
+  if (!m_EXPG_Ticket.Consume(nonce, EXPG_Now())) { EXPG_Reject(nonce, "Garrison selection expired or was cancelled. Open EXPBG Add Garrison again."); return; }
   EXPG_ClearServer();
   Rpc(EXPG_CompleteOwner, nonce);
   // Keep the direct reference even if an invalid third-party prefab lacks editable data.
@@ -305,7 +360,15 @@ modded class SCR_PlacingEditorComponent
   GetOnPlaceEntityServer().Invoke(prefabID, editable, playerId);
  }
 
- protected void EXPG_Reply(string message) { Rpc(EXPG_ReplyOwner, message); }
+ // Every server refusal or result is logged once on the server and once on the owner.
+ protected void EXPG_Reply(string message)
+ {
+  SCR_EditorManagerEntity editor = GetManager();
+  int playerId;
+  if (editor) playerId = editor.GetPlayerID();
+  Print(string.Format("[EXPG GARRISON] server reply to player %1: %2", playerId, message));
+  Rpc(EXPG_ReplyOwner, message);
+ }
 
  protected void EXPG_Reject(int nonce, string message)
  {
@@ -317,14 +380,17 @@ modded class SCR_PlacingEditorComponent
  protected void EXPG_ReplyOwner(string message)
  {
   m_EXPG_Selecting = false;
-  Print("[EXPG GARRISON] " + message);
-  SCR_HintManagerComponent.ShowCustomHint(message, "EXPBG Garrison", 8);
+  EXPG_Feedback.Show(message);
  }
 
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
  protected void EXPG_CompleteOwner(int nonce)
  {
-  if (nonce != m_EXPG_ClientNonce) return;
+  if (nonce != m_EXPG_ClientNonce)
+  {
+   Print(string.Format("[EXPG GARRISON] picker completion ignored: request %1 is not the open request %2", nonce, m_EXPG_ClientNonce));
+   return;
+  }
   EditorBrowserDialogUI dialog = EXPG_PickerDialog();
   m_EXPG_ClientNonce = 0;
   m_EXPG_Selecting = false;
