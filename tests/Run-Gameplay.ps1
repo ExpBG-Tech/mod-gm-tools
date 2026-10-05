@@ -9,7 +9,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 function Test-GameplayEvidence([string]$Text, [bool]$Trim) {
- if ($Text -notmatch 'Game destroyed' -or $Text -match 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed') { return $false }
+ # The base game's resupply stations log this when GM_Eden tears down after the
+ # fixture finished. Tolerate only that exact stock line after the result marker.
+ $result = $Text.IndexOf('[EXPG GAMEPLAY RESULT]')
+ $checked = $Text
+ if ($result -ge 0) { $checked = $Text.Substring(0, $result) + ($Text.Substring($result) -replace "(?m)^.*SCRIPT\s+\(E\): 'SCR_BaseResupplySupportStationComponent' needs a entity catalog manager!\r?$", '') }
+ if ($Text -notmatch 'Game destroyed' -or $checked -match 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed') { return $false }
  $mode = [int]$Trim
  $requested = 4
  if ($Trim) { $requested = 12 }

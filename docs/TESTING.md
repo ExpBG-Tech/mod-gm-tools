@@ -1,5 +1,36 @@
 # EXPBG GM Tools validation gates
 
+## Pack 0.1.0 status (2026-10-05)
+
+- Portable: `tests/Test-Tools.ps1` passes with the assembled pack (843 files,
+  three merged overrides, no duplicate GUIDs).
+- Native compile: `build/pack-20261005-0110/` compiled all seven modules as one
+  Game module with no script errors (stock obsolete warnings only, plus the
+  existing `EAC_SessionLifecycle` Serialize warning).
+- Garrison contracts in the pack: `build/contracts-20261005-011102-720/` passed.
+- Garrison default world run in the pack: `build/gameplay-20261005-011108-804/`
+  59 checks, 0 failures: four guards, Simulation sleep/wake, two Full cycles
+  (4 then 3 survivors, exact world transforms and assignments), real casualty not
+  refilled, crouch/stand, body turn and head aim, Force Move release.
+- The runner tolerates only the stock `SCR_BaseResupplySupportStationComponent`
+  catalog error when GM_Eden tears down after the fixture result; any other
+  error, or that line earlier, still fails.
+- Garrison 12->9 fresh-trim world run in the pack:
+  `build/gameplay-20261005-012302-098/` 101 checks, 0 failures: twelve real
+  native members reduced to nine originals in the same group with the leader,
+  three fresh members deleted, both Full cycles (9 then 8), casualty not
+  refilled, stance/look and Force Move release. Earlier attempts exposed two
+  fixture timing bugs, now fixed: the motion probe waits for native activation,
+  and recreated actors are compared with the original awake presentation instead
+  of release-frame flags (`build/gameplay-20261005-011903-728/` shows every
+  released member visible, traceable and unowned).
+- Open: the body-clearance negative control (`tests/EXPG_BodyClearance.c`) has
+  never identified its spawned wall (`build/gameplay-20261005-010839-185/`); GM
+  right-click/picker UI, combat and patrol movement, multiplayer/JIP, CDF with
+  the pack, and gameplay of the other six modules inside the pack.
+
+Older Garrison evidence follows.
+
 Earlier portable tooling, GitHub CI, native compile and scalar contracts passed
 on 2026-10-05. Native artwork import and Resource Browser preview passed.
 The original real house fixture failed capacity before spawning actors: closed

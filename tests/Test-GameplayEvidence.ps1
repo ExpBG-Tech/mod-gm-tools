@@ -34,6 +34,10 @@ if (Test-GameplayEvidence ($trim.Replace('originals=1','originals=0')) $true) { 
 if (Test-GameplayEvidence ($trim.Replace('transformParity=1','transformParity=0')) $true) { throw 'Wrong transforms accepted.' }
 if (Test-GameplayEvidence ($trim + "`nSCRIPT (E): failure") $true) { throw 'Script error accepted.' }
 if (Test-GameplayEvidence ($trim.Replace('Game destroyed','')) $true) { throw 'Incomplete shutdown accepted.' }
+$teardown = "SCRIPT    (E): 'SCR_BaseResupplySupportStationComponent' needs a entity catalog manager!"
+if (!(Test-GameplayEvidence ($trim + "`n" + $teardown) $true)) { throw 'Stock teardown line after the result rejected.' }
+if (Test-GameplayEvidence ($teardown + "`n" + $trim) $true) { throw 'Stock line before the result accepted.' }
+if (Test-GameplayEvidence ($trim + "`n" + $teardown + "`nSCRIPT (E): failure") $true) { throw 'Other teardown error accepted.' }
 $bodyFunction = $runner.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-BodyClearanceEvidence' }, $true)
 if (!$bodyFunction) { throw 'Missing body-clearance verifier.' }
 . ([scriptblock]::Create($bodyFunction.Extent.Text))

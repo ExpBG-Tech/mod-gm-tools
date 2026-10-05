@@ -703,8 +703,9 @@ class EXPG_GarrisonGameplay : GenericEntity
     bool assigned = member.CacheMember == saved.Member && member.Fixed == saved.Fixed && member.NodeIndex == saved.NodeAtSleep;
     if (!Check(assigned && restored && restored.GetID() != saved.Id && restored.GetCharacterGroup() == Group, "new native actor retains original logical member, role, post and group")) { Finish("full assignment"); return; }
     if (saved.Fixed && !Check(vector.DistanceSq(restored.GetOrigin(), saved.FullPose[3]) <= 0.0025, "fixed guard remains within five centimetres of captured position after wake")) { Finish("full post position"); return; }
+    // Keep the original awake presentation as the baseline; recreated actors
+    // finish presentation after the release frame (observed with nine members).
     saved.Actor = restored; saved.Id = restored.GetID();
-    saved.Presentation = restored.GetFlags() & (EntityFlags.VISIBLE | EntityFlags.TRACEABLE);
    }
    if (!Check(SameActors() && PostsHeld(), "restored survivors stay in one original group at assigned posts")) { Finish("full roster"); return; }
    FullCycles++;
@@ -799,7 +800,21 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (Manager.Find(Group) || Group.EXPG_Active) return;
    bool controlsReleased = Record.Finished;
    foreach (EXPG_GarrisonMember member : Record.Members) if (member.Post || member.Patrol) controlsReleased = false;
-   if (!Check(controlsReleased && SameActors() && Presentation(false), "native Force Move released owned controls and preserved original squad")) { Finish("force move release"); return; }
+   bool releasedSame = SameActors();
+   bool releasedVisible = Presentation(false);
+   if (!controlsReleased || !releasedSame || !releasedVisible)
+   {
+    PrintFormat("[EXPG FORCE MOVE STATE] finished=%1 controlsReleased=%2 sameActors=%3 presentation=%4 agents=%5 living=%6", Record.Finished, controlsReleased, releasedSame, releasedVisible, Group.GetAgentsCount(), LivingCount());
+    foreach (int releasedIndex, EXPG_GarrisonMember releasedMember : Record.Members)
+    {
+     EXPG_GameplayActor releasedActor = Originals[releasedIndex];
+     int releasedFlags;
+     bool releasedCached;
+     if (releasedActor.Actor) { releasedFlags = releasedActor.Actor.GetFlags() & (EntityFlags.VISIBLE | EntityFlags.TRACEABLE); releasedCached = releasedActor.Actor.EBG_IsSimulationCached(); }
+     PrintFormat("[EXPG FORCE MOVE MEMBER] member=%1 post=%2 patrol=%3 dead=%4 flags=%5 expected=%6 cached=%7", releasedIndex + 1, releasedMember.Post != null, releasedMember.Patrol != null, releasedActor.Dead, releasedFlags, releasedActor.Presentation, releasedCached);
+    }
+   }
+   if (!Check(controlsReleased && releasedSame && releasedVisible, "native Force Move released owned controls and preserved original squad")) { Finish("force move release"); return; }
    Advance(9); return;
   }
   if (Phase == 9)
