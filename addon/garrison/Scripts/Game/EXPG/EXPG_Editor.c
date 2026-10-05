@@ -77,6 +77,21 @@ modded class SCR_PlacingEditorComponent
 
  protected float EXPG_Now() { return GetGame().GetWorld().GetWorldTime() * 0.001; }
 
+ // The content browser is a dialog: MenuManager.GetTopMenu() keeps returning the
+ // editor menu while it is open (observed), so find it by its native preset,
+ // as vanilla EditorMenuBase.OpenDialog does. Vanilla opens one browser at a
+ // time and clears instant placing when it closes without a pick.
+ protected EditorBrowserDialogUI EXPG_FindBrowser()
+ {
+  return EditorBrowserDialogUI.Cast(GetGame().GetMenuManager().FindMenuByPreset(ChimeraMenuPreset.EditorBrowserDialog));
+ }
+
+ protected EditorBrowserDialogUI EXPG_PickerDialog()
+ {
+  if (!m_EXPG_Dialog && m_EXPG_ClientNonce > 0) m_EXPG_Dialog = EXPG_FindBrowser();
+  return m_EXPG_Dialog;
+ }
+
  protected bool EXPG_Authorized()
  {
   SCR_EditorManagerEntity editor = GetManager();
@@ -103,7 +118,7 @@ modded class SCR_PlacingEditorComponent
   if (!SCR_ContentBrowserEditorComponent.OpenBrowserLabelConfigInstance(browser)) SetInstantPlacing(null);
   else
   {
-   m_EXPG_Dialog = EditorBrowserDialogUI.Cast(GetGame().GetMenuManager().GetTopMenu());
+   m_EXPG_Dialog = EXPG_FindBrowser();
    Rpc(EXPG_BeginServer, m_EXPG_ClientNonce, buildingRpl, building.GetID(), building.GetOrigin());
   }
  }
@@ -123,8 +138,10 @@ modded class SCR_PlacingEditorComponent
  override bool SetSelectedPrefab(ResourceName prefab = "", bool onConfirm = false, bool showBudgetMaxNotification = true, set<SCR_EditableEntityComponent> recipients = null, SCR_BaseEditorAction sourceAction = null)
  {
   if (m_EXPG_ClientNonce <= 0 || prefab.IsEmpty()) return super.SetSelectedPrefab(prefab, onConfirm, showBudgetMaxNotification, recipients, sourceAction);
-  if (sourceAction || recipients || !m_EXPG_Dialog || GetGame().GetMenuManager().GetTopMenu() != m_EXPG_Dialog)
+  EditorBrowserDialogUI dialog = EXPG_PickerDialog();
+  if (sourceAction || recipients || !dialog || EXPG_FindBrowser() != dialog)
   {
+   Print(string.Format("[EXPG PICKER] native placement fallback: action=%1 recipients=%2 dialog=%3 browser=%4", sourceAction != null, recipients != null, dialog != null, EXPG_FindBrowser()), LogLevel.WARNING);
    SetInstantPlacing(null);
    return super.SetSelectedPrefab(prefab, onConfirm, showBudgetMaxNotification, recipients, sourceAction);
   }
@@ -225,13 +242,18 @@ modded class SCR_PlacingEditorComponent
   if (!resource || !resource.IsValid()) { EXPG_Reply("That squad prefab could not be loaded."); return; }
   IEntityComponentSource editableSource = SCR_EditableEntityComponentClass.GetEditableEntitySource(resource);
   if (!editableSource || SCR_EditableEntityComponentClass.GetEntityType(editableSource) != EEditableEntityType.GROUP) { EXPG_Reply("Choose an infantry squad."); return; }
-  SCR_EditableEntityUIInfo info = SCR_EditableEntityComponentClass.GetInfo(editableSource);
-  array<EEditableEntityLabel> labels = {};
-  if (info) info.GetEntityLabels(labels);
-  if (!labels.Contains(EEditableEntityLabel.GROUPTYPE_INFANTRY)) { EXPG_Reply("Only infantry squads can garrison a building."); return; }
   IEntitySource source = resource.GetResource().ToEntitySource();
   array<ResourceName> members = {};
   if (!source || !source.Get("m_aUnitPrefabSlots", members) || members.IsEmpty() || members.Count() > 32) { EXPG_Reply("Choose a verified infantry roster of 1 to 32 soldiers."); return; }
+  // No vanilla group prefab carries GROUPTYPE_INFANTRY, so verify the roster
+  // itself: every unit slot must be an editable character (as vanilla placing does).
+  foreach (ResourceName member : members)
+  {
+   Resource memberResource = Resource.Load(member);
+   IEntityComponentSource memberSource;
+   if (memberResource && memberResource.IsValid()) memberSource = SCR_EditableEntityComponentClass.GetEditableEntitySource(memberResource);
+   if (!memberSource || SCR_EditableEntityComponentClass.GetEntityType(memberSource) != EEditableEntityType.CHARACTER) { EXPG_Reply("Only infantry squads can garrison a building."); return; }
+  }
   EXPG_GarrisonManager manager = EXPG_GarrisonManager.Get();
   string reason;
   if (!manager || !manager.CanFit(building, members.Count(), reason)) { EXPG_Reply("Garrison was not placed. " + reason); return; }
@@ -290,6 +312,7 @@ modded class SCR_PlacingEditorComponent
  protected void EXPG_ReplyOwner(string message)
  {
   m_EXPG_Selecting = false;
+  Print("[EXPG GARRISON] " + message);
   SCR_HintManagerComponent.ShowCustomHint(message, "EXPBG Garrison", 8);
  }
 
@@ -297,10 +320,11 @@ modded class SCR_PlacingEditorComponent
  protected void EXPG_CompleteOwner(int nonce)
  {
   if (nonce != m_EXPG_ClientNonce) return;
+  EditorBrowserDialogUI dialog = EXPG_PickerDialog();
   m_EXPG_ClientNonce = 0;
   m_EXPG_Selecting = false;
   super.SetInstantPlacing(null);
-  if (m_EXPG_Dialog) m_EXPG_Dialog.Close();
+  if (dialog) dialog.Close();
   m_EXPG_Dialog = null;
  }
 
