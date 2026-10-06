@@ -1,5 +1,54 @@
 # EXPBG GM Tools changelog
 
+## 0.1.8
+
+- Ambient Destruction: road wrecks no longer stand in a line on the road's
+  centreline, all facing the road direction. Each wreck now gets a random spot
+  across the carriageway or on either shoulder (its turned footprint is kept
+  on the road plus a 2.5 m shoulder where it fits), a heading 8-35 degrees
+  off the road, about one in six lies across the road, and wrecks on the left
+  side mostly face the other way. About three in ten pile up just ahead of or
+  behind an earlier wreck; the others keep a random gap, so spacing is
+  irregular. The existing ground, water, building and clearance checks still
+  apply. Layouts still follow the zone's seed, and layouts saved through CDF
+  Game Master Save (and sent to joining clients) keep their exact wreck
+  positions; only newly generated layouts change.
+- Garrison: with CDF Game Master Save loaded, garrisons set to Full (the
+  default) were never cached ("Full cache held: CDF saves cannot keep Garrison
+  Full survivors") and the Unit Caching zone listed them as "held by another
+  EXPBG module". They now cache in Simulation while CDF is loaded: the same
+  soldiers stay on their posts with AI paused and wake where they slept, with
+  the garrison's own wake and sleep distances. The status (and one server log
+  line per sleep) reads "Simulation cached (CDF loaded)"; the Full choice is
+  kept and works again without CDF. Full survivors cannot survive a CDF load,
+  so Full stays off under CDF.
+- Garrison: posts are spread over the whole house. Before, a garrison bunched
+  up in the ground-floor hall by the front door, some soldiers stood outside
+  on the entrance steps, and none went upstairs. Stair treads and ramps are
+  now sampled and linked (up to 45 degrees), so upper floors the stairs reach
+  can get posts. Soldiers take window posts first (one per window, nearest to
+  it), then posts just inside the outer doors (never on the outer step;
+  interior doors are no longer watched), then the rest; the floors take
+  turns and each post goes to the part of the floor farthest from the posts
+  already taken. Posts keep 1.5 m apart on a floor (planned posts were 1.2 m
+  apart), also for squads added later, so a small building may hold fewer
+  posts and a fresh squad may be trimmed further. In a house (a building
+  mostly walled in) a post needs walls on six of eight sides, so porches,
+  entrance steps and ground under the eaves are not used; open sheds and
+  barns keep their roofed floor. Only soldiers beyond the building's room
+  stand around it, as before.
+- Unit Caching: the zone status and notice now say which nearby squads a
+  garrison caches itself, with their state ("Cached by EXPBG Garrison itself,
+  with its own wake and sleep distances: 4 groups Simulation cached (CDF
+  loaded)"), instead of counting them as not enrolled.
+- AI Surrender: "Interrogate" now sits on the prisoner's face instead of his
+  chest, so ACE Medical's actions on a bleeding prisoner no longer overlap or
+  hide it. Look at his face (from the front, within 3 m) to interrogate; his
+  torso, arms and legs keep the medical actions. The prompt follows his head
+  whether he sits (vanilla) or stands with raised hands (ACE), and when he is
+  moved or carried. Its target is also smaller (0.15 m radius instead of
+  0.45 m), so it no longer covers his chest.
+
 ## 0.1.7
 
 0.1.6 was prepared but never uploaded: the Workshop refused its 231-character

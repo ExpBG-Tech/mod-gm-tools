@@ -4,21 +4,21 @@ ESR_InterrogationPoint {
   ActionsManagerComponent "{C3B505F5A2AD05F6}" {
    ActionContexts {
     UserActionContext "{AE721347DCC33991}" {
-     ContextName "default"
+     ContextName "face"
      Position PointInfo "{4786999EF005AE26}" {
      }
-     Radius 0.5
+     Radius 0.25
     }
    }
    additionalActions {
     ESR_InterrogateAction "{9B6BBB3578BB083B}" {
      ParentContextList {
-      "default"
+      "face"
      }
      UIInfo SCR_ActionUIInfo "{852064A840A9B032}" {
       Name "Interrogate"
      }
-     VisibilityRange 2.5
+     VisibilityRange 3
      Duration 2
     }
    }

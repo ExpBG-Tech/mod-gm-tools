@@ -145,6 +145,16 @@ modded class EBG_CacheManager
   if (EXPG_GarrisonManager.HoldsCache(group)) { return true; }
   return super.IsCacheHeld(group);
  }
+
+ // Zone status text only: a squad a garrison holds is cached by Garrison, not left uncached.
+ override bool DescribeExternalCache(SCR_AIGroup group, out string moduleName, out string cacheState)
+ {
+  string garrisonState = EXPG_GarrisonManager.DescribeCache(group);
+  if (garrisonState.IsEmpty()) { return super.DescribeExternalCache(group, moduleName, cacheState); }
+  moduleName = "EXPBG Garrison";
+  cacheState = garrisonState;
+  return true;
+ }
 }
 
 // One chosen post for a soldier of a squad being garrisoned.
@@ -224,6 +234,24 @@ class EXPG_GarrisonManager
    if (record.Simulation || record.Full) { return true; }
   }
   return false;
+ }
+
+ // Unit Caching's DescribeExternalCache seam (zone status text only): the cache
+ // state of the garrison holding this squad. Empty when no garrison holds it.
+ static string DescribeCache(SCR_AIGroup group)
+ {
+  if (!group || !HasActive()) { return string.Empty; }
+  foreach (EXPG_GarrisonRecord record : s_Instance.m_Records)
+  {
+   if (record.Finished) { continue; }
+   bool held = record.Group == group;
+   foreach (EXPG_GarrisonMember member : record.Members)
+   {
+    if (member.CacheMember.Entity && member.CacheMember.Entity.GetCharacterGroup() == group) { held = true; }
+   }
+   if (held) { return s_Instance.CacheState(record); }
+  }
+  return string.Empty;
  }
 
  static bool RequestTransferRelease(SCR_AIGroup group)
@@ -573,12 +601,14 @@ class EXPG_GarrisonManager
   return others;
  }
 
- // Same spacing as node reservations, so a chosen post never blocks a wake.
+ // Same spacing as node reservations, so a chosen post never blocks a wake, and
+ // the planner's post spacing, so added soldiers never bunch up on one spot.
  protected static bool Spaced(vector point, array<vector> occupied)
  {
   foreach (vector taken : occupied)
   {
    if (EXPG_BuildingPlan.RoutesConflict(point, point, taken, taken)) { return false; }
+   if (EXPG_BuildingPlan.Crowded(point, taken, EXPG_BuildingPlan.POST_SPACING)) { return false; }
   }
   return true;
  }
@@ -598,7 +628,10 @@ class EXPG_GarrisonManager
  // 0 rejected without tracing, 1 traced but unsafe, 2 placed.
  protected int TryBuildingPost(EXPG_BuildingPlan plan, int nodeIndex, int kind, array<IEntity> originals, array<vector> occupied, array<ref EXPG_Placement> placements)
  {
-  vector point = plan.Nodes[nodeIndex].Position;
+  EXPG_BuildingNode node = plan.Nodes[nodeIndex];
+  vector point = node.Position;
+  // Indoor floor only: porches, entrance steps and stair flights never hold a post.
+  if (!node.Reachable || !node.Interior || node.Stair) { return 0; }
   // Full wake re-checks Inside with a 0.25 m margin at the restored position.
   if (!plan.Inside(point, 0.35) || !Spaced(point, occupied) || plan.ReservationConflict(point)) { return 0; }
   if (!plan.Supported(point, 0.2, null, originals) || !plan.ClearBody(point, point + "0 0.01 0", null, originals)) { return 1; }
@@ -630,11 +663,13 @@ class EXPG_GarrisonManager
  }
 
  // An added squad is never refused for lack of room and never trimmed. Posts no
- // other garrison holds come first, then every other verified position in the
- // building (interior, best view first), then standing places on rings around
- // the building facing outward, and last the soldier's own spawn point. Added
- // posts are all fixed, so no added patrol crosses posts of a cached garrison.
- // Traced and examined candidates are bounded per stage.
+ // other garrison holds come first (in plan order: windows, then outer doors,
+ // with the storeys taking turns), then every other verified indoor position
+ // (best view first, storeys taking turns), then standing places on rings around
+ // the building facing outward, and last the soldier's own spawn point. Every
+ // post keeps the planner's post spacing. Added posts are all fixed, so no added
+ // patrol crosses posts of a cached garrison. Traced and examined candidates are
+ // bounded per stage.
  protected void ChooseReinforcement(EXPG_GarrisonRecord record, array<IEntity> originals, array<ref EXPG_Placement> placements)
  {
   EXPG_BuildingPlan plan = record.Plan;
@@ -648,21 +683,29 @@ class EXPG_GarrisonManager
   }
   if (placements.Count() < count)
   {
-   array<int> scores = {100, 90, 80, 70, 60, 0};
+   array<int> scores = {};
+   scores.Insert(EXPG_BuildingPlan.SCORE_SENTINEL);
+   scores.Insert(EXPG_BuildingPlan.SCORE_WINDOW);
+   scores.Insert(EXPG_BuildingPlan.SCORE_DOOR);
+   scores.Insert(EXPG_BuildingPlan.SCORE_ENTRANCE);
+   scores.Insert(EXPG_BuildingPlan.SCORE_STAIRS);
+   scores.Insert(0);
    array<ref array<int>> ranked = {};
-   for (int rank = 0; rank < scores.Count() * 2; rank++) { ranked.Insert(new array<int>()); }
+   for (int rank = 0; rank < scores.Count(); rank++) { ranked.Insert(new array<int>()); }
    foreach (int nodeIndex, EXPG_BuildingNode candidate : plan.Nodes)
    {
-    if (!candidate.Reachable || plan.Slots.Contains(nodeIndex)) { continue; }
+    // Outside the walls (porch, steps, under the eaves) or on a stair flight is
+    // never a building post; only the explicit ring stage below stands outside.
+    if (!candidate.Reachable || !candidate.Interior || candidate.Stair || plan.Slots.Contains(nodeIndex)) { continue; }
     int bucket = scores.Find(candidate.Score);
     if (bucket < 0) { bucket = scores.Count() - 1; }
-    if (!candidate.Interior) { bucket += scores.Count(); }
     ranked[bucket].Insert(nodeIndex);
    }
    int attempts = 0;
    int examined = 0;
    foreach (array<int> nodesOfRank : ranked)
    {
+    plan.InterleaveStoreys(nodesOfRank);
     foreach (int extra : nodesOfRank)
     {
      if (placements.Count() >= count || attempts >= 256 || examined >= 4096) { break; }
@@ -862,11 +905,59 @@ class EXPG_GarrisonManager
   if (addons.Contains("6A1876F37D65AB09") && !addons.Contains("07BC942D90324CD9"))
   { record.Report("Cache held: CDF requires the EXPBG GM Tools CDF companion for save protection"); return; }
   if (EBG_OptimizerControl.Preparing || EBG_CacheSnapshot.Loading) { return; }
-  if (record.Group.EXPG_CacheMode == 2) { TryFullSleep(record); return; }
+  if (CacheModeInUse(record.Group) == 2) { TryFullSleep(record); return; }
   string reason;
   record.Simulation = EBG_SimulationCache.Suspend(record.Group, reason);
-  if (record.Simulation) { record.Report("Simulation cached"); }
+  // Full chosen, CDF loaded: one status line per sleep names the fallback.
+  string cachedStatus = "Simulation cached";
+  if (record.Group.EXPG_CacheMode == 2) { cachedStatus = "Simulation cached (CDF loaded)"; }
+  if (record.Simulation) { record.Report(cachedStatus); }
   else { record.Report("Cache held: " + reason); }
+ }
+
+ // CDF Game Master Save (6A1876F37D65AB09) cannot keep Garrison Full survivors.
+ // Saves are refused while any garrison is active, and a clear-before-load would
+ // delete the retained empty group of a Full-cached garrison (the record could
+ // never wake and would block every later save) or respawn its survivors into the
+ // loaded scene. So a garrison set to Full caches in Simulation while CDF is
+ // loaded: the original soldiers stay on their posts with AI paused, a CDF load
+ // deletes them like any squad and nobody is recreated. Read once per mission.
+ protected int m_CdfLoaded = -1;
+ protected bool CdfLoaded()
+ {
+  if (m_CdfLoaded < 0)
+  {
+   array<string> addons = {};
+   GameProject.GetLoadedAddons(addons);
+   m_CdfLoaded = 0;
+   if (addons.Contains("6A1876F37D65AB09")) { m_CdfLoaded = 1; }
+  }
+  return m_CdfLoaded == 1;
+ }
+
+ // The cache mode a garrison runs: 0 Off, 1 Simulation, 2 Full. The GM's choice
+ // (EXPG_CacheMode) is kept; only its use changes while CDF is loaded.
+ int CacheModeInUse(SCR_AIGroup group)
+ {
+  int mode;
+  if (group) { mode = group.EXPG_CacheMode; }
+  if (mode == 2 && CdfLoaded()) { mode = 1; }
+  return mode;
+ }
+
+ // Short cache state of one garrison for the Unit Caching zone status.
+ string CacheState(EXPG_GarrisonRecord record)
+ {
+  string text = "awake on their posts";
+  if (record.Full && record.Full.GetState() == EBG_FullGroupPhase.CACHED) { text = "Full cached"; }
+  else if (record.Full) { text = "restoring Full survivors"; }
+  else if (record.Simulation && record.Simulation.Suspended) { text = "Simulation cached"; }
+  else if (record.Simulation) { text = "restoring from Simulation"; }
+  else if (!record.Ready) { text = "taking their posts"; }
+  else if (!record.Group || record.Group.EXPG_CacheMode == 0) { text = "awake, caching Off"; }
+  else if (record.Status.Contains("Cache held") || record.Status.Contains("cache held")) { text = "awake, caching held (see the garrison status)"; }
+  if (record.Simulation && record.Group && record.Group.EXPG_CacheMode == 2 && CdfLoaded()) { text += " (CDF loaded)"; }
+  return text;
  }
 
  protected void Tick(EXPG_GarrisonRecord record)
@@ -886,14 +977,15 @@ class EXPG_GarrisonManager
   }
   if (record.Full)
   {
-   bool wakeFull = record.ReleaseRequested || !record.Group || record.Group.EXPG_CacheMode != 2;
+   bool wakeFull = record.ReleaseRequested || !record.Group || CacheModeInUse(record.Group) != 2;
    if (record.Group && Near(record, record.Group.EXPG_WakeDistance)) { wakeFull = true; }
    if (record.Full.GetState() != EBG_FullGroupPhase.CACHED) { wakeFull = true; }
    if (!wakeFull || !Wake(record)) { return; }
   }
   if (record.Simulation)
   {
-   bool wake = record.ReleaseRequested || !record.Group || record.Group.EXPG_CacheMode != 1;
+   // A Full garrison Simulation-cached because CDF is loaded runs mode 1 too.
+   bool wake = record.ReleaseRequested || !record.Group || CacheModeInUse(record.Group) != 1;
    if (record.Group && Near(record, record.Group.EXPG_WakeDistance)) { wake = true; }
    if (!record.Simulation.Suspended) { wake = true; }
    // Death, external deletion and possession must release sleeping originals,
@@ -943,7 +1035,7 @@ class EXPG_GarrisonManager
    { record.ReleaseRequested = true; unsafe = true; member.ReleaseControl(); continue; }
    if (member.Post && !member.Post.Tick()) { record.ReleaseRequested = true; unsafe = true; }
    if (member.Patrol && !member.Patrol.Tick()) { record.ReleaseRequested = true; unsafe = true; }
-   if (!EBG_SimulationCache.Unsupported(actor, record.Group.EXPG_CacheMode == 1).IsEmpty()) { unsafe = true; }
+   if (!EBG_SimulationCache.Unsupported(actor, CacheModeInUse(record.Group) == 1).IsEmpty()) { unsafe = true; }
   }
   // A casualty may remain in the native agent list during its removal callback.
   // Compare identity instead of counts, so one death does not release the guards.

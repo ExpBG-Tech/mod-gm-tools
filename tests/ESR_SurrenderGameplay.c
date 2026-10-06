@@ -5,6 +5,9 @@
 // in build/gameplay-*/ (see the module report): RESULT must say failures=0 reason=complete.
 // Real module prefab and public settings, real squads, native Kill, production surrender,
 // interrogation (server API; the interrogation point stands in for the player) and upkeep.
+// Face case: each prisoner's Interrogate context ("face") lies within 0.25 m of his head
+// bone, ahead of it and above his torso's Chest context, and its collider answers a trace
+// from straight ahead; after a native 0.8 m teleport the same point follows his face.
 // Cache case: a squad enrolled in a real Unit Caching zone loses one prisoner; the awake
 // record forgets him at once, a second soldier marked before he leaves the native group is
 // retired by the regroup scan without a hold, the other four Simulation cache and wake, and
@@ -28,6 +31,11 @@ class EXPG_GarrisonGameplay : GenericEntity
  ref ESR_Prisoner Talker;
  ref ESR_Prisoner Refuser;
  ref ESR_Prisoner Doomed;
+ // Face case: the teleported prisoner's point and his spot before the move.
+ ESR_InterrogationPoint MovedPoint;
+ vector MovedFrom;
+ // Face case: his face on the previous step, to measure only once it holds still.
+ vector SettleFace;
  // Unit Caching case: dry land used by the unit-cleanup fixture, far from both squads.
  vector CacheOffset = "-600 0 -600";
  SCR_AIGroup CacheSquad;
@@ -139,6 +147,80 @@ class EXPG_GarrisonGameplay : GenericEntity
   return markers.GetStaticMarkers().Count();
  }
 
+ // Face case: the Interrogate action's context sits on the prisoner's face, within 0.25 m
+ // of his head bone (read here, independently of production), ahead of it and above his
+ // Chest context; the point follows his face and its collider answers a trace from ahead.
+ bool FaceReady(ESR_Prisoner prisoner, string label)
+ {
+  if (!prisoner || !prisoner.Character || !prisoner.Point)
+  {
+   PrintFormat("[ESR TEST FACE] when='%1' point=0", label);
+   return false;
+  }
+  SCR_ChimeraCharacter character = prisoner.Character;
+  ESR_InterrogationPoint point = prisoner.Point;
+  ActionsManagerComponent actions = ActionsManagerComponent.Cast(point.FindComponent(ActionsManagerComponent));
+  UserActionContext faceContext;
+  int contexts = -1;
+  if (actions)
+  {
+   faceContext = actions.GetContext(ESR_InterrogationPoint.CONTEXT_NAME);
+   contexts = actions.GetContextCount();
+  }
+  bool interrogate;
+  float radius = -1;
+  vector spot = point.GetOrigin();
+  if (faceContext)
+  {
+   interrogate = faceContext.GetActionsCount() == 1 && ESR_InterrogateAction.Cast(faceContext.GetAction(0)) != null;
+   radius = faceContext.GetRadius();
+   spot = faceContext.GetOrigin();
+  }
+  vector feet = character.GetOrigin();
+  vector head = feet;
+  bool bone;
+  Animation animation = character.GetAnimation();
+  if (animation)
+  {
+   TNodeId headBone = animation.GetBoneIndex("Head");
+   vector boneMatrix[4];
+   if (headBone >= 0 && animation.GetBoneMatrix(headBone, boneMatrix))
+   {
+    vector world[4];
+    character.GetWorldTransform(world);
+    Math3D.MatrixMultiply4(world, boneMatrix, boneMatrix);
+    head = boneMatrix[3];
+    bone = true;
+   }
+  }
+  vector forward = character.GetWorldTransformAxis(2);
+  forward[1] = 0;
+  forward.Normalize();
+  float fromHead = vector.Distance(spot, head);
+  float ahead = vector.Dot(spot - head, forward);
+  float aboveChest = -1;
+  ActionsManagerComponent body = ActionsManagerComponent.Cast(character.FindComponent(ActionsManagerComponent));
+  UserActionContext chest;
+  if (body) chest = body.GetContext("Chest");
+  if (chest)
+  {
+   vector chestSpot = chest.GetOrigin();
+   aboveChest = spot[1] - chestSpot[1];
+  }
+  float drift = vector.Distance(point.GetOrigin(), ESR_SurrenderManager.PointPosition(prisoner));
+  TraceParam trace = new TraceParam();
+  trace.Start = spot + forward;
+  trace.End = spot;
+  trace.Flags = TraceFlags.ENTS;
+  trace.TargetLayers = EPhysicsLayerDefs.Interaction;
+  trace.Include = point;
+  float fraction = GetGame().GetWorld().TraceMove(trace, null);
+  bool traced = trace.TraceEnt == point && fraction > 0.75 && fraction < 0.95;
+  PrintFormat("[ESR TEST FACE] when='%1' context=%2 contexts=%3 interrogate=%4 radius=%5 bone=%6 fromHead=%7 ahead=%8 aboveChest=%9", label, faceContext != null, contexts, interrogate, radius, bone, fromHead, ahead, aboveChest);
+  PrintFormat("[ESR TEST FACE] when='%1' headHeight=%2 drift=%3 traceFraction=%4 traced=%5", label, head[1] - feet[1], drift, fraction, traced);
+  return faceContext && contexts == 1 && interrogate && radius > 0 && radius <= 0.3 && bone && fromHead <= 0.25 && ahead > 0.05 && aboveChest > 0 && drift <= 0.1 && traced;
+ }
+
  override void EOnFrame(IEntity owner, float timeSlice)
  {
   if (Finished || Now() < Next) return;
@@ -229,7 +311,7 @@ class EXPG_GarrisonGameplay : GenericEntity
     if (carried.IsEmpty()) unarmed++;
     Faction faction = character.GetFaction();
     if (faction && faction.GetFactionKey() == ESR_SurrenderManager.CIVILIAN_FACTION) civilian++;
-    if (prisoner.Point && vector.Distance(prisoner.Point.GetOrigin(), ESR_SurrenderManager.PointPosition(prisoner)) < 1.2) points++;
+    if (FaceReady(prisoner, string.Format("prisoner %1", i))) points++;
     SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
     if (controller && controller.IsLoitering()) sitting++;
     bool aceSurrendered, aceCaptive, aceCarried;
@@ -247,17 +329,42 @@ class EXPG_GarrisonGameplay : GenericEntity
    Check(passive == SIZE - 2, "prisoner AI deactivated");
    Check(unarmed == SIZE - 2, "prisoners dropped every weapon");
    Check(civilian == SIZE - 2, "prisoners joined the civilian faction");
-   Check(points == SIZE - 2, "one interrogation point at each prisoner's chest");
+   Check(points == SIZE - 2, "Interrogate context on each prisoner's face: within 0.25 m of his head bone, ahead of it, above his chest, traced from ahead");
    if (ace) Check(aceHeld == SIZE - 2 && sitting == 0, "prisoners hold ACE's surrender state, never the vanilla sit");
    else
    {
     Check(sitting == SIZE - 2, "prisoners hold the vanilla sit-on-ground loiter");
     Check(ESR_AceCaptives.CallCount() == 0, "no ACE call during surrender without ACE");
    }
+   // A Game Master move (native teleport; 0.8 m stays below the upkeep's 1 m respawn
+   // distance): the same point must follow his face by itself.
+   if (Talker && Talker.Character && Talker.Point)
+   {
+    vector moved[4];
+    Talker.Character.GetWorldTransform(moved);
+    MovedFrom = moved[3];
+    moved[3] = Ground(MovedFrom + Vector(0.8, 0, 0), 0);
+    MovedPoint = Talker.Point;
+    Talker.Character.Teleport(moved);
+   }
    Phase = 3; PhaseAt = Now(); return;
   }
   if (Phase == 3)
   {
+   // The move may end his sit and the 5 s upkeep sit him down again; a face still in
+   // that animation outruns the 0.1 s follow. Measured once his face holds still (two
+   // reads 0.5 s apart within 3 cm), 8 to 20 s after the move.
+   if (Now() - PhaseAt < 8) return;
+   if (Talker && Talker.Character)
+   {
+    vector settleNow = ESR_SurrenderManager.PointPosition(Talker);
+    bool still = vector.Distance(settleNow, SettleFace) <= 0.03;
+    SettleFace = settleNow;
+    if (!still && Now() - PhaseAt < 20) return;
+    float movedBy = vector.Distance(Talker.Character.GetOrigin(), MovedFrom);
+    PrintFormat("[ESR TEST FACE] teleport movedBy=%1 samePoint=%2 still=%3 after=%4", movedBy, Talker.Point == MovedPoint, still, Now() - PhaseAt);
+    Check(movedBy > 0.5 && Talker.Point == MovedPoint && FaceReady(Talker, "after a 0.8 m teleport"), "the same interrogation point follows a moved prisoner's face");
+   }
    if (!Check(Revealer && Revealer.Point && Talker && Refuser && Doomed, "four prisoner records with points")) { Finish("records"); return; }
    MarkersBefore = StaticMarkers();
    int outcome = ESR_SurrenderManager.Interrogate(Revealer.Point, Revealer.Point, 0);

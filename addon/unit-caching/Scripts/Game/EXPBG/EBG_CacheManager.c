@@ -153,6 +153,47 @@ class EBG_EnrollmentTally
   }
   Counts[index] = Counts[index] + 1;
  }
+ // Squads another EXPBG module caches itself (EBG_CacheManager.DescribeExternalCache:
+ // Garrison), counted by module and cache state. They are cached, just not by this zone.
+ ref array<string> ExternalModules = {};
+ ref array<string> ExternalStates = {};
+ ref array<int> ExternalCounts = {};
+ void AddExternal(string moduleName, string cacheState)
+ {
+  for (int i = 0; i < ExternalStates.Count(); i++)
+  {
+   if (ExternalModules[i] != moduleName || ExternalStates[i] != cacheState) continue;
+   ExternalCounts[i] = ExternalCounts[i] + 1;
+   return;
+  }
+  ExternalModules.Insert(moduleName);
+  ExternalStates.Insert(cacheState);
+  ExternalCounts.Insert(1);
+ }
+ // "Cached by EXPBG Garrison itself, with its own wake and sleep distances: 3 groups
+ // Simulation cached (CDF loaded), 1 group awake on their posts". One clause per module.
+ string ExternalNote()
+ {
+  string text;
+  array<string> named = {};
+  foreach (string moduleName : ExternalModules)
+  {
+   if (named.Contains(moduleName)) continue;
+   named.Insert(moduleName);
+   string clause = string.Empty;
+   for (int i = 0; i < ExternalModules.Count(); i++)
+   {
+    if (ExternalModules[i] != moduleName) continue;
+    if (!clause.IsEmpty()) clause += ", ";
+    string groups = "groups";
+    if (ExternalCounts[i] == 1) groups = "group";
+    clause += string.Format("%1 %2 %3", ExternalCounts[i], groups, ExternalStates[i]);
+   }
+   if (!text.IsEmpty()) text += " | ";
+   text += string.Format("Cached by %1 itself, with its own wake and sleep distances: %2", moduleName, clause);
+  }
+  return text;
+ }
  // Soldiers who left their squad for good (EBG_MarkLeftSquad: AI Surrender's
  // prisoners). AI Surrender switches their AI off, so the AI world's agent list
  // no longer holds them; this server list does. Weak entity handles, pruned here.
@@ -206,7 +247,13 @@ class EBG_EnrollmentTally
    if (Counts[i] == 1) groups = "group";
    text += string.Format("%1 %2 %3", Counts[i], groups, Reasons[i]);
   }
-  if (text.IsEmpty() && !managed) text = string.Format("No AI group with a free living soldier inside the %1 m affected radius", affected);
+  if (text.IsEmpty() && !managed && ExternalStates.IsEmpty()) text = string.Format("No AI group with a free living soldier inside the %1 m affected radius", affected);
+  string cachedElsewhere = ExternalNote();
+  if (!cachedElsewhere.IsEmpty())
+  {
+   if (text.IsEmpty()) text = cachedElsewhere;
+   else text = cachedElsewhere + " | " + text;
+  }
   if (LeftSquad > 0)
   {
    if (!text.IsEmpty()) text += " | ";
@@ -500,6 +547,16 @@ class EBG_CacheManager
  {
   return string.Empty;
  }
+ // Published seam, text only: a module that caches a reserved squad itself (EXPBG
+ // Garrison, with its own wake and sleep distances) names itself and the squad's
+ // cache state, so the zone status does not count that squad as uncached. False
+ // (the default) when no module claims it. Enrollment and caching never read it.
+ bool DescribeExternalCache(SCR_AIGroup group, out string moduleName, out string cacheState)
+ {
+  moduleName = string.Empty;
+  cacheState = string.Empty;
+  return false;
+ }
  EBG_CacheMember FindMember(IEntity entity)
  {
   if (!entity) return null;
@@ -746,9 +803,17 @@ class EBG_CacheManager
    if (enrollmentPersistence && EBG_MissionPersistence.Reserves(enrollmentPersistence.GetId(group))) skip = "waiting for saved mission ownership to bind";
    else if (IsReserved(group))
    {
+    // Text only: a module that caches the squad itself (Garrison) reports its own
+    // cache state, so the zone never implies that squad is left uncached.
+    string externalModule, externalState;
+    if (DescribeExternalCache(group, externalModule, externalState))
+    {
+     tally.AddExternal(externalModule, externalState);
+     continue;
+    }
     // Text only: a module that also publishes a keep-awake reason (Unit Scripts) names itself.
     string holder = KeepAwakeReason(group);
-    if (holder.IsEmpty()) skip = "held by another EXPBG module (Unit Scripts, Garrison, ambient crowds) or a pending cache transfer";
+    if (holder.IsEmpty()) skip = "held by another EXPBG module (Unit Scripts, ambient crowds) or a pending cache transfer";
     else skip = "held by another EXPBG module (" + holder + ")";
    }
    else if (group.EBG_Exclude) skip = "marked Exclude from EXPBG optimization";

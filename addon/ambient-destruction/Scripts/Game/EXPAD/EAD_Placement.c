@@ -13,21 +13,13 @@ class EAD_Placement
   ground = trace.Start + (trace.End - trace.Start) * fraction;
   return !ChimeraWorldUtils.TryGetWaterSurfaceSimple(world, ground - "0 0.05 0");
  }
- // Road-dependent props fail closed on maps/areas without a road network.
- // One nearest road and at most 512 segments per existing generation token.
- static bool RoadPoint(vector point, float extent, int lane, out vector position, out vector direction)
+ // A road wreck's rotated footprint may use the carriageway plus this much shoulder.
+ static const float ROAD_SHOULDER = 2.5;
+ // Closest point of a road polyline (at most 512 segments) and that segment's direction.
+ static bool NearestOnRoad(array<vector> points, vector point, out vector position, out vector direction)
  {
-  ChimeraAIWorld ai = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
-  if (!ai || !ai.GetRoadNetworkManager()) return false;
-  BaseRoad road;
-  float distance;
-  ai.GetRoadNetworkManager().GetClosestRoad(point, road, distance, true);
-  if (!road || distance > 90) return false;
-  array<vector> points = {};
-  road.GetPoints(points);
-  if (points.Count() < 2 || points.Count() > 513) return false;
   float best = 8100;
-  bool found;
+  bool found = false;
   for (int i = 1; i < points.Count(); i++)
   {
    vector delta = points[i] - points[i - 1]; delta[1] = 0;
@@ -41,15 +33,95 @@ class EAD_Placement
    best = separation; position = candidate;
    direction = delta.Normalized(); found = true;
   }
-  if (!found) return false;
-  // Every third candidate is on the road; others use either shoulder.
-  if (lane != 0)
+  return found;
+ }
+ // Road-dependent props fail closed on maps/areas without a road network. One nearest
+ // road and at most two passes over its 512 segments per generation token.
+ // Lane 0 lands across the carriageway (sides over crown); lanes 1/2 favour the right/left edge and
+ // shoulder. Headings skew 8-35 degrees off the lane line, about one in six lies across
+ // the road. Right-hand traffic: right-side wrecks face along the road, left-side ones
+ // against it, one in four the other way. The rotated footprint stays inside road plus
+ // shoulder where it fits (a long vehicle lying across a narrow road is centred instead);
+ // Ground/GroundRecord still reject water, buildings, slopes and clutter.
+ // A non-zero shift first moves along the road (pile-ups) and re-snaps to the polyline.
+ static bool RoadPoint(EAD_Random random, vector point, int asset, int lane, float shift, out vector position, out vector direction)
+ {
+  ChimeraAIWorld ai = ChimeraAIWorld.Cast(GetGame().GetAIWorld());
+  if (!ai || !ai.GetRoadNetworkManager()) return false;
+  BaseRoad road;
+  float distance;
+  ai.GetRoadNetworkManager().GetClosestRoad(point, road, distance, true);
+  if (!road || distance > 90) return false;
+  array<vector> points = {};
+  road.GetPoints(points);
+  if (points.Count() < 2 || points.Count() > 513) return false;
+  vector snapped, heading;
+  if (!NearestOnRoad(points, point, snapped, heading)) return false;
+  if (shift != 0)
   {
-   float side = 1;
-   if (lane == 2) side = -1;
-   position += Vector(direction[2], 0, -direction[0]) * side * (road.GetWidth() * 0.5 + extent * 0.45);
+   vector ahead = snapped + heading * shift;
+   if (!NearestOnRoad(points, ahead, snapped, heading)) return false;
   }
+  float side = 1;
+  if (lane == 2) side = -1;
+  else if (lane == 0 && random.Next() < 0.5) side = -1;
+  float skew = 8 + random.Next() * 27;
+  if (random.Next() < 0.16) skew = 65 + random.Next() * 50;
+  if (random.Next() < 0.5) skew = -skew;
+  bool reversed = side < 0;
+  if (random.Next() < 0.25) reversed = !reversed;
+  if (reversed) skew += 180;
+  float yaw = skew * Math.DEG2RAD;
+  float cosine = Math.Cos(yaw);
+  float sine = Math.Sin(yaw);
+  direction = Vector(heading[0] * cosine - heading[2] * sine, 0, heading[0] * sine + heading[2] * cosine);
+  if (direction.LengthSq() < 0.25) return false;
+  direction.Normalize();
+  // Half-width of the rotated footprint across the road.
+  vector mins, maxs;
+  EAD_Catalog.Bounds(asset, mins, maxs);
+  float across = Math.AbsFloat(Math.Max(-mins[0], maxs[0]) * cosine) + Math.AbsFloat(Math.Max(-mins[2], maxs[2]) * sine);
+  // Unknown width (0 or NaN) counts as a 6 m road; a narrow track stays narrow (at least 2 m).
+  float half = road.GetWidth() * 0.5;
+  if (!(half > 0)) half = 3;
+  half = Math.Clamp(half, 1, 12);
+  float edgeLimit = Math.Max(0, half + ROAD_SHOULDER - across);
+  float laneLimit = Math.Min(edgeLimit, Math.Max(0, half - across * 0.5));
+  // Square root: carriageway wrecks favour the sides of the road over its crown.
+  float lateral;
+  if (lane == 0) lateral = Math.Sqrt(random.Next()) * laneLimit;
+  else lateral = laneLimit * 0.5 + random.Next() * (edgeLimit - laneLimit * 0.5);
+  position = snapped + Vector(heading[2], 0, -heading[0]) * (side * lateral);
   return true;
+ }
+ // Breathing gap to this zone's wrecks; EAD_World.Reserved keeps the 0.5 m floor everywhere.
+ static bool Crowded(EAD_Zone zone, vector position, float extent, float margin)
+ {
+  foreach (EAD_PropRecord record : zone.Records)
+  {
+   if (!EAD_Catalog.IsWreck(record.Asset)) continue;
+   float gap = extent + EAD_Catalog.Extent(record.Asset) + margin;
+   if (EAD_Policy.DistanceSq(position, record.Transform[3]) < gap * gap) return true;
+  }
+  return false;
+ }
+ // A seeded pick among the wrecks already placed in this zone, or null.
+ static EAD_PropRecord RoadAnchor(EAD_Zone zone, EAD_Random random)
+ {
+  int count = 0;
+  foreach (EAD_PropRecord record : zone.Records)
+  {
+   if (EAD_Catalog.IsWreck(record.Asset)) count++;
+  }
+  if (count == 0) return null;
+  int pick = Math.Min(count - 1, Math.Floor(random.Next() * count));
+  foreach (EAD_PropRecord wreck : zone.Records)
+  {
+   if (!EAD_Catalog.IsWreck(wreck.Asset)) continue;
+   if (pick == 0) return wreck;
+   pick--;
+  }
+  return null;
  }
  static EAD_PropRecord Candidate(EAD_Zone zone, EAD_Random random, int asset, bool grouped = false, vector groupOrigin = vector.Zero, int lane = 0)
  {
@@ -63,8 +135,21 @@ class EAD_Placement
   bool roadAligned;
   if (wreck)
   {
-   roadAligned = RoadPoint(point, extent, lane, roadPosition, direction);
-   if (!roadAligned) return null;
+   // Irregular spacing: about three in ten road wrecks pile up just ahead of or behind an
+   // earlier wreck; the rest keep their own random 0.5-12.5 m gap (mostly short).
+   float margin = 0.5 + random.Next() * random.Next() * 12;
+   float shift = 0;
+   EAD_PropRecord anchor = null;
+   if (random.Next() < 0.3) anchor = RoadAnchor(zone, random);
+   if (anchor)
+   {
+    margin = 0.5;
+    shift = EAD_Catalog.Extent(anchor.Asset) + extent + 0.6 + random.Next() * 4;
+    if (random.Next() < 0.5) shift = -shift;
+    point = anchor.Transform[3];
+   }
+   roadAligned = RoadPoint(random, point, asset, lane, shift, roadPosition, direction);
+   if (!roadAligned || Crowded(zone, roadPosition, extent, margin)) return null;
    point = roadPosition;
   }
   else if (grouped)

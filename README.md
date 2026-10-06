@@ -56,7 +56,9 @@ The only dependency is the base game (`58D0FB3206B6F859`).
 
 - **Garrison**: right-click a building, choose **EXPBG Add Garrison** and select an
   infantry squad. One squad takes reachable fixed guard posts and patrols
-  indoors. A freshly spawned squad larger than the safe capacity is trimmed;
+  indoors: window posts first, then just inside the outer doors, spread over
+  every floor the stairs reach and at least 1.5 m apart, never on porches or
+  entrance steps. A freshly spawned squad larger than the safe capacity is trimmed;
   existing squads and casualties are never refilled. Add Garrison again on the
   same building, as often as needed, to add squads: each deploys in full as its
   own garrison on free posts first, then elsewhere in and around the building.
@@ -109,7 +111,8 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   markers and drawn lines live to everyone nearby while they brief.
 - **AI Surrender**: place "EXPBG AI Surrender" from Systems; broken AI squads
   may surrender (weapons dropped, sitting), and players interrogate prisoners
-  for a nearby squad's position or identity intel.
+  ("Interrogate" on the prisoner's face, clear of medical actions) for a nearby
+  squad's position or identity intel.
 - **AI Global Skills**: place "EXPBG AI Global Skills" from Systems for per-faction
   AI skill and aim with Rifleman, MG/LMG, Marksman and Leader overrides (modded
   factions detected at runtime), rules of engagement (Return Fire Only, Fire on
@@ -132,8 +135,10 @@ compatible with the pack. Use [EXPBG CDF Compat](https://reforger.armaplatform.c
 together with CDF Game Master Save instead. The guards in Unit Caching and
 Garrison check for that identity: without it, Full caching refuses new removals
 while CDF is loaded and Garrison caching stays off. With it, Unit Caching Full
-snapshots, Intel Items and Ambient Destruction are saved in CDF files; Garrison
-Full caching stays refused under CDF (choose Simulation). Simulation caching and
+snapshots, Intel Items and Ambient Destruction are saved in CDF files. A
+garrison set to Full caches in Simulation while CDF is loaded (status
+"Simulation cached (CDF loaded)"): its soldiers stay on their posts with AI
+paused, because Full survivors cannot survive a CDF load. Simulation caching and
 restoration always work.
 
 ## Building

@@ -15,6 +15,18 @@ Order matters: finish each milestone before starting the next unless marked para
 | M5 | Issues to zero | 0 open issues in mod-gm-tools and mod-cdf-compat (obsolete ones closed with a comment) |
 | M6 | New features (start only after M1-M5, user decision) | New addons below implemented, natively verified, previews in EXPBG style, released, re-tested in client |
 
+## 0.1.7 live test findings (2026-10-06, local dedicated server, 119 mods)
+
+Evidence: `.local/e2e/server-logs-017`, `.local/e2e/client-logs-017` and the user's screenshots. Fix in 0.1.8.
+
+- [~] Garrison: soldiers bunch up on the same ground-floor spot (hallway by the door) although the house has windows and an upper floor. Placement must prefer window posts, then door posts, and use upper floors. Live: House_Town_E_2I01 at <5079,14.5,4011>, three adds each `placed 4 of 4 (building posts 4)`.
+- [~] Garrison: some soldiers end up outside the house (at the entrance steps).
+- [~] Garrison: added garrisons are never cached. With CDF loaded every garrison logs `Full cache held: CDF saves cannot keep Garrison Full survivors. Choose Simulation or Off.` and the Unit Caching zone skips them (`4 groups held by another EXPBG module`). Garrisons must be cached and restored on the same spot by our caching.
+- [s] Ambient Destruction: road wrecks are placed in a perfect line along the road with the same alignment; positions and headings must be random. Source: random lateral offset across road + 2.5 m shoulder (footprint-aware), 8-35 deg skew, ~1/6 crossways, side-dependent reversal, seeded pile-ups and random gaps. Fixture `tests/EAD_RoadWrecksGameplay.c` (native run pending).
+- [s] AI Surrender: on a bleeding prisoner the Interrogate prompt overlaps or is hidden by ACE Medical actions; put Interrogate on the head/face. Source: the interrogation point (own "face" context, 0.15 m collider) follows the head bone just in front of the face on every machine; fixture tests/ESR_SurrenderGameplay.c face case; client check pending.
+- [~] Ambient Death (separate mod, tracked in mod-ambient-death): no death sound for ACE deaths. Client log: 11 of 18 deaths decided `BLED_OUT`, both for AI shot dead outright and for AI shot to death while unconscious; only Zeus Neutralize and some direct kills played.
+- [ ] Garrison blocks the game's autosave entirely while any garrison is active (`[EXPG SAVE] Refused active garrison ownership` then `[PERSISTENCE] Save failed`); pre-existing since 0.1.4, user decision pending.
+
 ## M1: Post-test fixes (from the client test)
 
 Native gates for the 0.1.4 source: build `local-20261005-183149-156` compiled with 0 errors from our code; contracts PASS (incl. window slots); Garrison gameplay PASS (59 checks); UnitCleanup PASS with the body + weapon rule (`checks=95 failures=0 cases=10`, every casualty `body=1 roots=2` in one tick, evidence `build/gameplay-20261005-183223-510`); portable tests PASS.

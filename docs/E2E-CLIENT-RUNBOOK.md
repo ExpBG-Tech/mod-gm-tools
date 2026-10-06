@@ -204,7 +204,7 @@ Mouse look by injected input: 20 px cursor steps rotate the view; large jumps ba
 | T5 | Unit Dialog across Full cache | dialog on a member of a Full-cached squad; sleep, wake | respawned member keeps dialog |
 | T6 | Unit Dialog in CDF | CDF save/restart/load | dialog restored |
 | T7 | Unit Scripts | right-click Hold, Freeze, Release; animations (EXPBG Unit Scripts tab); group Edit properties > Group tab > EXPBG Night discipline: Light discipline / Terror tactics / None; damage breaks | units stay; flashlights; EXPBG right-click entries are only Hold/Freeze/Release; context menu still lists vanilla actions and EXPBG Add Garrison |
-| T8 | AI Surrender (ACE loaded) | place module, kill members until threshold | ACE surrender animation/state; Interrogate prompt; marker or identity window |
+| T8 | AI Surrender (ACE loaded) | place module, kill members until threshold; wound a prisoner so he bleeds (also once in the head) | ACE surrender animation/state; Interrogate prompt on his face (also while bleeding), ACE Medical actions on his torso and limbs, a head wound still treatable from the side or above; marker or identity window |
 | T9 | AI Global Skills | module; faction selector; ROE warning shots; ammo refill | `[EXPBG AI SKILLS]` lines; behaviour visible |
 | T10 | Civil Protest Zone | place, On | crowd gathers, gestures visible on client, crowd audio; Off removes |
 | T11 | Briefing board | user test | board shows map, markers/lines live |

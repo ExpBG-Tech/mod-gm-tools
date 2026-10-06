@@ -1,15 +1,31 @@
-// Runtime interaction point for one prisoner, spawned by the server at his chest and
-// replicated to every client (JIP included). Characters cannot gain user actions at
-// runtime and the shared Character_Base override belongs to another module, so the
-// "Interrogate" action lives here. Players find actions only on entities their
-// interaction cast hits; a small sphere on the Interaction physics layer (no mesh,
-// no movement or bullet collision) is that target.
+// Runtime interaction point for one prisoner, spawned by the server and replicated to
+// every client (JIP included). Characters cannot gain user actions at runtime and the
+// shared Character_Base override belongs to another module, so the "Interrogate" action
+// lives here. Players find actions only on entities their interaction cast hits; a small
+// sphere on the Interaction physics layer (no mesh, no movement or bullet collision) is
+// that target. It sits just in front of the prisoner's face and follows his head bone on
+// every machine (seated, standing in ACE's surrender pose, moved or carried): looking at
+// his face selects Interrogate, while the medical contexts on his torso and limbs
+// (vanilla, ACE Medical) stay clear of it.
 [EntityEditorProps(category: "EXPBG/AI Surrender", description: "Runtime interrogation point of a surrendered soldier; spawned by the server")]
 class ESR_InterrogationPointClass : GenericEntityClass {}
 
 class ESR_InterrogationPoint : GenericEntity
 {
- static const float COLLIDER_RADIUS = 0.45;
+ static const float COLLIDER_RADIUS = 0.15;
+ static const string CONTEXT_NAME = "face";
+ static const string HEAD_BONE = "Head";
+ // Head bone frame as vanilla's AI eyes use it (Character_Base PerceptionComponent:
+ // Head + <-0.03 0.07 -0.09>, yawed 180): +Y runs up through the head, -Z out of the
+ // face. The point sits at eye height, a few centimetres in front of the nose.
+ static const float FACE_UP = 0.07;
+ static const float FACE_FORWARD = 0.16;
+ static const float FOLLOW_INTERVAL = 0.1;
+ static const float FOLLOW_TOLERANCE = 0.02;
+ // A bone reading farther than this from the prisoner's origin is not trusted.
+ static const float MAX_FACE_DISTANCE = 2.5;
+ // Server: a move this long is reported to the replication scheduler.
+ static const float STREAM_STEP = 1;
  static const string TITLE = "EXPBG Interrogation";
 
  [RplProp()] protected RplId m_PrisonerId;
@@ -27,19 +43,91 @@ class ESR_InterrogationPoint : GenericEntity
  [RplProp()] protected string m_sLeaderSurname;
 
  protected bool m_bCollider;
+ protected float m_fFollowIn;
+ protected vector m_vStreamAnchor;
+ protected bool m_bAnchored;
 
  void ESR_InterrogationPoint(IEntitySource src, IEntity parent)
  {
   m_PrisonerId = RplId.Invalid();
-  SetEventMask(EntityEvent.INIT);
+  SetEventMask(EntityEvent.INIT | EntityEvent.FRAME);
  }
 
  override void EOnInit(IEntity owner)
  {
   super.EOnInit(owner);
-  if (!GetGame().InPlayMode() || m_bCollider) return;
+  if (!GetGame().InPlayMode())
+  {
+   ClearEventMask(EntityEvent.FRAME);
+   return;
+  }
+  if (m_bCollider) return;
   autoptr PhysicsGeomDef geoms[] = {PhysicsGeomDef("", PhysicsGeom.CreateSphere(COLLIDER_RADIUS), "material/default", EPhysicsLayerDefs.Interaction)};
   m_bCollider = Physics.CreateStaticEx(this, geoms) != null;
+ }
+
+ override void EOnFrame(IEntity owner, float timeSlice)
+ {
+  m_fFollowIn -= timeSlice;
+  if (m_fFollowIn > 0) return;
+  m_fFollowIn = FOLLOW_INTERVAL;
+  Follow();
+ }
+
+ // The prisoner's face from his animated head bone: eye height, just in front of the
+ // nose, following head tilt and turn in every pose. False without a usable bone.
+ static bool FacePosition(IEntity character, out vector face)
+ {
+  if (!character) return false;
+  Animation animation = character.GetAnimation();
+  if (!animation) return false;
+  TNodeId bone = animation.GetBoneIndex(HEAD_BONE);
+  if (bone < 0) return false;
+  vector head[4];
+  if (!animation.GetBoneMatrix(bone, head)) return false;
+  vector world[4];
+  character.GetWorldTransform(world);
+  Math3D.MatrixMultiply4(world, head, head);
+  vector candidate = head[3] + head[1] * FACE_UP - head[2] * FACE_FORWARD;
+  // A NaN reading fails this comparison too.
+  float distanceSq = vector.DistanceSq(candidate, character.GetOrigin());
+  if (!(distanceSq <= MAX_FACE_DISTANCE * MAX_FACE_DISTANCE)) return false;
+  face = candidate;
+  return true;
+ }
+
+ // Any machine, ten times a second: keep the point on the prisoner's face while he sits
+ // down, stands, is moved by a Game Master or carried. False while his head cannot be
+ // read (not streamed in here); the point then stays where it was.
+ bool Follow()
+ {
+  vector face;
+  if (!FacePosition(GetPrisoner(), face)) return false;
+  vector previous = GetOrigin();
+  if (vector.DistanceSq(previous, face) <= FOLLOW_TOLERANCE * FOLLOW_TOLERANCE) return true;
+  vector transform[4];
+  Math3D.MatrixIdentity4(transform);
+  transform[3] = face;
+  SetWorldTransform(transform);
+  // Commits the move to the sphere collider before the next interaction cast.
+  Update();
+  if (Replication.IsServer()) Restream(previous);
+  return true;
+ }
+
+ // Server: the point has no networked movement, so a long move (carried, moved by a Game
+ // Master) is reported to the replication scheduler for clients near the new spot.
+ protected void Restream(vector previous)
+ {
+  if (!m_bAnchored)
+  {
+   m_vStreamAnchor = previous;
+   m_bAnchored = true;
+  }
+  if (vector.DistanceSq(GetOrigin(), m_vStreamAnchor) < STREAM_STEP * STREAM_STEP) return;
+  RplComponent rpl = RplComponent.Cast(FindComponent(RplComponent));
+  if (rpl) rpl.ForceNodeMovement(m_vStreamAnchor);
+  m_vStreamAnchor = GetOrigin();
  }
 
  // Server only, right after spawn.
@@ -170,7 +258,15 @@ class ESR_InterrogateAction : ScriptedUserAction
  override bool CanBePerformedScript(IEntity user)
  {
   ESR_InterrogationPoint point = ESR_InterrogationPoint.Cast(GetOwner());
-  if (!user || !point || vector.DistanceSq(user.GetOrigin(), point.GetOrigin()) > RANGE * RANGE)
+  if (!user || !point)
+  {
+   SetCannotPerformReason("Too far");
+   return false;
+  }
+  // Feet to feet, as the server measures: the point is at his face, head height above.
+  IEntity anchor = point.GetPrisoner();
+  if (!anchor) anchor = point;
+  if (vector.DistanceSq(user.GetOrigin(), anchor.GetOrigin()) > RANGE * RANGE)
   {
    SetCannotPerformReason("Too far");
    return false;

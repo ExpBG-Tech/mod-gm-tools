@@ -132,6 +132,50 @@ pending.
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RepeatGarrisonGameplay.c -ExpectResult '\[EXPG REPEAT RESULT\] checks=[1-9]\d* failures=0 adds=[3-8] guards=[1-9]\d* capacity=[1-9]\d* posts=[1-9]\d* building=\d+ around=[1-9]\d* spawn=0 reason=completed' -TimeoutSeconds 480 -OrchestratorSlotGranted
 ```
 
+`EXPG_PostSpreadGameplay.c` (custom fixture, same driver name) covers the live
+report of bunched posts on a two-storey town house: it spawns the vanilla
+`{38A5F3E4578087AB}Prefabs/Structures/Houses/Town/House_Town_E_2I01/House_Town_E_2I01.et`
+at the fixture point, waits up to 150 s for the production analysis and logs the
+plan (`[EXPG SPREAD PLAN]`), one `[EXPG SPREAD LEVEL]` line per metre of height
+(sampled, reachable, stair, indoor and enclosed nodes: shows whether an upper
+floor was sampled but not connected) and one `[EXPG SPREAD SLOT]` line per slot
+(storey, height above the house origin, opening 1 window / 2 door, score, range,
+fixed, inside). It then adds three US fire teams through CanFit, the fresh
+roster and AdoptFresh (caching Off) and logs each `[EXPG SPREAD POST]`. Checks:
+slots on at least two storeys; window slots before door slots before the rest;
+the first squad on window posts only and on two storeys; no slot or building
+post outside (its own test: no roof overhead or six of sixteen bearings open at
+1.2 m and 1.8 m); every post 1.5 m from the others on its floor; after 5 s all
+twelve alive on their posts, no two within 0.8 m, posts on at least two storeys,
+none around the building or at the spawn point. Deadline 300 s. No players, GM
+UI, caching or combat. Source reviewed; native execution pending. The planner
+change behind it also alters slot counts, so the `-FreshTrim` expectation of
+nine Village slots must be re-measured.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_PostSpreadGameplay.c -ExpectResult '\[EXPG SPREAD RESULT\] checks=[1-9]\d* failures=0 slots=[1-9]\d* storeys=[2-9] windowSlots=[1-9]\d* doorSlots=\d+ guards=12 postStoreys=[2-9] outside=0 around=0 crowded=0 reason=completed' -TimeoutSeconds 420 -OrchestratorSlotGranted
+```
+
+`EXPG_CdfFallbackGameplay.c` (custom fixture, same driver name and house) covers
+Garrison caching with CDF loaded. The fixture modset has no CDF, so its one seam
+overrides `EXPG_GarrisonManager.CdfLoaded()`; player presence is one injected
+entity in the garrison's player list. One US fire team (cache mode Full, wake
+300 m, sleep 400 m): without CDF it Full-caches with the presence 1000 m away and
+restores onto its posts. With CDF it keeps the Full choice but uses Simulation:
+a Unit Caching Full zone is placed over the house, the presence waits 350 m away
+for 50 s (the garrison must stay awake on its posts), then 1000 m away (it must
+Simulation-cache with status "Simulation cached (CDF loaded)", logged once, no
+Full transaction, the same four soldiers on their posts, and stay cached), then
+340 m (still cached) and 250 m (the same soldiers wake within 0.5 m of where they
+slept, controls bound). The zone status must name the squad as "Cached by EXPBG
+Garrison itself, with its own wake and sleep distances" with its state, never
+"held by another EXPBG module". Deadline 360 s. No real CDF save/load (see the
+CDF Compat round trips). Source reviewed; native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_CdfFallbackGameplay.c -ExpectResult '\[EXPG CDF FALLBACK RESULT\] checks=[1-9]\d* failures=0 guards=4 fullCycle=1 simulationCycle=1 cdfLines=1 zoneNote=1 reason=completed' -TimeoutSeconds 480 -OrchestratorSlotGranted
+```
+
 ## Unit Caching per-casualty cleanup fixture (-UnitCleanup)
 
 `tests/EBG_UnitCleanupGameplay.c` reuses the generated-world driver name and is
@@ -213,4 +257,26 @@ Source reviewed; native execution pending.
 
 ```powershell
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete' -OrchestratorSlotGranted
+```
+
+## Ambient Destruction road wreck fixture
+
+`tests/EAD_RoadWrecksGameplay.c` (custom fixture, same driver name) spawns the
+production `EAD_Zone` prefab in Morton at the origin and radius of the 0.1.7 live
+report (radius 100, Wrecks 100, Bodies 0, Destruction 0) and lets the real
+scheduler generate. It measures each wreck against the native road network
+independently of the production helpers and requires: at least six wrecks; a
+lateral offset standard deviation above 0.8 m; at most 40 percent within 0.25 m of
+the centreline; mean heading skew above 10 degrees and median above 8; at most a
+quarter within 2 degrees of the road direction; every centre within the road or
+its shoulder; no overlapping oriented footprints; centre and four inset corners
+on a real surface within 0.35 m of the wreck base (not water, not a destructible
+building, live props cached first); nearest-neighbour spacing CV above 0.15. The
+`EAD_Snapshot` round trip must keep every transform, another seed must give
+another layout and the first seed must regenerate it exactly. Deadline 240 s.
+No players, GM UI, CDF or real save/load. Source reviewed; native execution
+pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EAD_RoadWrecksGameplay.c -TimeoutSeconds 300 -OrchestratorSlotGranted -ExpectResult '\[EXPG EAD ROAD RESULT\] checks=[1-9]\d* failures=0 wrecks=([6-9]|[1-9]\d+) reason=complete'
 ```

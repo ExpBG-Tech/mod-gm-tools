@@ -18,6 +18,7 @@ class EXPG_BuildingPlanTest
   return EXPG_BuildingPlan.ForwardColumn(8, 3, 9, 1) == -1 && EXPG_BuildingPlan.ForwardColumn(8, 3, 9, 3) == -1;
  }
  // Rejecting a nearby candidate must not discard later, well-spaced candidates.
+ // The wide pass (2.5 m) takes 0 and 3 first; the 1.5 m pass then adds 2.
  static bool SlotSelection()
  {
   EXPG_SlotSelectionFixture plan = new EXPG_SlotSelectionFixture();
@@ -32,7 +33,7 @@ class EXPG_BuildingPlanTest
   }
   plan.Select();
   bool passed = plan.Slots.Count() == 3;
-  if (passed) { passed = plan.Slots[0] == 0 && plan.Slots[1] == 2 && plan.Slots[2] == 3; }
+  if (passed) { passed = plan.Slots[0] == 0 && plan.Slots[1] == 3 && plan.Slots[2] == 2; }
   PrintFormat("[EXPG SLOT RESULT] pass=%1 expected=3 actual=%2", passed, plan.Slots.Count());
   // A roofed entrance/porch may connect the graph, but is not an indoor post.
   plan.Slots.Clear(); plan.FixedSlots.Clear(); plan.Nodes[0].Interior = false;
@@ -54,7 +55,7 @@ class EXPG_BuildingPlanTest
    node.Position = position;
    node.Reachable = true;
    node.Interior = true;
-   node.Score = 80;
+   node.Score = EXPG_BuildingPlan.SCORE_WINDOW;
    node.Range = ranges[i];
    plan.Nodes.Insert(node);
   }

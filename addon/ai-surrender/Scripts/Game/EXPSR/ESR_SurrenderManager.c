@@ -112,11 +112,12 @@ class ESR_SurrenderManager
  static const int POSE_DELAY_MS = 1500;
  static const int UPKEEP_MS = 5000;
  static const int MAX_POSE_TRIES = 6;
- static const float CHEST_HEIGHT = 0.75;
- // ACE's surrender pose stands: the point sits in front of the chest, below raised
- // hands and clear of hands tied behind the back (ACE's own wrist actions).
- static const float CHEST_HEIGHT_ACE = 1.2;
- static const float CHEST_FORWARD_ACE = 0.3;
+ // The interrogation point follows the prisoner's head bone (ESR_InterrogationPoint).
+ // Only while no bone can be read: rough face heights of the vanilla sit and of ACE's
+ // standing surrender pose.
+ static const float FACE_HEIGHT_SEATED = 0.9;
+ static const float FACE_HEIGHT_ACE = 1.6;
+ static const float FACE_FORWARD_FALLBACK = 0.15;
  static const int ACE_RELEASE_TICKS = 2;
  static const float INTERROGATE_RANGE = 4;
  static const float QUESTION_COOLDOWN = 2;
@@ -557,9 +558,7 @@ class ESR_SurrenderManager
   if (prisoner.AceMode == ace) return;
   prisoner.AceMode = ace;
   prisoner.AceIdle = 0;
-  // The seated and the standing pose need the point at a different height.
-  DeletePoint(prisoner);
-  SpawnPoint(prisoner);
+  // The interrogation point follows his face into the new pose by itself.
  }
 
  // ACE-held prisoner, alive and awake. ACE owns the pose while he is surrendered in its
@@ -625,16 +624,20 @@ class ESR_SurrenderManager
   ApplyPose(prisoner.Character);
  }
 
- // Where the interaction point belongs: the chest of the seated prisoner, or in front
- // of the chest of ACE's standing pose.
+ // Where the interaction point belongs: just in front of the prisoner's face, clear of
+ // the medical contexts on his torso and limbs. From his head bone in any pose; the
+ // pose's rough face height only while the bone cannot be read.
  static vector PointPosition(ESR_Prisoner prisoner)
  {
+  vector face;
+  if (ESR_InterrogationPoint.FacePosition(prisoner.Character, face)) return face;
   vector origin = prisoner.Character.GetOrigin();
-  if (!prisoner.AceMode) return origin + vector.Up * CHEST_HEIGHT;
   vector forward = prisoner.Character.GetWorldTransformAxis(2);
   forward[1] = 0;
   forward.Normalize();
-  return origin + vector.Up * CHEST_HEIGHT_ACE + forward * CHEST_FORWARD_ACE;
+  float height = FACE_HEIGHT_SEATED;
+  if (prisoner.AceMode) height = FACE_HEIGHT_ACE;
+  return origin + vector.Up * height + forward * FACE_FORWARD_FALLBACK;
  }
 
  protected static bool SpawnPoint(ESR_Prisoner prisoner)
@@ -717,10 +720,11 @@ class ESR_SurrenderManager
     if (!AceUpkeep(prisoner)) { ReleaseAt(i, "ace-release"); continue; }
    }
    else if (scripted && !scripted.IsLoitering() && prisoner.PoseTries < MAX_POSE_TRIES) ApplyPose(prisoner.Character);
-   // A Game Master may move the prisoner; the interaction point follows.
-   vector chest = PointPosition(prisoner);
+   // The point follows his face on every machine (Game Master moves included); a point
+   // that lost him is spawned again.
+   vector face = PointPosition(prisoner);
    if (!prisoner.Point) SpawnPoint(prisoner);
-   else if (vector.DistanceSq(prisoner.Point.GetOrigin(), chest) > 1)
+   else if (vector.DistanceSq(prisoner.Point.GetOrigin(), face) > 1)
    {
     DeletePoint(prisoner);
     SpawnPoint(prisoner);

@@ -114,4 +114,21 @@ Assert ($fixture -match [regex]::Escape("-FixturePath tests/EBG_LocalCacheGamepl
 Assert ($fixture -match 'PrintFormat\("\[EBG LOCAL CACHE RESULT\] checks=%1 failures=%2 reason=%3"') 'fixture must print the RESULT line the runner expects'
 Assert ($fixture -match 'modded\s+class\s+EBG_CacheManager' -and $fixture -match 'override\s+protected\s+void\s+UpdatePlayers\(\)') 'fixture must inject the host character through UpdatePlayers'
 Assert ($fixture -match 'Resource\s+resource\s*=\s*Resource\.Load\(prefab\);') 'fixture must keep Resource.Load results in a local'
-'PASS: Unit Caching zone explanations (enrollment refusals, left-squad soldiers, player characters inside the sleep radius, Full refusal, standalone mods, GM notice) stay diagnostics only; local-cache fixture wired.'
+
+# Squads a garrison caches itself are named with their state, never counted as not
+# enrolled; Garrison runs Full in Simulation while CDF is loaded (CacheModeInUse).
+Assert ($refresh -match '(?s)else\s+if\s*\(\s*IsReserved\(group\)\s*\)\s*\{.*?if\s*\(\s*DescribeExternalCache\(group,\s*externalModule,\s*externalState\)\s*\)\s*\{\s*tally\.AddExternal\(externalModule,\s*externalState\);\s*continue;\s*\}.*?KeepAwakeReason\(group\)') 'Refresh must report a squad another module caches itself before the generic held-by text'
+Assert ((Get-Body $manager 'string\s+Note\s*\(\s*int\s+affected') -match 'ExternalNote\(\)') 'the enrollment note must include squads cached by another module'
+Assert ((Get-Body $manager 'bool\s+DescribeExternalCache\s*\(') -match 'return\s+false;') 'DescribeExternalCache defaults to no claim'
+$garrison = Read-Text (Join-Path $repo 'addon/garrison/Scripts/Game/EXPG/EXPG_GarrisonManager.c')
+Assert ($garrison -match 'override\s+bool\s+DescribeExternalCache\s*\(\s*SCR_AIGroup\s+group,\s*out\s+string\s+moduleName,\s*out\s+string\s+cacheState\s*\)') 'Garrison must describe the squads it caches to the zone status'
+$trySleep = Get-Body $garrison 'protected\s+void\s+TrySleep\s*\('
+Assert ($trySleep -match 'if\s*\(\s*CacheModeInUse\(record\.Group\)\s*==\s*2\s*\)\s*\{\s*TryFullSleep\(record\);' -and $trySleep.Contains('"Simulation cached (CDF loaded)"')) 'Garrison Full must fall back to Simulation with a named status while CDF is loaded'
+Assert ((Get-Body $garrison 'int\s+CacheModeInUse\s*\(') -match 'mode\s*==\s*2\s*&&\s*CdfLoaded\(\)') 'CacheModeInUse must map Full to Simulation only while CDF is loaded'
+Assert ((Get-Body $garrison 'protected\s+bool\s+CdfLoaded\s*\(') -match '"6A1876F37D65AB09"') 'CdfLoaded must read the CDF Game Master Save identity'
+$cdfFixture = Read-Text (Join-Path $repo 'tests/EXPG_CdfFallbackGameplay.c')
+Assert ($cdfFixture -match [regex]::Escape("-FixturePath tests/EXPG_CdfFallbackGameplay.c -ExpectResult '\[EXPG CDF FALLBACK RESULT\] checks=[1-9]\d* failures=0 guards=4 fullCycle=1 simulationCycle=1 cdfLines=1 zoneNote=1 reason=completed'")) 'CDF fallback fixture header must carry its runner command'
+Assert ($cdfFixture -match 'PrintFormat\("\[EXPG CDF FALLBACK RESULT\] checks=%1 failures=%2 guards=%3 fullCycle=%4 simulationCycle=%5 cdfLines=%6 zoneNote=%7 reason=%8"') 'CDF fallback fixture must print the RESULT line its regex expects'
+Assert ($cdfFixture -match 'override\s+protected\s+bool\s+CdfLoaded\(\)' -and $cdfFixture -match 'class\s+EXPG_GarrisonGameplay\s*:\s*GenericEntity') 'CDF fallback fixture must use the CdfLoaded seam and the runner driver class'
+Assert (![regex]::IsMatch($cdfFixture, '\b(int|float|bool|string|vector|auto|IEntity)\s+(owned|Sleep|external)\b')) 'reserved Enforce name in the CDF fallback fixture'
+'PASS: Unit Caching zone explanations (enrollment refusals, left-squad soldiers, player characters inside the sleep radius, Full refusal, standalone mods, GM notice, squads a garrison caches itself) stay diagnostics only; Garrison Full falls back to Simulation under CDF; local-cache and CDF fallback fixtures wired.'

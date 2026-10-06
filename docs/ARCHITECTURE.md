@@ -27,9 +27,13 @@ The GM context action starts bounded building analysis while the native squad
 picker is open. Server validation owns the final selection, placement and roster.
 Keep no more than one pending operation and one garrison per building.
 
-Prefer authored sentinel positions, supplement with physically checked interior
-positions for entrances, windows and stairs. Clear positions 1-3 m behind windows
-or roughly 2 m from doors can watch openings blocked by nearby furniture.
+Prefer authored sentinel positions, then physically checked interior positions:
+window watchers (the nearest clear position 0.4-3 m from each window), then
+positions 1.5-2.5 m inside outer doors (a door with an enclosed room on one side
+only; interior doors are not watched), then entrance approaches and stair ends,
+then patrol nodes. Each kind is taken one per window or door and 2.5 m apart
+first, then 1.5 m apart; storeys take turns and each post goes where it is
+farthest from the posts already chosen, so a squad spreads over every floor.
 Every accepted position must be on
 the building floor, have character clearance and a connected entrance route.
 Nearby navmesh alone does not prove entrance connectivity. Reject uncertain
@@ -37,9 +41,15 @@ locations, disconnected floors and roof surfaces without a usable entrance path.
 Closed native doors with Soldier navigation links are traversable for planning;
 their frames, walls and furniture still block traces. Spawn occupancy never
 ignores a door leaf. Standing-volume overlap, structural support and interior
-volume checks prevent using furniture tops or exterior porch nodes as posts.
+volume checks prevent using furniture tops as posts. An authored interior volume
+can cover porches and entrance steps, so in a building whose indoor floor is
+mostly enclosed a post, patrol stop or added position also needs building walls
+on six of eight bearings at eye height; open sheds keep their roofed floor.
 The grid checks eight neighbors, including diagonals around furniture, with the
-same body sweep and intermediate floor checks on each connection. Patrols require
+same body sweep and intermediate floor checks on each connection. Stair treads
+and ramps, where the floor itself steps and a body fits above step height, are
+transit-only nodes; neighbouring stair nodes link up to 45 degrees when the floor
+between them climbs in steps of at most 0.3 m. Patrols require
 interior endpoints and a short interior segment; reachable exterior entrance
 nodes establish access but cannot become patrol destinations.
 Cancellation and unsupported buildings create no orphaned squads or reservations.
@@ -112,6 +122,13 @@ original design; no GME scripts, resources or generated positions are imported.
 The Garrison ledger supplies post/patrol ownership around Optimizer's existing
 Full survivor transaction. It is not a portable CDF snapshot bridge. Prepare for
 Save restores surviving soldiers and releases ordinary squads before admission.
+While CDF Game Master Save is loaded, `EXPG_GarrisonManager.CacheModeInUse` runs
+a garrison set to Full in Simulation (the GM's choice is kept): a CDF
+clear-before-load would delete a Full garrison's retained empty group (the
+record could never wake and would block every later save) or respawn its
+survivors into the loaded scene, while Simulation originals are deleted like any
+squad and the record releases. Unit Caching's zone status names squads a
+garrison caches itself through `EBG_CacheManager.DescribeExternalCache`.
 
 ## Unit Caching casualty cleanup
 Cleanup is per casualty. A dead, death-confirmed, never-possessed member's corpse
