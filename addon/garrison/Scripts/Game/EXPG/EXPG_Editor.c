@@ -29,6 +29,31 @@ class EXPG_Feedback
  }
 }
 
+// Server: one Game Master's EXPBG Add Garrison request waiting for the building's
+// plan (EXPG_GarrisonManager.Wait). Its events become owner RPCs of the picker.
+class EXPG_PickerWaiter : EXPG_PlanWaiter
+{
+ SCR_PlacingEditorComponent Picker;
+ int Nonce;
+
+ override void OnProgress(int percent, bool queued)
+ {
+  if (Picker) Picker.EXPG_WaitProgress(Nonce, percent, queued);
+ }
+
+ override bool OnReady()
+ {
+  if (!Picker)
+   return true;
+  return Picker.EXPG_WaitReady(Nonce);
+ }
+
+ override void OnFailed(string reason)
+ {
+  if (Picker) Picker.EXPG_WaitFailed(Nonce, reason);
+ }
+}
+
 [BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
 class EXPG_AddGarrisonContextAction : SCR_BaseContextAction
 {
@@ -89,6 +114,16 @@ modded class SCR_PlacingEditorComponent
  protected float m_EXPG_NextPrepare;
  protected bool m_EXPG_Selecting;
  protected EditorBrowserDialogUI m_EXPG_Dialog;
+ // Server: this request's wait for the building's plan.
+ protected ref EXPG_PickerWaiter m_EXPG_Waiter;
+ // Client: the request waiting for the analysis (the picker opens when it is ready).
+ protected int m_EXPG_WaitNonce;
+ protected IEntity m_EXPG_WaitBuilding;
+ protected SCR_EditorContentBrowserDisplayConfig m_EXPG_Browser;
+ protected ref SCR_HintUIInfo m_EXPG_WaitHint;
+ protected float m_EXPG_WaitHeard;
+ protected bool m_EXPG_WaitShown;
+ protected bool m_EXPG_WaitQueued;
 
  protected float EXPG_Now() { return GetGame().GetWorld().GetWorldTime() * 0.001; }
 
@@ -136,30 +171,73 @@ modded class SCR_PlacingEditorComponent
   if (!building) failure = "the building no longer exists";
   else if (!browser) failure = "the squad browser configuration is missing from the action";
   if (!failure.IsEmpty()) { EXPG_Feedback.Show("Picker not opened: " + failure + "."); return; }
+  // A second EXPBG Add Garrison while this Game Master waits for an analysis: on
+  // the same building it stops waiting (the server keeps analysing, so asking
+  // again continues from there); on another building it switches to that one.
+  if (m_EXPG_WaitNonce > 0)
+  {
+   bool sameBuilding = m_EXPG_WaitBuilding == building;
+   EXPG_EndWait(true);
+   if (sameBuilding) { EXPG_Feedback.Show("Stopped waiting for the structure analysis. It keeps running on the server; EXPBG Add Garrison on this building again continues from there."); return; }
+  }
   SetInstantPlacing(null);
   SetSelectedPrefab(ResourceName.Empty);
   SetPlacingFlag(EEditorPlacingFlags.CHARACTER_PLAYER, false);
   m_EXPG_NextNonce++;
   if (m_EXPG_NextNonce <= 0) m_EXPG_NextNonce = 1;
-  m_EXPG_ClientNonce = m_EXPG_NextNonce;
+  // The squad picker opens only once the server reports the building's plan
+  // ready (EXPG_OpenOwner, at once for an analysed building); until then the
+  // server sends the analysis progress for a hint (EXPG_ProgressOwner).
+  m_EXPG_WaitNonce = m_EXPG_NextNonce;
+  m_EXPG_WaitBuilding = building;
+  m_EXPG_Browser = browser;
+  m_EXPG_WaitHeard = EXPG_Now();
+  m_EXPG_WaitShown = false;
+  m_EXPG_WaitQueued = false;
+  m_EXPG_WaitHint = null;
+  GetGame().GetCallqueue().Remove(EXPG_WatchWait);
+  GetGame().GetCallqueue().CallLater(EXPG_WatchWait, 1000, true);
   RplId buildingRpl = RplId.Invalid();
   RplComponent rpl = RplComponent.Cast(building.FindComponent(RplComponent));
   if (rpl) buildingRpl = rpl.Id();
-  vector transform[4];
-  building.GetWorldTransform(transform);
-  super.SetInstantPlacing(SCR_EditorPreviewParams.CreateParams(transform));
-  if (!SCR_ContentBrowserEditorComponent.OpenBrowserLabelConfigInstance(browser))
-  {
-   // Clear the nonce first: the server never saw it, so no cancel is sent.
-   m_EXPG_ClientNonce = 0;
-   SetInstantPlacing(null);
-   EXPG_Feedback.Show("Picker not opened: the editor content browser is unavailable.");
-   return;
-  }
-  m_EXPG_Dialog = EXPG_FindBrowser();
-  // Not fatal: EXPG_PickerDialog finds the dialog again on selection.
-  if (!m_EXPG_Dialog) Print("[EXPG GARRISON] picker dialog not found right after opening; it will be looked up again on selection", LogLevel.WARNING);
-  Rpc(EXPG_BeginServer, m_EXPG_ClientNonce, buildingRpl, building.GetID(), building.GetOrigin());
+  Rpc(EXPG_BeginServer, m_EXPG_WaitNonce, buildingRpl, building.GetID(), building.GetOrigin());
+ }
+
+ // Client: stop waiting for the analysis (the server's analysis goes on).
+ protected void EXPG_EndWait(bool cancelServer)
+ {
+  GetGame().GetCallqueue().Remove(EXPG_WatchWait);
+  if (m_EXPG_WaitNonce <= 0) return;
+  if (cancelServer) Rpc(EXPG_CancelServer, m_EXPG_WaitNonce);
+  m_EXPG_WaitNonce = 0;
+  m_EXPG_WaitBuilding = null;
+  if (m_EXPG_WaitHint) SCR_HintManagerComponent.HideHint(m_EXPG_WaitHint);
+  m_EXPG_WaitHint = null;
+ }
+
+ // Client: the server reports progress at least every two seconds while it
+ // analyses; after 15 silent seconds stop waiting.
+ protected void EXPG_WatchWait()
+ {
+  if (m_EXPG_WaitNonce <= 0) { GetGame().GetCallqueue().Remove(EXPG_WatchWait); return; }
+  if (EXPG_Now() - m_EXPG_WaitHeard < 15) return;
+  EXPG_EndWait(true);
+  EXPG_Feedback.Show("No answer from the server about the structure analysis. Use EXPBG Add Garrison again.");
+ }
+
+ // Client: why an analysis that finished while the Game Master did something else
+ // must not open the picker now (it would cancel his placing or cover a window).
+ protected string EXPG_BusyReason()
+ {
+  if (IsPlacing())
+   return "you are placing another entity";
+  MenuManager menus = GetGame().GetMenuManager();
+  if (menus.IsAnyDialogOpen())
+   return "another editor window is open";
+  SCR_MenuEditorComponent editorMenu = SCR_MenuEditorComponent.Cast(SCR_MenuEditorComponent.GetInstance(SCR_MenuEditorComponent));
+  if (editorMenu && editorMenu.GetMenu() && menus.GetTopMenu() != editorMenu.GetMenu())
+   return "a menu is open over the editor";
+  return string.Empty;
  }
 
  override void SetInstantPlacing(SCR_EditorPreviewParams param)
@@ -233,21 +311,141 @@ modded class SCR_PlacingEditorComponent
    EXPG_Reject(nonce, "The selected building is no longer available.");
    return;
   }
-  SCR_PlacingEditorComponent other;
-  if (s_EXPG_Pickers.Find(building.GetID(), other) && other && other != this)
-  {
-   EXPG_Reject(nonce, "Another Game Master is choosing a garrison for this building.");
-   return;
-  }
   EXPG_GarrisonManager manager = EXPG_GarrisonManager.Get();
   if (!manager) { EXPG_Reject(nonce, "Garrison manager is unavailable."); return; }
   m_EXPG_Building = building;
   m_EXPG_BuildingID = building.GetID();
   m_EXPG_ServerNonce = nonce;
-  m_EXPG_Ticket.Start(nonce, now);
+  // Join (or start) the building's single analysis. EXPG_WaitReady opens the
+  // picker (at once when the plan is ready); another Game Master's request for
+  // the same building joins the same plan and waits while the first one chooses.
+  EXPG_PickerWaiter waiter = new EXPG_PickerWaiter();
+  waiter.Structure = building;
+  waiter.Picker = this;
+  waiter.Nonce = nonce;
+  m_EXPG_Waiter = waiter;
+  string reason;
+  if (!manager.Wait(waiter, reason))
+  {
+   EXPG_ClearServer();
+   EXPG_Reject(nonce, "Squad picker not opened: " + reason + ".");
+  }
+ }
+
+ // Server, from the building's analysis (EXPG_PickerWaiter): progress for the hint.
+ void EXPG_WaitProgress(int nonce, int percent, bool queued)
+ {
+  if (nonce == m_EXPG_ServerNonce) Rpc(EXPG_ProgressOwner, nonce, percent, queued);
+ }
+
+ // Server: the plan is ready. Opens the picker for this Game Master unless another
+ // one is choosing for the building (false: keep waiting). The 120 s selection
+ // ticket starts now, not when the analysis started.
+ bool EXPG_WaitReady(int nonce)
+ {
+  if (nonce != m_EXPG_ServerNonce || !m_EXPG_Building)
+   return true;
+  SCR_PlacingEditorComponent other;
+  if (s_EXPG_Pickers.Find(m_EXPG_BuildingID, other) && other && other != this)
+   return false;
+  string failure = EXPG_AuthorizationFailure();
+  if (!failure.IsEmpty())
+  {
+   EXPG_ClearServer();
+   EXPG_Reject(nonce, "Squad picker not opened: " + failure + ".");
+   return true;
+  }
+  m_EXPG_Waiter = null;
+  m_EXPG_Ticket.Start(nonce, EXPG_Now());
   s_EXPG_Pickers.Set(m_EXPG_BuildingID, this);
-  manager.Prepare(building);
+  GetGame().GetCallqueue().Remove(EXPG_ExpireServer);
   GetGame().GetCallqueue().CallLater(EXPG_ExpireServer, 120000, false);
+  Print(string.Format("[EXPG GARRISON] structure analysis ready; opening the squad picker for request %1", nonce));
+  Rpc(EXPG_OpenOwner, nonce);
+  return true;
+ }
+
+ // Server: the analysis failed or the building is gone; tell the Game Master why.
+ void EXPG_WaitFailed(int nonce, string reason)
+ {
+  if (nonce != m_EXPG_ServerNonce) return;
+  m_EXPG_Waiter = null;
+  EXPG_ClearServer();
+  EXPG_Reject(nonce, "Squad picker not opened: the structure analysis failed: " + reason + ".");
+ }
+
+ // Client: analysis progress. The first message (and a change to or from waiting
+ // for another Game Master) shows a hint and a chat line; later ones only refresh
+ // the hint while it is still on screen (the GM may hide it; other hints win).
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void EXPG_ProgressOwner(int nonce, int percent, bool queued)
+ {
+  if (nonce <= 0 || nonce != m_EXPG_WaitNonce) return;
+  m_EXPG_WaitHeard = EXPG_Now();
+  string text = "Analysing building structure... " + percent.ToString() + "%. The squad picker opens by itself when it is done; EXPBG Add Garrison on this building again cancels.";
+  if (queued) text = "Structure analysis complete. Another Game Master is choosing a garrison for this building; the squad picker opens when they are done. EXPBG Add Garrison on this building again cancels.";
+  SCR_HintManagerComponent hints = SCR_HintManagerComponent.GetInstance();
+  if (!m_EXPG_WaitShown || queued != m_EXPG_WaitQueued)
+  {
+   m_EXPG_WaitShown = true;
+   m_EXPG_WaitQueued = queued;
+   EXPG_Feedback.Show(text);
+   if (hints) m_EXPG_WaitHint = hints.GetCurrentHint();
+   return;
+  }
+  if (!hints || !m_EXPG_WaitHint || hints.GetCurrentHint() != m_EXPG_WaitHint) return;
+  SCR_HintManagerComponent.ShowCustomHint(text, "EXPBG Garrison", 8, true);
+  m_EXPG_WaitHint = hints.GetCurrentHint();
+ }
+
+ // Client: the building's plan is ready; open the squad picker.
+ [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
+ protected void EXPG_OpenOwner(int nonce)
+ {
+  if (nonce <= 0 || nonce != m_EXPG_WaitNonce)
+  {
+   Print(string.Format("[EXPG GARRISON] picker open ignored: request %1 is not the waiting request %2", nonce, m_EXPG_WaitNonce));
+   return;
+  }
+  IEntity building = m_EXPG_WaitBuilding;
+  SCR_EditorContentBrowserDisplayConfig browser = m_EXPG_Browser;
+  bool waited = m_EXPG_WaitShown;
+  EXPG_EndWait(false);
+  string failure = EXPG_AuthorizationFailure();
+  if (!building) failure = "the building no longer exists";
+  else if (!browser) failure = "the squad browser configuration is missing from the action";
+  if (!failure.IsEmpty())
+  {
+   Rpc(EXPG_CancelServer, nonce);
+   EXPG_Feedback.Show("Picker not opened: " + failure + ".");
+   return;
+  }
+  // After a wait the Game Master may be busy: never cancel his placing or cover
+  // another window. The building is analysed, so asking again opens at once.
+  string busy;
+  if (waited) busy = EXPG_BusyReason();
+  if (!busy.IsEmpty())
+  {
+   Rpc(EXPG_CancelServer, nonce);
+   EXPG_Feedback.Show("Structure analysis complete, but the squad picker was not opened because " + busy + ". EXPBG Add Garrison on this building now opens it at once.");
+   return;
+  }
+  m_EXPG_ClientNonce = nonce;
+  SetPlacingFlag(EEditorPlacingFlags.CHARACTER_PLAYER, false);
+  vector transform[4];
+  building.GetWorldTransform(transform);
+  super.SetInstantPlacing(SCR_EditorPreviewParams.CreateParams(transform));
+  if (!SCR_ContentBrowserEditorComponent.OpenBrowserLabelConfigInstance(browser))
+  {
+   // The server holds this request's ticket: SetInstantPlacing(null) cancels it.
+   SetInstantPlacing(null);
+   EXPG_Feedback.Show("Picker not opened: the editor content browser is unavailable.");
+   return;
+  }
+  m_EXPG_Dialog = EXPG_FindBrowser();
+  // Not fatal: EXPG_PickerDialog finds the dialog again on selection.
+  if (!m_EXPG_Dialog) Print("[EXPG GARRISON] picker dialog not found right after opening; it will be looked up again on selection", LogLevel.WARNING);
+  if (waited) EXPG_Feedback.Show("Structure analysis complete. Choose the squad.");
  }
 
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
@@ -267,6 +465,14 @@ modded class SCR_PlacingEditorComponent
  protected void EXPG_ClearServer()
  {
   GetGame().GetCallqueue().Remove(EXPG_ExpireServer);
+  // Stop waiting; the building's analysis itself goes on for other requests.
+  if (m_EXPG_Waiter)
+  {
+   EXPG_GarrisonManager manager = EXPG_GarrisonManager.Get();
+   if (manager) manager.StopWaiting(m_EXPG_Waiter);
+   m_EXPG_Waiter.Finished = true;
+   m_EXPG_Waiter = null;
+  }
   SCR_PlacingEditorComponent owner;
   if (s_EXPG_Pickers.Find(m_EXPG_BuildingID, owner) && owner == this) s_EXPG_Pickers.Remove(m_EXPG_BuildingID);
   m_EXPG_Ticket.Cancel(m_EXPG_ServerNonce);
@@ -407,6 +613,8 @@ modded class SCR_PlacingEditorComponent
  [RplRpc(RplChannel.Reliable, RplRcver.Owner)]
  protected void EXPG_CompleteOwner(int nonce)
  {
+  // A refused or failed request that was still waiting for the analysis.
+  if (nonce > 0 && nonce == m_EXPG_WaitNonce) { EXPG_EndWait(false); return; }
   if (nonce != m_EXPG_ClientNonce)
   {
    Print(string.Format("[EXPG GARRISON] picker completion ignored: request %1 is not the open request %2", nonce, m_EXPG_ClientNonce));
@@ -422,6 +630,7 @@ modded class SCR_PlacingEditorComponent
 
  override void EOnEditorDeactivate()
  {
+  EXPG_EndWait(true);
   SetInstantPlacing(null);
   super.EOnEditorDeactivate();
  }

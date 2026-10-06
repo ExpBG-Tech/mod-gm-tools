@@ -22,10 +22,15 @@ their original repositories at the commits recorded in `tools/pack.json`.
 
 ## Product contract
 
-One native SCR_AIGroup per building. All retained infantry remain members of it.
-The GM context action starts bounded building analysis while the native squad
-picker is open. Server validation owns the final selection, placement and roster.
-Keep no more than one pending operation and one garrison per building.
+One native SCR_AIGroup per garrison. All retained infantry remain members of it.
+The GM context action starts (or joins) the building's one bounded analysis and
+opens the native squad picker only when the plan is ready; until then the server
+sends that Game Master the analysis progress (owner RPCs). Plans are cached per
+building, never per building type (the result depends on terrain, neighbours,
+doors and damage). Server validation owns the final selection, placement and
+roster. Keep no more than one open squad picker per building (later requests
+wait for it, oldest first). Each EXPBG Add Garrison on a garrisoned building adds
+another independent garrison that shares the building's plan.
 
 Prefer authored sentinel positions, then physically checked interior positions:
 window watchers (the nearest clear position 0.4-3 m from each window), then

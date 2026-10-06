@@ -84,6 +84,8 @@ class EXPG_BuildingPlan
  bool Done;
  string Error;
  float LastUsed;
+ // Last time a Game Master waited for this analysis (EXPG_GarrisonManager.Wait).
+ float WaitedAt = -1000;
  protected int m_Width;
  protected int m_Depth;
  protected int m_Column;
@@ -609,7 +611,7 @@ class EXPG_BuildingPlan
  {
   foreach (EXPG_BuildingOpening opening : m_Openings)
   {
-   if (!opening.Door) continue;
+   if (!opening.Door || !opening.Part) continue;
    vector door = opening.Position;
    if (door[1] < point[1] + 0.2 || door[1] > point[1] + 2.5 || vector.DistanceXZ(door, point) > 2.0) continue;
    vector frame[4]; opening.Part.GetWorldTransform(frame);
@@ -691,6 +693,34 @@ class EXPG_BuildingPlan
    else if (m_Phase == 3) { ScoreOne(); }
    else { SelectSlots(); Done = true; }
   }
+ }
+
+ // Analysis progress from 0 to 1 for the Game Master's hint: sampling counts
+ // 45 %, linking 20 %, scoring 35 % of the bar, each by its own position
+ // (columns or nodes done of the total), so the value never decreases. It stays
+ // below 1 until the plan is done (with or without an error).
+ float Progress()
+ {
+  if (Done) return 1;
+  float nodes = Nodes.Count();
+  if (m_Phase == 0)
+  {
+   float columns = Columns.Count();
+   if (columns < 1) return 0;
+   return 0.45 * Math.Min(1, m_Column * 1.0 / columns);
+  }
+  if (m_Phase == 1)
+  {
+   if (nodes < 1) return 0.65;
+   return 0.45 + 0.2 * Math.Min(1, m_Node * 1.0 / nodes);
+  }
+  if (m_Phase == 2) return 0.65;
+  if (m_Phase == 3)
+  {
+   if (nodes < 1) return 0.99;
+   return 0.65 + 0.34 * Math.Min(1, m_Node * 1.0 / nodes);
+  }
+  return 0.99;
  }
 
  protected void SampleColumn()

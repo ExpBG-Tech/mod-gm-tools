@@ -171,6 +171,46 @@ class EXPG_Placement
  int Kind;
 }
 
+// One EXPBG Add Garrison request waiting for its building's analysis before the
+// squad picker opens. Every request for a building joins that building's single
+// plan (a second request or a second Game Master never starts another analysis).
+// The manager calls these on the server; the editor's subclass sends owner RPCs.
+class EXPG_PlanWaiter
+{
+ IEntity Structure;
+ ref EXPG_BuildingPlan Plan;
+ bool Finished;
+ int Percent = -1;
+ bool Queued;
+ float Sent = -1000;
+
+ // Rate limited: a new percentage at most four times a second, the same one again
+ // every two seconds (the Game Master's client gives up after 15 silent seconds).
+ void Report(float progress, bool queued, float now)
+ {
+  int percent = Math.Floor(Math.Clamp(progress, 0, 1) * 100);
+  if (queued == Queued && percent == Percent && now - Sent < 2) return;
+  if (queued == Queued && now - Sent < 0.25) return;
+  Percent = percent;
+  Queued = queued;
+  Sent = now;
+  OnProgress(percent, queued);
+ }
+
+ // Whole percent of the analysis; queued: the plan is ready, but another Game
+ // Master is choosing a garrison for this building.
+ void OnProgress(int percent, bool queued) {}
+
+ // The plan is ready (once per request). False keeps waiting (queued).
+ bool OnReady()
+ {
+  return true;
+ }
+
+ // The analysis failed or cannot go on; the reason is for the Game Master.
+ void OnFailed(string reason) {}
+}
+
 class EXPG_GarrisonManager
 {
  protected static ref EXPG_GarrisonManager s_Instance;
@@ -178,6 +218,9 @@ class EXPG_GarrisonManager
  protected ref array<ref EXPG_BuildingPlan> m_Plans = {};
  protected ref array<ref EXPG_GarrisonRecord> m_Records = {};
  protected ref array<IEntity> m_Players = {};
+ protected ref array<ref EXPG_PlanWaiter> m_Waiters = {};
+ protected string m_PrepareFailure;
+ protected int m_AnalysisCursor;
  protected int m_PlanCursor;
  protected int m_RecordCursor;
  protected float m_NextPlayers;
@@ -300,24 +343,146 @@ class EXPG_GarrisonManager
   return null;
  }
 
- void Prepare(IEntity building)
+ // Plans are cached per building, never per building type: a plan is reused
+ // while its building has not moved, kept while a garrison uses it and for two
+ // minutes after the last request. A plan of one house cannot stand in for
+ // another house of the same prefab, not even in the house's local space: the
+ // entrance tests walk out to the terrain and read its height (Entrance,
+ // DoorEntrance, WalkOut), open window views trace 4 m beyond the walls and see
+ // neighbouring houses, walls and trees, terrain on a slope or inside a barn and
+ // map objects that overlap the bounds change floors and body clearance, open or
+ // closed doors and broken windows change the enclosure test, a composition
+ // parent changes which entities count as the building, and the destruction
+ // state changes the geometry. Re-checking only those parts would repeat nearly
+ // every trace, so a per-type cache would be wrong somewhere or barely faster.
+ // A Game Master waiting for a new building sees the progress instead (Wait).
+ // Returns the building's plan (running, finished, or kept by a garrison although
+ // the building moved: callers check Valid), or null with m_PrepareFailure.
+ EXPG_BuildingPlan Prepare(IEntity building)
  {
-  if (!building || !SCR_DestructibleBuildingEntity.Cast(building)) { return; }
+  m_PrepareFailure = "that is not a supported building";
+  if (!building || !SCR_DestructibleBuildingEntity.Cast(building)) { return null; }
   EXPG_BuildingPlan existing = FindPlan(building);
   if (existing)
   {
-   if (existing.Valid()) { existing.LastUsed = Now(); return; }
+   if (existing.Valid()) { existing.LastUsed = Now(); return existing; }
    foreach (EXPG_GarrisonRecord record : m_Records)
    {
-    if (record.Plan == existing && !record.Finished) { return; }
+    if (record.Plan == existing && !record.Finished) { return existing; }
    }
    m_Plans.RemoveItem(existing);
   }
-  if (m_Plans.Count() >= 64) { return; }
+  m_PrepareFailure = "64 buildings are already being analysed or garrisoned; try again in two minutes";
+  if (m_Plans.Count() >= 64) { return null; }
   EXPG_BuildingPlan plan = new EXPG_BuildingPlan();
   plan.Begin(building);
   plan.LastUsed = Now();
   m_Plans.Insert(plan);
+  return plan;
+ }
+
+ // EXPBG Add Garrison: wait for the building's analysis, joining the running one
+ // or starting it. A ready plan calls OnReady before this returns; otherwise the
+ // pump reports progress and calls OnReady or OnFailed once. False (with the
+ // reason) when no plan can be made.
+ bool Wait(EXPG_PlanWaiter waiter, out string reason)
+ {
+  reason = "the request is incomplete";
+  if (!waiter || !waiter.Structure || waiter.Finished) { return false; }
+  EXPG_BuildingPlan plan = Prepare(waiter.Structure);
+  reason = m_PrepareFailure;
+  if (!plan) { return false; }
+  reason = "";
+  waiter.Plan = plan;
+  m_Waiters.Insert(waiter);
+  ServiceWaiter(waiter);
+  if (waiter.Finished) { m_Waiters.RemoveItem(waiter); }
+  return true;
+ }
+
+ // The Game Master cancelled or left; the analysis itself goes on.
+ void StopWaiting(EXPG_PlanWaiter waiter)
+ {
+  if (!waiter) { return; }
+  waiter.Finished = true;
+  m_Waiters.RemoveItem(waiter);
+ }
+
+ int WaiterCount(IEntity building)
+ {
+  int count;
+  foreach (EXPG_PlanWaiter waiter : m_Waiters)
+  {
+   if (!waiter.Finished && waiter.Structure == building) { count++; }
+  }
+  return count;
+ }
+
+ protected void ServiceWaiter(EXPG_PlanWaiter waiter)
+ {
+  IEntity building = waiter.Structure;
+  EXPG_BuildingPlan plan = waiter.Plan;
+  string failure;
+  if (!building || building.IsDeleted()) { failure = "the building no longer exists"; }
+  else if (!plan || FindPlan(building) != plan) { failure = "the building's analysis was discarded; use EXPBG Add Garrison again"; }
+  else if (plan.Done && !plan.Valid()) { failure = "the building moved while it was analysed; use EXPBG Add Garrison again"; }
+  else if (plan.Done && !plan.Error.IsEmpty()) { failure = plan.Error; }
+  if (!failure.IsEmpty())
+  {
+   waiter.Finished = true;
+   waiter.OnFailed(failure);
+   return;
+  }
+  plan.LastUsed = Now();
+  plan.WaitedAt = Now();
+  if (!plan.Done) { waiter.Report(plan.Progress(), false, Now()); return; }
+  // A request that showed progress sees it reach 100 %; a cached plan opens silently.
+  if (waiter.Percent >= 0 && waiter.Percent < 100 && !waiter.Queued)
+  {
+   waiter.Percent = 100;
+   waiter.Sent = Now();
+   waiter.OnProgress(100, false);
+  }
+  if (waiter.OnReady()) { waiter.Finished = true; return; }
+  waiter.Report(1, true, Now());
+ }
+
+ // Oldest request first: when a plan becomes ready, the Game Master who asked
+ // first gets the squad picker and later requests for the building queue behind
+ // him. A waiter's event can stop its own request (removed here or by
+ // StopWaiting); the index then stays on the request that moved into its place.
+ protected void ServiceWaiters()
+ {
+  int i = 0;
+  while (i < m_Waiters.Count())
+  {
+   EXPG_PlanWaiter waiter = m_Waiters[i];
+   if (!waiter.Finished) { ServiceWaiter(waiter); }
+   if (waiter.Finished) { m_Waiters.RemoveItem(waiter); continue; }
+   i++;
+  }
+ }
+
+ // The plan analysed in this pump: one a Game Master waits for first (round robin
+ // between several), otherwise the first unfinished plan. Finished plans never
+ // take the turn, so garrisoned buildings no longer slow a new analysis down.
+ protected EXPG_BuildingPlan NextAnalysis()
+ {
+  EXPG_BuildingPlan fallback;
+  int count = m_Plans.Count();
+  for (int offset = 0; offset < count; offset++)
+  {
+   int index = (m_AnalysisCursor + offset) % count;
+   EXPG_BuildingPlan plan = m_Plans[index];
+   if (plan.Done) { continue; }
+   if (Now() - plan.WaitedAt < 1)
+   {
+    m_AnalysisCursor = index + 1;
+    return plan;
+   }
+   if (!fallback) { fallback = plan; }
+  }
+  return fallback;
  }
 
  static bool SaveInProgress()
@@ -1072,16 +1237,19 @@ class EXPG_GarrisonManager
   if (Now() >= m_NextPlayers) { Players(); m_NextPlayers = Now() + 1; }
   if (!m_Plans.IsEmpty())
   {
-   m_PlanCursor = m_PlanCursor % m_Plans.Count();
-   EXPG_BuildingPlan plan = m_Plans[m_PlanCursor++];
    // About 4 ms of analysis per 100 ms pump: large buildings finish in seconds
    // instead of minutes, and one expensive step batch cannot stall a frame.
+   EXPG_BuildingPlan analysing = NextAnalysis();
    int analysisStart = System.GetTickCount();
-   while (!plan.Done && System.GetTickCount() - analysisStart < 4) { plan.Step(8); }
+   while (analysing && !analysing.Done && System.GetTickCount() - analysisStart < 4) { analysing.Step(8); }
+   // One plan per pump is checked for eviction (a waiting request keeps its plan used).
+   m_PlanCursor = m_PlanCursor % m_Plans.Count();
+   EXPG_BuildingPlan plan = m_Plans[m_PlanCursor++];
    bool used;
    foreach (EXPG_GarrisonRecord record : m_Records) { if (record.Plan == plan && !record.Finished) { used = true; break; } }
    if (!used && Now() - plan.LastUsed > 120) { m_Plans.RemoveItem(plan); }
   }
+  ServiceWaiters();
   int serviceCount = Math.Min(4, m_Records.Count());
   for (int i = 0; i < serviceCount && !m_Records.IsEmpty(); i++)
   {

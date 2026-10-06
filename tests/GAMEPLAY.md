@@ -156,6 +156,28 @@ nine Village slots must be re-measured.
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_PostSpreadGameplay.c -ExpectResult '\[EXPG SPREAD RESULT\] checks=[1-9]\d* failures=0 slots=[1-9]\d* storeys=[2-9] windowSlots=[1-9]\d* doorSlots=\d+ guards=12 postStoreys=[2-9] outside=0 around=0 crowded=0 reason=completed' -TimeoutSeconds 420 -OrchestratorSlotGranted
 ```
 
+`EXPG_ScanProgressGameplay.c` (custom fixture, same driver name and house) covers
+the 0.1.8 live report of squad choices refused for about 90 s while a two-storey
+house was still being analysed. It drives the server seam of the deferred squad
+picker, `EXPG_GarrisonManager.Wait` with test waiters (the editor's waiter turns
+the same events into owner RPCs: progress hint, picker). Request A starts the
+analysis, B (a second Game Master) joins it, C cancels at once, D joins past
+30 %. Checks: one plan for the building; the plan's progress (sampled every
+0.5 s) and every reported percentage never decrease and reach 100; the ready
+event fires exactly once per request (B is held twice as if another Game Master
+were choosing, reports the queued state, then fires once); C hears nothing; D
+starts at the running percentage; a request on the analysed building (E) is
+ready inside `Wait` without progress; a request whose building is deleted (F)
+fails once with a reason. Plans stay per building (no per-type cache), so there
+is no type-cache case. Deadline 300 s. No players, GM UI or squads: the owner
+RPCs, the hint and the picker opening need GM acceptance. Source reviewed;
+native execution pending. `tests/Test-ScanProgress.ps1` guards the deferred
+picker flow and this fixture's wiring portably.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_ScanProgressGameplay.c -ExpectResult '\[EXPG SCAN RESULT\] checks=[1-9]\d* failures=0 samples=[1-9]\d* decreases=0 plans=1 joined=1 readyA=1 readyB=1 queuedB=1 readyD=1 cancelled=0 cachedReady=1 cachedProgress=0 failedF=1 reason=completed' -TimeoutSeconds 420 -OrchestratorSlotGranted
+```
+
 `EXPG_CdfFallbackGameplay.c` (custom fixture, same driver name and house) covers
 Garrison caching with CDF loaded. The fixture modset has no CDF, so its one seam
 overrides `EXPG_GarrisonManager.CdfLoaded()`; player presence is one injected

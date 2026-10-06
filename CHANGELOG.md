@@ -1,5 +1,42 @@
 # EXPBG GM Tools changelog
 
+## 0.1.9
+
+- AI Surrender: a prisoner who gave away squads could answer "He insists there
+  is nobody else out here." although a squad of his side stood a few hundred
+  metres away (seen in Morton with a large mod set). The search walked every
+  moving object in the radius (props, wrecks, vehicles, dropped weapons and the
+  gear every soldier and civilian carries) and gave up after 2048 of them, in
+  no particular order, so in a busy town it could stop before reaching the
+  squad. It now reads the squads directly from the AI, once per answer, so the
+  nearest living squad of his side (or of a friendly military side) within the
+  radius is always found however crowded the area; civilians of a friendly
+  side never count, and his own remnants are still named only when nothing
+  else is near. Squads that Unit Caching or Garrison holds in Full cache have
+  no soldiers in the world while they sleep and are still not revealed.
+- Garrison: EXPBG Add Garrison on a building that has not been analysed yet
+  no longer opens the squad picker straight away, only to refuse the squad
+  choice ("Structure analysis is still running"; about 90 s on a large
+  two-storey house). The picker now opens by itself once the structure
+  analysis is done; until then a hint (and a chat line) shows "Analysing
+  building structure... NN%" with the real progress. EXPBG Add Garrison on the
+  same building again stops waiting; the analysis keeps running, so asking
+  again later continues from there. A failed analysis says why. A second
+  request or a second Game Master on the same building joins the running
+  analysis instead of starting another; while one Game Master is choosing a
+  squad for the building, the next request waits (it was refused before) and
+  its picker opens when the first is done, oldest request first. If the
+  analysis finishes while the Game Master is placing something or another
+  window or menu is open, the picker stays closed and EXPBG Add Garrison opens
+  it at once. Analysed buildings open the picker at once, as before. Buildings
+  already analysed or garrisoned no longer take turns with a new analysis:
+  each one stretched it (the likely cause of the 90 s; a native fixture
+  analyses a similar house in about 10 s). The analysis results are unchanged;
+  a door destroyed while its building is analysed is now skipped instead of
+  stopping the analysis with a script error.
+  Results stay cached per building, not per building type: they depend on the
+  terrain, neighbouring objects, door states and damage around each house.
+
 ## 0.1.8
 
 - Ambient Destruction: road wrecks no longer stand in a line on the road's

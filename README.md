@@ -55,7 +55,10 @@ The only dependency is the base game (`58D0FB3206B6F859`).
 ## Modules
 
 - **Garrison**: right-click a building, choose **EXPBG Add Garrison** and select an
-  infantry squad. One squad takes reachable fixed guard posts and patrols
+  infantry squad. On a building not analysed yet the squad picker opens by
+  itself once the structure analysis is done; until then a hint shows its
+  progress, and EXPBG Add Garrison on the same building again stops waiting.
+  One squad takes reachable fixed guard posts and patrols
   indoors: window posts first, then just inside the outer doors, spread over
   every floor the stairs reach and at least 1.5 m apart, never on porches or
   entrance steps. A freshly spawned squad larger than the safe capacity is trimmed;

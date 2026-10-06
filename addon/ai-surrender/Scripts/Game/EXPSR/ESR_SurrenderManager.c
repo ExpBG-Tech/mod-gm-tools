@@ -785,12 +785,19 @@ class ESR_SurrenderManager
   Faction side;
   FactionManager factions = GetGame().GetFactionManager();
   if (factions && !prisoner.SideKey.IsEmpty()) side = factions.GetFactionByKey(prisoner.SideKey);
-  if (!side) return OUTCOME_NO_SQUAD;
+  if (!side)
+  {
+   Trace(string.Format("reveal by %1: no faction for side key '%2'", prisoner.Character, prisoner.SideKey));
+   return OUTCOME_NO_SQUAD;
+  }
+  int radius = ESR_Settings.Get(ESR_Settings.RADIUS);
   ESR_SquadQuery query = new ESR_SquadQuery(side, prisoner.Group);
-  GetGame().GetWorld().QueryEntitiesBySphere(origin, ESR_Settings.Get(ESR_Settings.RADIUS), query.Add, null, EQueryEntitiesFlags.DYNAMIC);
+  query.Collect(origin, radius);
   vector center;
   int count;
-  if (!query.Nearest(origin, center, count)) return OUTCOME_NO_SQUAD;
+  bool found = query.Nearest(origin, center, count);
+  Trace(string.Format("reveal by %1 side=%2 radius=%3: agents=%4 groups=%5 squads=%6 found=%7 count=%8 at %9", prisoner.Character, prisoner.SideKey, radius, query.AgentCount(), query.GroupCount(), query.SquadCount(), found, count, center));
+  if (!found) return OUTCOME_NO_SQUAD;
   vector offset = center - origin;
   float distance = vector.DistanceXZ(origin, center);
   int rounded = Math.Round(distance / 25);
@@ -866,15 +873,31 @@ class ESR_SurrenderManager
  }
 }
 
-// Collects squads of the prisoner's side around him (dynamic entities only, bounded).
+// Finds the squad a prisoner can give away: the nearest living squad of his side (or of a
+// friendly military side), not his own and without players, with a living soldier inside
+// the radius; his own remnants only when nothing else is near. One pass per answer that
+// reveals. Squads are read from the AI world's agent list (soldiers and groups), each
+// group once, so props, wrecks, vehicles, dropped weapons and the gear every soldier and
+// civilian carries never count against the bound. 0.1.8 used a sphere query over dynamic
+// entities instead; it visits attached gear too, in no particular order, and stopped after
+// 2048 entities, so in a busy town it never reached a squad 180 m away ("nobody else").
+// Squads in Full cache (Unit Caching or Garrison) have no soldiers in the world while they
+// sleep, and neither module offers a read-only API for them (only internal records), so
+// they are never revealed.
+// Squads cached in Simulation (Unit Caching, Garrison) keep their soldiers and count.
 class ESR_SquadQuery
 {
- static const int MAX_VISITED = 2048;
- static const int MAX_SQUADS = 32;
+ // Agents read per answer: far beyond any AI count a server can run.
+ static const int MAX_AGENTS = 16384;
  protected Faction m_Side;
  protected SCR_AIGroup m_Own;
- protected ref array<SCR_AIGroup> m_aSquads = {};
- protected int m_iVisited;
+ protected bool m_bFound;
+ protected float m_fBest;
+ protected vector m_vCenter;
+ protected int m_iCount;
+ protected int m_iAgents;
+ protected int m_iGroups;
+ protected int m_iSquads;
 
  void ESR_SquadQuery(Faction side, SCR_AIGroup own)
  {
@@ -882,62 +905,119 @@ class ESR_SquadQuery
   m_Own = own;
  }
 
- bool Add(IEntity entity)
+ // Diagnostics: agents read, distinct groups seen, qualifying squads.
+ int AgentCount()
  {
-  m_iVisited++;
-  if (m_iVisited > MAX_VISITED || m_aSquads.Count() >= MAX_SQUADS) return false;
-  SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(entity);
-  if (!character) return true;
-  CharacterControllerComponent controller = character.GetCharacterController();
-  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE) return true;
-  SCR_AIGroup group = ESR_SurrenderManager.GroupOf(character);
-  if (!group || m_aSquads.Contains(group) || group.GetPlayerCount(true) > 0) return true;
-  Faction faction = group.GetFaction();
-  if (!faction || (faction != m_Side && !m_Side.IsFactionFriendly(faction))) return true;
-  m_aSquads.Insert(group);
+  return m_iAgents;
+ }
+
+ int GroupCount()
+ {
+  return m_iGroups;
+ }
+
+ int SquadCount()
+ {
+  return m_iSquads;
+ }
+
+ void Collect(vector origin, float radius)
+ {
+  m_bFound = false;
+  m_iAgents = 0;
+  m_iGroups = 0;
+  m_iSquads = 0;
+  if (!m_Side || !GetGame()) return;
+  AIWorld world = GetGame().GetAIWorld();
+  if (!world) return;
+  array<AIAgent> agents = {};
+  world.GetAIAgents(agents);
+  int total = agents.Count();
+  if (total > MAX_AGENTS) total = MAX_AGENTS;
+  float radiusSq = radius * radius;
+  set<SCR_AIGroup> visited = new set<SCR_AIGroup>();
+  for (int i = 0; i < total; i++)
+  {
+   AIAgent agent = agents[i];
+   m_iAgents++;
+   if (!agent) continue;
+   // The list holds groups and soldiers alike; a soldier stands for his group.
+   SCR_AIGroup group = SCR_AIGroup.Cast(agent);
+   if (!group) group = SCR_AIGroup.Cast(agent.GetParentGroup());
+   if (!group || group == m_Own || visited.Contains(group)) continue;
+   visited.Insert(group);
+   m_iGroups++;
+   if (group.GetPlayerCount(true) > 0) continue;
+   vector center = vector.Zero;
+   float nearestSq = 0;
+   Faction memberFaction = null;
+   int living = Living(group, origin, center, nearestSq, memberFaction);
+   if (living <= 0 || nearestSq > radiusSq) continue;
+   // A group without a faction key of its own takes its soldiers' side.
+   Faction faction = group.GetFaction();
+   if (!faction) faction = memberFaction;
+   if (!IsAlly(faction)) continue;
+   m_iSquads++;
+   float distance = vector.DistanceSq(origin, center);
+   if (m_bFound && distance >= m_fBest) continue;
+   m_bFound = true;
+   m_fBest = distance;
+   m_vCenter = center;
+   m_iCount = living;
+  }
+ }
+
+ // His side, or a friendly side; a friendly non-military side (civilians) is no squad.
+ protected bool IsAlly(Faction faction)
+ {
+  if (!faction) return false;
+  if (faction == m_Side) return true;
+  if (!m_Side.IsFactionFriendly(faction)) return false;
+  SCR_Faction scripted = SCR_Faction.Cast(faction);
+  if (scripted && !scripted.IsMilitary()) return false;
   return true;
  }
 
  // Nearest squad other than his own; his own remnants only when nothing else is near.
  bool Nearest(vector origin, out vector center, out int count)
  {
-  bool found;
-  float best;
-  foreach (SCR_AIGroup group : m_aSquads)
+  if (m_bFound)
   {
-   if (!group || group == m_Own) continue;
-   vector groupCenter;
-   int living = Living(group, groupCenter);
-   if (living <= 0) continue;
-   float distance = vector.DistanceSq(origin, groupCenter);
-   if (found && distance >= best) continue;
-   found = true;
-   best = distance;
-   center = groupCenter;
-   count = living;
+   center = m_vCenter;
+   count = m_iCount;
+   return true;
   }
-  if (found || !m_Own) return found;
+  if (!m_Own) return false;
   vector ownCenter;
-  int ownLiving = Living(m_Own, ownCenter);
+  float ownNearestSq;
+  Faction ownFaction;
+  int ownLiving = Living(m_Own, origin, ownCenter, ownNearestSq, ownFaction);
   if (ownLiving <= 0) return false;
   center = ownCenter;
   count = ownLiving;
   return true;
  }
 
- protected static int Living(SCR_AIGroup group, out vector center)
+ protected static int Living(SCR_AIGroup group, vector origin, out vector center, out float nearestSq, out Faction faction)
  {
   array<AIAgent> agents = {};
   group.GetAgents(agents);
-  int living;
-  vector sum;
+  int living = 0;
+  vector sum = vector.Zero;
+  center = vector.Zero;
+  nearestSq = float.MAX;
+  faction = null;
   foreach (AIAgent agent : agents)
   {
    if (!agent) continue;
    SCR_ChimeraCharacter member = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!member || !member.GetCharacterController() || member.GetCharacterController().GetLifeState() == ECharacterLifeState.DEAD) continue;
+   vector position = member.GetOrigin();
    living++;
-   sum = sum + member.GetOrigin();
+   sum = sum + position;
+   float distanceSq = vector.DistanceSq(origin, position);
+   if (distanceSq < nearestSq) nearestSq = distanceSq;
+   if (!faction) faction = member.GetFaction();
   }
   if (living > 0) center = sum * (1.0 / living);
   return living;

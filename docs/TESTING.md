@@ -297,12 +297,12 @@ unvalidated payload as a completed release.
 | --- | --- |
 | Portable tooling | Test-Tools.ps1 exit 0; staging contains only runtime inputs |
 | Native compile/import | build.ps1 exit 0, owned script/resource errors absent |
-| GM transaction | Right-click building, picker, cancel/retry, exactly one squad |
+| GM transaction | Right-click building; on a new building the analysis progress hint, then the picker by itself (at once on an analysed one); cancel by a second Add Garrison, retry; a second GM on the same building joins the analysis and waits for the first one's picker; exactly one squad |
 | Placement | Windows/doors/stairs, rotations, disconnected floor and roof rejection |
 | Behavior | Guards hold during combat while aiming/firing/crouching; overflow stays inside |
 | Orders | Real Force Move releases active/cached/restoring squads permanently |
 | Caching | Simulation retains original actors; two Full cycles preserve captured transforms/assignments and exclude casualties, no duplicate owner |
-| Lifecycle | Collapse, deletion, possession, transfer, GM disconnect during picker |
+| Lifecycle | Collapse, deletion, possession, transfer, GM disconnect during the analysis wait or the picker |
 | Ownership transfer | Both directions between Optimizer and Garrison while sleeping; pending regroup cannot commit until original snapshots and controls release |
 | Save admission | No intermediate Ready publication; Enable/Resume stays blocked until release; native GM and Optimizer-CDF export refusal |
 | Multiplayer | Dedicated server/client and JIP agree on one group and state |
