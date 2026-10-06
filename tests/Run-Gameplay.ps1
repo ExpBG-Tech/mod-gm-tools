@@ -6,6 +6,9 @@ param(
  [switch]$BodyClearance,
  [switch]$UnitCleanup,
  [string]$FixturePath = '',
+ # For fixtures with their own result line: a regex for exactly one passing result line,
+ # e.g. '\[EUS TEST RESULT\] checks=[1-9]\d* failures=0 reason=completed'.
+ [string]$ExpectResult = '',
  [ValidateRange(300,600)][int]$TimeoutSeconds = 360
 )
 $ErrorActionPreference = 'Stop'
@@ -58,7 +61,18 @@ function Test-UnitCleanupEvidence([string]$Text) {
   ($Text -match '\[EBG CLEANUP TEST SNAPSHOT\] case=sim-death-while-cached heldWhileCached=1 restored=1 deletedByEbg=1' -or
    $Text -match '\[EBG CLEANUP TEST SNAPSHOT\] case=sim-death-while-cached knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0')
 }
+function Test-CustomResultEvidence([string]$Text, [string]$Pattern) {
+ # Generic verdict for module fixtures: one distinct passing result line, clean shutdown,
+ # no script errors before it (same stock GM_Eden teardown tolerance after the result).
+ $lines = @([regex]::Matches($Text, $Pattern) | ForEach-Object { $_.Value.TrimEnd() } | Sort-Object -Unique)
+ if ($lines.Count -ne 1) { return $false }
+ $result = [regex]::Match($Text, $Pattern).Index
+ $checked = $Text.Substring(0, $result) + ($Text.Substring($result) -replace "(?m)^.*SCRIPT\s+\(E\): 'SCR_BaseResupplySupportStationComponent' needs a entity catalog manager!\r?$", '')
+ return $Text -match 'Game destroyed' -and $checked -notmatch 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed|ENGINE\s+\(F\): Crashed'
+}
 if (!$OrchestratorSlotGranted) { throw 'Explicit orchestrator native-slot handoff required. This launches a diagnostic server.' }
+if ($ExpectResult -and ($FreshTrim -or $BodyClearance -or $UnitCleanup)) { throw 'ExpectResult is for custom fixtures only.' }
+if ($ExpectResult -and !$FixturePath) { throw 'ExpectResult requires -FixturePath.' }
 if (([int][bool]$FreshTrim + [int][bool]$BodyClearance + [int][bool]$UnitCleanup) -gt 1) { throw 'Select one fixture kind.' }
 # The unit-cleanup fixture runs 400 s of world time plus GM_Eden startup and shutdown.
 if ($UnitCleanup -and !$PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 540 }
@@ -166,6 +180,7 @@ try {
  $evidencePassed = Test-GameplayEvidence $text ([bool]$FreshTrim)
  if ($BodyClearance) { $evidencePassed = Test-BodyClearanceEvidence $text }
  if ($UnitCleanup) { $evidencePassed = Test-UnitCleanupEvidence $text }
+ if ($ExpectResult) { $evidencePassed = Test-CustomResultEvidence $text $ExpectResult }
  $receipt.passed = !$receipt.timedOut -and $process.ExitCode -eq 0 -and $evidencePassed
  $text -split "`n" | Where-Object { $_ -match '\[EXPG|\[EBG CLEANUP|SCRIPT\s+\(E\)|Can.t compile' } | Write-Output
 } finally {

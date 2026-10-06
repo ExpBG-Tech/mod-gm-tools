@@ -163,3 +163,29 @@ Minor UI notes: the EXPBG sound legend overlaps the entity browser's Filters pan
 is open; the testing-only cache monitor overlaps the browser's top-left cards.
 Mouse look by injected input: large cursor jumps barely rotate the view, 20 px steps rotate it well.
 
+## 7. Client test matrix for 0.1.6 (untested or changed features)
+
+Player action key in the test profile: right mouse (`mouse:button1`, "pressed"); `x` toggles weapon raised/lowered.
+Mouse look by injected input: 20 px cursor steps rotate the view; large jumps barely do.
+
+| # | Area | Steps | Pass evidence |
+|---|---|---|---|
+| T1 | Intel read window (#25) | GM places intel with `[br]` text; player uses Read intel | window opens once, line breaks, Close/Escape; server `[EII] read` with diagnostics on |
+| T2 | Server racks (Heine models) + USB | place Rack A/B and USB; set title/text/10 s; player with drive downloads; walk away; hover drive; hand drive over | Heine models render; prompt greyed without drive; progress bar; abort > 3 m; drive tooltip shows intel |
+| T3 | Racks/drives in CDF | CDF save with configured rack and drive, restart, load | rack text and drive content restored; no refusal |
+| T4 | Unit Dialog | GM sets name + lines on AI; player Speak to; Continue/Restart/End/Escape | window, lines, gesture; late joiner sees action |
+| T5 | Unit Dialog across Full cache | dialog on a member of a Full-cached squad; sleep, wake | respawned member keeps dialog |
+| T6 | Unit Dialog in CDF | CDF save/restart/load | dialog restored |
+| T7 | Unit Scripts | Hold, Freeze, animations, Release, Light Discipline / Terror Tactics; damage breaks | units stay; flashlights; context menu still lists vanilla actions and EXPBG Add Garrison |
+| T8 | AI Surrender (ACE loaded) | place module, kill members until threshold | ACE surrender animation/state; Interrogate prompt; marker or identity window |
+| T9 | AI Global Skills | module; faction selector; ROE warning shots; ammo refill | `[EXPBG AI SKILLS]` lines; behaviour visible |
+| T10 | Civil Protest Zone | place, On | crowd gathers, gestures visible on client, crowd audio; Off removes |
+| T11 | Briefing board | user test | board shows map, markers/lines live |
+| T12 | Native autosave with zones on | zone enabled, all awake, wait for AUTO save | `[PERSISTENCE] Save (AUTO)` succeeds; cached group: refused with reason |
+| T13 | Voted GM zone icon | non-admin voted GM | zone icons/rings visible, monitor admin-only |
+| T14 | Wake budget / escape action | several cached groups wake; controller "Release blocked groups" | groups spread; `[EBG RECOVERY RELEASE]` |
+| T15 | Civilians traffic cleanup after delete | delete module with live cars, move player away | cars/drivers removed out of sight; gap log line |
+| T16 | Sound legend under browser | debug sound module, open entity browser | legend hidden, returns |
+| T17 | Corpse protection 80 m | body at 65 m and 120 m, wait 11 min | 65 m body stays |
+| T18 | Wreck persistence | destroy a vehicle, wait | wreck persists |
+| T19 | CDF Compat 0.1.4 diagnostics | CDF load | `[EBG CDF AUTHORS]`, `[EBG CDF EMPTY GROUPS]`, `[CDF TIMING]` lines, no AuthorEntityRemoved |
