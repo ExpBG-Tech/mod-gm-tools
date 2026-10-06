@@ -12,8 +12,9 @@ class EXPG_GarrisonTest
    if (member.CacheMember.Dead) { continue; }
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
    if (!actor || actor.GetCharacterGroup() != record.Group) { return false; }
-   if (!record.Plan.Inside(actor.GetOrigin())) { return false; }
-   if (member.Fixed && vector.DistanceSq(actor.GetOrigin(), record.Plan.Nodes[member.NodeIndex].Position) > 0.16) { return false; }
+   // NodeIndex -1: an added squad's post around the building, outside the plan.
+   if (member.NodeIndex >= 0 && !record.Plan.Inside(actor.GetOrigin())) { return false; }
+   if (member.Fixed && vector.DistanceSq(actor.GetOrigin(), member.PostPoint()) > 0.16) { return false; }
    live++;
   }
   bool passed = live == expectedAlive && agents.Count() == expectedAlive;

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{6EE5B9A23A069D10}EIIArt/HD/Data/Drive_BaseColor.1001.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

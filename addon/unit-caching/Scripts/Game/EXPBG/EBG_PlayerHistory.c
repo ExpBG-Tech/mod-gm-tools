@@ -12,6 +12,22 @@ modded class SCR_ChimeraCharacter
   CharacterControllerComponent controller = GetCharacterController();
   return m_EBG_EverPlayerControlled || EBG_MissionPlayerHistory.Contains(this) || (controller && controller.IsPlayerControlled());
  }
+ // Neutral seam for any module that takes a living soldier out of his squad for
+ // good (AI Surrender's prisoners): call it on the server once he has left the
+ // native group. Unit Caching and Garrison then forget him as a member and never
+ // enroll, cache, respawn or delete him; the rest of his squad caches and wakes as
+ // before. Server latch for the live character, not saved.
+ protected bool m_EBG_LeftSquad;
+ void EBG_MarkLeftSquad()
+ {
+  m_EBG_LeftSquad = true;
+  // Zone status counts him near a cache zone (text only; no cache decision reads it).
+  EBG_EnrollmentTally.TrackLeftSquad(this);
+  // A settled, awake record forgets him at once; otherwise the regroup scan does.
+  EBG_CacheManager manager = EBG_CacheManager.Instance;
+  if (Replication.IsServer() && manager && !EBG_CacheManager.Unloading) manager.Regroup.RetireLeftSquad(manager, this);
+ }
+ bool EBG_HasLeftSquad() { return m_EBG_LeftSquad; }
 }
 
 // Native placement only. Every early return stays inside super, so this scope

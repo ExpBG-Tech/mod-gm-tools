@@ -3,14 +3,17 @@
 // Both modes add EUS_LightSetting to every living AI member so vanilla AI stops
 // switching vest lights itself (idle at night, off when it feels unsafe), then
 // own the light state:
-// Light Discipline: flashlights off; NIGHT_VISION gadgets already worn in an
-//   equipment slot are switched on (vanilla has none; modded NVGs only).
+// Light Discipline: flashlights off; NIGHT_VISION gadgets already worn are
+//   switched on (vanilla has none; modded gear only, e.g. RHS helmet NVGs).
 // Terror Tactics: flashlights on; each member looks at the nearest player within
 //   TERROR_RANGE so the body-mounted beam (which follows the aiming angles) faces
 //   the players. Identified enemies (look priority 80) and commanders still win.
+//   Night vision switched on by Light Discipline is switched off again.
 // Members joining the squad are adopted and members leaving it are released on
-// the next bounded tick. Only gadgets in an unoccluded equipment slot are
-// touched, exactly as the vanilla AI flashlight node does.
+// the next bounded tick. Only worn gadgets are touched: gear in an equipment
+// slot (switched off while the slot is occluded, exactly as the vanilla AI
+// flashlight node does), or gear its own component reports as IN_SLOT without
+// one (RHS NVGs sit in the worn helmet's loadout slot).
 class EUS_DisciplineMember
 {
  SCR_ChimeraCharacter Actor;
@@ -123,9 +126,16 @@ class EUS_DisciplineRecord
  {
   if (member.Settings && member.Setting) member.Settings.RemoveSetting(member.Setting);
   member.Setting = null;
+  LowerNightVision(member);
+ }
+
+ // Switches off the night vision this record switched on (release or a switch
+ // to Terror Tactics); gear the AI already had on before stays untracked.
+ protected void LowerNightVision(EUS_DisciplineMember member)
+ {
   foreach (SCR_GadgetComponent raised : member.RaisedNightVision)
   {
-   if (raised && raised.IsToggledOn()) raised.ToggleActive(false, SCR_EUseContext.FROM_ACTION);
+   if (raised && raised.IsToggledOn()) SwitchGadget(raised, false);
   }
   member.RaisedNightVision.Clear();
  }
@@ -137,6 +147,7 @@ class EUS_DisciplineRecord
   if (!gadgets) return;
   SetGadgets(gadgets.GetGadgetsByType(EGadgetType.FLASHLIGHT), Mode == EUS_Codes.DISCIPLINE_TERROR, null);
   if (Mode == EUS_Codes.DISCIPLINE_LIGHT) SetGadgets(gadgets.GetGadgetsByType(EGadgetType.NIGHT_VISION), true, member.RaisedNightVision);
+  else if (!member.RaisedNightVision.IsEmpty()) LowerNightVision(member);
  }
 
  // Toggles only on a mismatch, so a steady state sends no replication traffic.
@@ -147,20 +158,49 @@ class EUS_DisciplineRecord
   foreach (SCR_GadgetComponent gadget : list)
   {
    if (!gadget) continue;
-   InventoryItemComponent item = InventoryItemComponent.Cast(gadget.GetOwner().FindComponent(InventoryItemComponent));
-   if (!item) continue;
-   EquipmentStorageSlot slot = EquipmentStorageSlot.Cast(item.GetParentSlot());
-   if (!slot) continue;
-   bool wanted = state && !slot.IsOccluded();
+   bool occluded;
+   if (!IsWorn(gadget, occluded)) continue;
+   bool wanted = state && !occluded;
    if (gadget.IsToggledOn() == wanted) continue;
-   gadget.ToggleActive(wanted, SCR_EUseContext.FROM_ACTION);
+   SwitchGadget(gadget, wanted);
    changed++;
    if (raised && wanted && !raised.Contains(gadget)) raised.Insert(gadget);
   }
   return changed;
  }
 
- // Counts slotted flashlights and how many are on (fixture/diagnostics).
+ // True when the gadget is worn rather than carried. Vanilla gear is worn in an
+ // EquipmentStorageSlot (the vest light strap), which can be occluded by other
+ // clothing. RHS NVGs sit in the worn helmet's RHS_LoadoutSlotInfo, which is not
+ // an equipment slot; RHS_RhinoAttachmentComponent reports IN_SLOT only while
+ // that helmet is on the head (RHS_RpcManager.GetOwnedNVG uses the same test).
+ static bool IsWorn(notnull SCR_GadgetComponent gadget, out bool occluded)
+ {
+  occluded = false;
+  InventoryItemComponent item = InventoryItemComponent.Cast(gadget.GetOwner().FindComponent(InventoryItemComponent));
+  if (!item) return false;
+  InventoryStorageSlot parentSlot = item.GetParentSlot();
+  if (!parentSlot) return false;
+  EquipmentStorageSlot equipmentSlot = EquipmentStorageSlot.Cast(parentSlot);
+  if (equipmentSlot)
+  {
+   occluded = equipmentSlot.IsOccluded();
+   return true;
+  }
+  return gadget.GetMode() == EGadgetMode.IN_SLOT;
+ }
+
+ // SCR_GadgetComponent.ToggleActive ignores a context outside the gadget's use
+ // mask. Vanilla flashlights (mask 7) keep FROM_ACTION, as the vanilla AI
+ // flashlight node uses; RHS NVGs (NVG_Base.et: CUSTOM only) get their own mask.
+ static void SwitchGadget(notnull SCR_GadgetComponent gadget, bool wanted)
+ {
+  SCR_EUseContext useContext = gadget.GetUseMask();
+  if ((useContext & SCR_EUseContext.FROM_ACTION) != 0) useContext = SCR_EUseContext.FROM_ACTION;
+  gadget.ToggleActive(wanted, useContext);
+ }
+
+ // Counts worn flashlights and how many are on (fixture/diagnostics).
  static void CountLights(SCR_ChimeraCharacter actor, out int total, out int lit)
  {
   total = 0;
@@ -172,8 +212,8 @@ class EUS_DisciplineRecord
   foreach (SCR_GadgetComponent gadget : list)
   {
    if (!gadget) continue;
-   InventoryItemComponent item = InventoryItemComponent.Cast(gadget.GetOwner().FindComponent(InventoryItemComponent));
-   if (!item || !EquipmentStorageSlot.Cast(item.GetParentSlot())) continue;
+   bool occluded;
+   if (!IsWorn(gadget, occluded)) continue;
    total++;
    if (gadget.IsToggledOn()) lit++;
   }

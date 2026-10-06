@@ -330,6 +330,9 @@ modded class SCR_PlacingEditorComponent
   if (!m_EXPG_Ticket.Consume(nonce, EXPG_Now())) { EXPG_Reject(nonce, "Garrison selection expired or was cancelled. Open EXPBG Add Garrison again."); return; }
   EXPG_ClearServer();
   Rpc(EXPG_CompleteOwner, nonce);
+  // A squad added to a garrisoned building spawns on open ground beside it, not at
+  // the origin, so new soldiers never shove existing guards off their posts.
+  if (manager.HasGarrison(building)) transform[3] = EXPG_ReinforcementSpawn(building, transform[3]);
   // Keep the direct reference even if an invalid third-party prefab lacks editable data.
   EntitySpawnParams spawn = new EntitySpawnParams();
   spawn.TransformMode = ETransformMode.WORLD;
@@ -351,13 +354,31 @@ modded class SCR_PlacingEditorComponent
   editable.OnCreatedServer(this);
   array<SCR_EditableEntityComponent> created = {editable};
   OnEntityCreatedServer(created);
+  // Adding to an already garrisoned building always deploys the whole squad.
+  bool reinforcing = manager.HasGarrison(building);
   if (!manager.AdoptFresh(group, building, playerId, members.Count()))
   {
    group.EXPG_EndFreshRoster();
    EXPG_Reply("The squad remains under normal AI control because garrison assignment was refused.");
   }
+  else if (reinforcing) EXPG_Reply(string.Format("Garrison reinforcement is deploying: all %1 soldiers join this building's garrison, on free posts first, then on extra positions in and around the building.", members.Count()));
   else EXPG_Reply("Garrison preparation is completing. The new squad will use the building's safe capacity.");
   GetOnPlaceEntityServer().Invoke(prefabID, editable, playerId);
+ }
+
+ // Dry ground 4 m outside the building's bounds, first of the four sides that is not water.
+ protected vector EXPG_ReinforcementSpawn(IEntity building, vector origin)
+ {
+  vector mins, maxs;
+  building.GetWorldBounds(mins, maxs);
+  vector center = (mins + maxs) * 0.5;
+  array<vector> sides = {Vector(maxs[0] + 4, 0, center[2]), Vector(mins[0] - 4, 0, center[2]), Vector(center[0], 0, maxs[2] + 4), Vector(center[0], 0, mins[2] - 4)};
+  foreach (vector side : sides)
+  {
+   side[1] = GetGame().GetWorld().GetSurfaceY(side[0], side[2]);
+   if (!ChimeraWorldUtils.TryGetWaterSurfaceSimple(GetGame().GetWorld(), side + "0 0.5 0")) return side;
+  }
+  return origin;
  }
 
  // Every server refusal or result is logged once on the server and once on the owner.

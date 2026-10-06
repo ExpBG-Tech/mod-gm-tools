@@ -722,6 +722,24 @@ class EBG_CacheMapModule : SCR_MapModuleBase
    vector origin = group.Zone.GetOrigin();
    WrappedText(string.Format("Owner zone @ %1, %2 | units Y %3 to %4", Math.Round(origin[0]), Math.Round(origin[2]), Math.Round(group.Bounds[0]), Math.Round(group.Bounds[1])), labelX, labelY + rows * 17, columns);
   }
+  // A selected module's replicated status under its centre: counts plus why it
+  // enrolls or caches nothing (no group nearby, held by another module, a player
+  // character inside the sleep radius, Full unavailable). Text only.
+  int statusLabels;
+  foreach (EBG_CacheZone statusZone : EBG_CacheZone.Zones)
+  {
+   if (statusLabels >= EBG_CacheVisuals.MAX_ZONES || !EBG_CacheVisuals.Visible(statusZone) || !statusZone.Map) continue;
+   SCR_EditableEntityComponent statusEditable = SCR_EditableEntityComponent.Cast(statusZone.FindComponent(SCR_EditableEntityComponent));
+   if (!statusEditable || !statusEditable.HasEntityState(EEditableEntityState.SELECTED)) continue;
+   statusLabels++;
+   int x, y;
+   vector statusOrigin = statusZone.GetOrigin();
+   m_MapEntity.WorldToScreen(statusOrigin[0], statusOrigin[2], x, y, true);
+   int columns = Math.Min(64, Math.Max(24, Math.Floor((width - 48) / 10)));
+   float labelX = Math.Max(24, Math.Min(x + 6, width - columns * 10 - 24));
+   float labelY = Math.Max(160, Math.Min(y + 24, height - 170));
+   WrappedText("Cache zone: " + statusZone.Status, labelX, labelY, columns);
+  }
   m_Canvas.SetDrawCommands(m_Commands);
 #ifdef EBG_ACCEPTANCE_TEST
   EBG_VisualLifetimeProof.Commands = m_Commands.Count();

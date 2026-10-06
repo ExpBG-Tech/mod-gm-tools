@@ -124,7 +124,10 @@ class EGS_SkillsTest
 			vector right = EGS_Manager.WarningOffset(shooter, target, false);
 			float gapLeft = vector.DistanceXZ(left, target);
 			float gapRight = vector.DistanceXZ(right, target);
-			if (gapLeft < 3.0 || gapLeft > 10.5 || !float.AlmostEqual(gapLeft, gapRight))
+			// Beside the target, clear of the vanilla 2-degree minimum sweep from the aim sphere.
+			float sweep = Math.Tan(2 * Math.DEG2RAD) * distance;
+			float clear = EGS_Manager.WARNING_RADIUS + sweep + EGS_Manager.WARNING_CLEARANCE;
+			if (gapLeft < 3.0 || gapLeft < clear || gapLeft > 10.5 + sweep || !float.AlmostEqual(gapLeft, gapRight))
 				return false;
 
 			if (left == right || gapLeft != gapLeft)

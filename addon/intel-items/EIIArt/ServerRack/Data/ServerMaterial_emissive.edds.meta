@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{1263AA8201DEA103}EIIArt/ServerRack/Data/ServerMaterial_emissive.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

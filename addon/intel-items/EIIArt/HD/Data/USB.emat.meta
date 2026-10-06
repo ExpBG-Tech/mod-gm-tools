@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{2EB1042AF78B969F}EIIArt/HD/Data/USB.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

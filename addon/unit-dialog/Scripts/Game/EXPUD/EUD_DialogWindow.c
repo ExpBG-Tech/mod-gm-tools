@@ -1,8 +1,9 @@
 // Client-local conversation window: the vanilla configurable dialog with the
 // vanilla scrollable message content, built in code. Continue walks through the
-// non-empty lines; on the last line it becomes Restart. End conversation (or
-// Escape) closes. It closes itself when the speaker dies, is taken over by a
-// player, loses its dialog, or the reader walks away. Never replicated.
+// non-empty lines; on the last line it becomes Restart. Both only change the text:
+// the talking gesture played once when the conversation opened (EUD_SpeakAction).
+// End conversation (or Escape) closes. It closes itself when the speaker dies, is
+// taken over by a player, loses its dialog, or the reader walks away. Never replicated.
 class EUD_DialogWindow : SCR_ConfigurableDialogUi
 {
  static const ResourceName BASE_LAYOUT = "{E6B607B27BCC1477}UI/layouts/Menus/Dialogs/ConfigurableDialog.layout";
@@ -97,7 +98,6 @@ class EUD_DialogWindow : SCR_ConfigurableDialogUi
   if (m_iEUD_Line < m_aEUD_Lines.Count() - 1) m_iEUD_Line++;
   else m_iEUD_Line = 0;
   EUD_Show();
-  EUD_Dialog.RequestTalk(m_EUD_SpeakerRpl, false);
  }
 
  protected bool EUD_StillValid()
@@ -137,6 +137,20 @@ class EUD_DialogWindow : SCR_ConfigurableDialogUi
   super.OnMenuClose();
   if (s_Open == this) s_Open = null;
   m_bEUD_Ended = true;
-  EUD_Dialog.RequestTalk(m_EUD_SpeakerRpl, true);
+  EUD_Dialog.RequestEnd(m_EUD_SpeakerRpl);
+ }
+}
+
+// The vanilla action menu (the interaction prompt) is on the HUD ALWAYS_TOP layer, drawn
+// above every MenuManager layout. Vanilla hides it and blocks interactions only while a
+// menu is open (MenuManager.IsAnyMenuOpen), and the conversation window is a dialog. Apply
+// the same rule while it is open: the prompt fades out, no hidden action can be
+// performed, and both come back as soon as it closes.
+modded class SCR_InteractionHandlerComponent
+{
+ protected override bool GetCanInteractScript(IEntity controlledEntity)
+ {
+  if (EUD_DialogWindow.IsOpen()) return false;
+  return super.GetCanInteractScript(controlledEntity);
  }
 }

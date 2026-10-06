@@ -30,6 +30,8 @@ class EAC_HomeIndex
  protected ref array<ref EAC_HomeCell> m_Pending = {};
  protected int m_Small, m_Large, m_Callbacks, m_Queries, m_Saturated, m_Rejected, m_ReconcileCursor;
  protected int m_Subdivisions;
+ // Buildings skipped at registration because they were already destroyed.
+ protected int m_Ruined;
  protected vector m_AreaCentre;
  protected int m_AreaRadius;
  protected bool m_Aborted;
@@ -84,6 +86,7 @@ class EAC_HomeIndex
  int GetLastCallbackCount() { return m_Callbacks; }
  int GetSaturatedCellCount() { return m_Saturated; }
  int GetRejectedHomeCount() { return m_Rejected; }
+ int GetRuinedHomeCount() { return m_Ruined; }
  int GetRootCellCount() { return m_Cells.Count(); }
  int GetPendingCellCount() { return m_Pending.Count(); }
  int GetSubdivisionCount() { return m_Subdivisions; }
@@ -237,6 +240,23 @@ class EAC_HomeIndex
   // invalidated at once. This is what lets a hamlet bootstrap: the third house
   // to register flips the first two.
   m_Stamp++;
+ }
+
+ // Prefab paths cannot see damage. A collapsed or damage-phased building is not
+ // a home: vanilla collapse sinks the shell and deletes the interior, so an
+ // indoor slot there never finds a floor (0.1.5 live session: Ambient
+ // Destruction ruins restored by the native save were still accepted as homes).
+ // Ambient Destruction collapses through these same native components, and the
+ // native save restores their hit zone health, so this one read covers its
+ // ruins with no dependency on that module. Two native FindComponent calls.
+ static bool IsRuined(IEntity building)
+ {
+  if (!building) return true;
+  SCR_DestructibleBuildingComponent collapse = SCR_DestructibleBuildingComponent.Cast(building.FindComponent(SCR_DestructibleBuildingComponent));
+  if (collapse && (collapse.IsDestroyed() || collapse.EAC_IsCollapsed())) return true;
+  SCR_DestructionMultiPhaseComponent phases = SCR_DestructionMultiPhaseComponent.Cast(building.FindComponent(SCR_DestructionMultiPhaseComponent));
+  if (phases && (phases.IsDestroyed() || phases.GetDamagePhase() > 0)) return true;
+  return false;
  }
 
  // Never infer residence from a destroyed, partial or nonresidential prefab,
@@ -414,6 +434,9 @@ class EAC_HomeIndex
   if (EAC_AmbientModule.IsOutsidePopulationArea(entity.GetOrigin())) return true;
   int category = ResolveEntityHouseClass(entity);
   if (category == 0) return true;
+  // Already a ruin when its cell is indexed. A house destroyed later keeps its
+  // record and is refused at admission instead (EAC_ESpawnReason.RUINED_HOME).
+  if (IsRuined(entity)) { m_Ruined++; return true; }
   // Permanent startup geography excludes homes before allocating resident slots.
   // Manual GM zones stay dynamic and are checked at admission/wake as before.
   if (!EAC_AutoExclusions.IsPopulationAllowed(entity.GetOrigin())) return true;
@@ -860,4 +883,12 @@ class EAC_HomeIndex
    if (home.BuildingEntity && !EAC_AmbientModule.IsOutsidePopulationArea(home.BuildingEntity.GetOrigin())) EAC_Diagnostics.AddDrawPoint(positions, kinds, home.BuildingEntity.GetOrigin(), EAC_Diagnostics.HOME);
   }
  }
+}
+
+// The vanilla "load" collapse (GoToDestroyedStateLoad: scenario framework,
+// SCR_EntityHelper.DeleteBuilding, Ambient Destruction's replay) sinks the shell
+// without touching hit zone health, so IsDestroyed() alone can miss it.
+modded class SCR_DestructibleBuildingComponent
+{
+ bool EAC_IsCollapsed() { return m_bDestroyed; }
 }

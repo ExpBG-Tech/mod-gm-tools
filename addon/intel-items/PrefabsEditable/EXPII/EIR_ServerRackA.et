@@ -3,7 +3,7 @@ GenericEntity : "{67558101DE7E37AA}Prefabs/EXPII/EIR_ServerRack_Base.et" {
  components {
   SCR_EditableEntityComponent "{B56CB5B6C83E80D2}" {
    m_UIInfo SCR_EditableEntityUIInfo "{305AC76ABC5D7F5F}" {
-    Name "EXPBG Intel - Server Rack A"
+    Name "#EII-ServerRackA_Name"
     m_Image "{6A56D6B7C2F806CD}UI/Textures/EXPII/EIR_Download_Card.edds"
     m_aAuthoredLabels { 1 122 157026 }
    }

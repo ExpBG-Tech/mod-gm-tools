@@ -1,4 +1,18 @@
 // Full Cache replaces living AI with their prefab defaults. It never replenishes a roster.
+// Per-survivor state other modules carry across one Full cycle. Unit Caching
+// itself carries nothing here: a module adds its own fields and extends Capture
+// and Apply through a modded class (Unit Dialog does). Server session memory
+// only; never written to native or portable (CDF) snapshots, so a survivor
+// imported from a portable snapshot carries nothing.
+class EBG_SurvivorCarry
+{
+ // Server, before the living survivor is deleted. Read only: a refused capture
+ // must leave the original untouched.
+ void Capture(SCR_ChimeraCharacter entity) {}
+ // Server, once, right after the survivor was respawned from its prefab and
+ // before it joins the restored group or streams to any client.
+ void Apply(SCR_ChimeraCharacter entity) {}
+}
 class EBG_PrefabSurvivor
 {
  EBG_CacheMember Member;
@@ -13,6 +27,7 @@ class EBG_PrefabSurvivor
  // Operator release only: this row is left where it is and never spawned again.
  bool Abandoned;
  ref EBG_CacheAuthor Author = new EBG_CacheAuthor();
+ ref EBG_SurvivorCarry Carry = new EBG_SurvivorCarry();
 }
 
 modded class SCR_AIGroup
@@ -152,6 +167,11 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
   if (index < 0 || index >= m_Survivors.Count()) return UUID.NULL_UUID;
   return m_Survivors[index].OriginalId;
  }
+ EBG_SurvivorCarry GetSurvivorCarry(int index)
+ {
+  if (index < 0 || index >= m_Survivors.Count()) return null;
+  return m_Survivors[index].Carry;
+ }
  override bool HasReservedUUID(UUID id)
  {
   if (id.IsNull()) return false;
@@ -193,6 +213,7 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    if (!row.Emplacement.Capture(member.Entity)) return Refuse("Static emplacement changed during Full capture");
    member.Entity.GetWorldTransform(row.Transform);
    row.Author.Capture(member.Entity);
+   row.Carry.Capture(member.Entity);
    if (persistence) row.OriginalId = persistence.GetId(member.Entity);
    m_Survivors.Insert(row);
   }
@@ -403,6 +424,9 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
     }
     continue;
    }
+   // Only a fresh prefab respawn takes carried module state; an original
+   // retained after a refused deletion still holds its own.
+   bool respawned = !row.Entity;
    if (!row.Entity)
    {
     EntitySpawnParams params = new EntitySpawnParams();
@@ -424,6 +448,7 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    row.Member.Position = row.Entity.GetOrigin();
    row.Member.Missing = false;
    row.Author.Apply(row.Entity);
+   if (respawned) row.Carry.Apply(row.Entity);
    PersistenceSystem persistence = PersistenceSystem.GetInstance();
    row.Member.PersistentId = UUID.NULL_UUID;
    if (persistence) row.Member.PersistentId = persistence.GetId(row.Entity);

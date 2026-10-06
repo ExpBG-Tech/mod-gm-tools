@@ -93,8 +93,10 @@ class EIR_DriveUIInfo : SCR_InventoryUIInfo
  {
   EIR_DriveComponent drive = Drive(item);
   if (!drive) return super.GetInventoryItemName(item);
-  if (drive.IsEmpty()) return super.GetInventoryItemName(item) + " (empty)";
-  return super.GetInventoryItemName(item) + " (intel)";
+  // The prefab name is a string-table key; resolve it before adding the state suffix.
+  string label = WidgetManager.Translate(super.GetInventoryItemName(item));
+  if (drive.IsEmpty()) return label + " (empty)";
+  return label + " (intel)";
  }
  override string GetInventoryItemDescription(InventoryItemComponent item)
  {

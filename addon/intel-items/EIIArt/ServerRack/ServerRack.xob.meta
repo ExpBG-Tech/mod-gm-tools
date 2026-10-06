@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{A8B42D7DA7CA4C27}EIIArt/ServerRack/ServerRack.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

@@ -32,6 +32,13 @@ class EXPG_BuildingReservation
  int To;
 }
 
+// A Full-cached guard has no body and no reservation, yet wakes on this spot.
+class EXPG_ParkedPost
+{
+ EXPG_GarrisonRecord Owner;
+ vector Position;
+}
+
 class EXPG_BuildingPlan
 {
  static const float GRID = 0.75;
@@ -62,6 +69,7 @@ class EXPG_BuildingPlan
  protected ref array<IEntity> m_TraversableDoors = {};
  protected ref array<ref SCR_InteriorBoundingBox> m_InteriorBounds;
  protected ref array<ref EXPG_BuildingReservation> m_Reservations = {};
+ protected ref array<ref EXPG_ParkedPost> m_Parked = {};
 
  // Fixed guards and stopped patrols occupy a node. One entry per live actor.
  bool ReserveNode(IEntity owner, int node)
@@ -88,6 +96,16 @@ class EXPG_BuildingPlan
  {
   if (!owner || from < 0 || to < 0 || from >= Nodes.Count() || to >= Nodes.Count() || !Nodes[from].Reachable || !Nodes[to].Reachable) { return false; }
   ReleaseReservation(null);
+  // Parks keep moving patrols (edges) off a Full-cached garrison's wake spots.
+  // A node claim (post, stop or wake) was spaced from them when it was chosen;
+  // rechecking it lets slight drift hold a wake until that neighbour wakes.
+  if (from != to)
+  {
+   foreach (EXPG_ParkedPost parked : m_Parked)
+   {
+    if (RoutesConflict(Nodes[from].Position, Nodes[to].Position, parked.Position, parked.Position)) { return false; }
+   }
+  }
   EXPG_BuildingReservation existingReservation;
   foreach (EXPG_BuildingReservation reservation : m_Reservations)
   {
@@ -96,7 +114,8 @@ class EXPG_BuildingPlan
   }
   if (!existingReservation)
   {
-   if (m_Reservations.Count() >= 32) { return false; }
+   // One entry per live guard. Every Add Garrison on a building shares this
+   // plan, so the building may hold more than one squad's 32 guards.
    existingReservation = new EXPG_BuildingReservation();
    existingReservation.Owner = owner;
    m_Reservations.Insert(existingReservation);
@@ -104,6 +123,36 @@ class EXPG_BuildingPlan
   existingReservation.From = from;
   existingReservation.To = to;
   return true;
+ }
+
+ // Several garrisons can share a building. While one is Full-cached, patrols of
+ // the others keep off its posts so the survivors can wake there.
+ void Park(EXPG_GarrisonRecord owner, vector point)
+ {
+  if (!owner) { return; }
+  EXPG_ParkedPost parked = new EXPG_ParkedPost();
+  parked.Owner = owner;
+  parked.Position = point;
+  m_Parked.Insert(parked);
+ }
+
+ void Unpark(EXPG_GarrisonRecord owner)
+ {
+  for (int i = m_Parked.Count() - 1; i >= 0; i--)
+  {
+   if (!m_Parked[i].Owner || m_Parked[i].Owner == owner) { m_Parked.RemoveOrdered(i); }
+  }
+ }
+
+ // An added squad's post must not overlap a live guard's node or patrol edge.
+ bool ReservationConflict(vector point)
+ {
+  foreach (EXPG_BuildingReservation reservation : m_Reservations)
+  {
+   if (!reservation.Owner) { continue; }
+   if (RoutesConflict(point, point, Nodes[reservation.From].Position, Nodes[reservation.To].Position)) { return true; }
+  }
+  return false;
  }
 
  // Conservative swept bounds include body width and allowed patrol drift.
@@ -329,6 +378,22 @@ class EXPG_BuildingPlan
   else { trace.Exclude = exclude; }
   float hit = GetGame().GetWorld().TraceMove(trace, null);
   return hit < 0.999 && IndoorFloor(trace.TraceEnt, vector.Lerp(trace.Start, trace.End, hit)) && trace.TraceNorm[1] > 0.65;
+ }
+
+ // Posts around the building (extra squads once the building is full) stand on
+ // any walkable surface, not only on an indoor floor; never in water.
+ bool GroundSupported(vector position, float tolerance = 0.2, IEntity exclude = null, array<IEntity> excludeEntities = null)
+ {
+  TraceParam trace = new TraceParam();
+  trace.Start = position + Vector(0, tolerance, 0);
+  trace.End = position - Vector(0, tolerance + 0.2, 0);
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  trace.LayerMask = EPhysicsLayerDefs.CharacterAI;
+  if (excludeEntities) { trace.ExcludeArray = excludeEntities; }
+  else { trace.Exclude = exclude; }
+  float hit = GetGame().GetWorld().TraceMove(trace, null);
+  if (hit >= 0.999 || trace.TraceNorm[1] <= 0.65) { return false; }
+  return !ChimeraWorldUtils.TryGetWaterSurfaceSimple(GetGame().GetWorld(), position + "0 0.5 0");
  }
 
  bool ValidateSlots(int count, array<IEntity> excludeEntities = null)

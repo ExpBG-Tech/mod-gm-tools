@@ -202,7 +202,7 @@ class EAC_AmbientModule : GenericEntity
  int WakeDistance;
  [Attribute("900", UIWidgets.EditBox, "Distance from each live civilian to the nearest player before despawning (metres)", "51 6000 1", category: "Caching"), RplProp()]
  int SleepDistance;
- [Attribute("100", UIWidgets.EditBox, "Indoor civilians appear only within this player distance (metres); 0 disables indoor slots", "0 300 1", category: "Caching"), RplProp()]
+ [Attribute("100", UIWidgets.EditBox, "Indoor civilians appear only within this player distance (metres); 0 makes every resident appear outdoors", "0 300 1", category: "Caching"), RplProp()]
  int IndoorSpawnDistance;
  // FIXED VALUES (owner decision 2026-09-19: "no need to make it configurable").
  // Every member below that is declared with `= value` and no [Attribute] used to be
@@ -993,6 +993,8 @@ class EAC_AmbientModule : GenericEntity
   // gives the operator a named counter. Cost is the cached O(1) read; at rule 0
   // IsHomeEnrolled returns true before reading anything.
   if (!s_HomeIndex.IsHomeEnrolled(home)) return EAC_ESpawnReason.ISOLATED_HOME;
+  // Destroyed after its record was made (a GM, a fight, Ambient Destruction).
+  if (EAC_HomeIndex.IsRuined(home.BuildingEntity)) return EAC_ESpawnReason.RUINED_HOME;
   if (!EAC_ExclusionZone.IsPopulationAllowed(home.BuildingEntity.GetOrigin()) || !EAC_ExclusionZone.IsPopulationAllowed(spawnPosition)) return EAC_ESpawnReason.EXCLUSION;
   return EAC_ESpawnReason.NONE;
  }
@@ -1152,6 +1154,7 @@ class EAC_AmbientModule : GenericEntity
   int isolatedHomes = s_HomeIndex.GetIsolatedHomeCount();
   int settlementCentres = EAC_SettlementIndex.GetCount();
   summary += " isolated_homes=" + isolatedHomes.ToString();
+  summary += " ruined_homes=" + s_HomeIndex.GetRuinedHomeCount().ToString();
   summary += " settlement_centres=" + settlementCentres.ToString();
   summary += " rule=" + HomeIsolationRule.ToString();
   // Population floor. The count is the one the scheduler last read for a real

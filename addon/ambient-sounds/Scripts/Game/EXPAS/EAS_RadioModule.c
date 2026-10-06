@@ -3,7 +3,7 @@ class EAS_RadioModuleClass : GenericEntityClass {}
 
 class EAS_RadioModule : GenericEntity
 {
- [Attribute("0", UIWidgets.EditBox, "Recording: radio 0-12 or 100-103 language random; crowd 0-3 or 100 random; TV 0; placed sound 0-27", "0 103 1", category: "EXPBG Sound Player"), RplProp()]
+ [Attribute("0", UIWidgets.EditBox, "Recording: radio 0-12 or 100-103 language random; crowd 0-4, 100 random or 101 angry/rioting alternate; TV 0; placed sound 0-27", "0 103 1", category: "EXPBG Sound Player"), RplProp()]
  int Recording;
  [Attribute("15", UIWidgets.EditBox, "Volume (%)", "0 100 1", category: "EXPBG Sound Player"), RplProp()]
  int Volume;

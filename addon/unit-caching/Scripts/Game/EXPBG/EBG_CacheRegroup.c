@@ -51,6 +51,27 @@ class EBG_CacheRegroup
   foreach (EBG_CacheGroup record : manager.Records) if (record.Members.Contains(member)) return record;
   return null;
  }
+ // A living soldier who left his squad for good (EBG_MarkLeftSquad) and is out of
+ // every native group leaves his settled, awake record at once, so no save or scan
+ // counts him as a member. Cached, transitional or unresolved records keep him
+ // until Build retires him through plan.Removed. Never spawns or deletes anything.
+ bool RetireLeftSquad(EBG_CacheManager manager, SCR_ChimeraCharacter entity)
+ {
+  if (!manager || !entity || !entity.EBG_HasLeftSquad() || entity.GetCharacterGroup()) return false;
+  EBG_CacheMember member = manager.FindMember(entity);
+  EBG_CacheGroup owner = Owner(manager, member);
+  if (!owner || member.Dead || owner.Full || owner.FullCleanup || owner.Simulation || owner.Recovery != "" || owner.ReleaseRequested) return false;
+  if (owner.PersistenceIssue != "" || owner.PersistentScalarFailure || owner.PersistentScalarRollbackPending || (owner.PersistentData && !owner.PersistentData.Imported)) return false;
+  EBG_CacheCleanup cleanup = EBG_CacheCleanup.Get();
+  array<EBG_CacheGroup> affected = {owner};
+  if (!cleanup.CanRegroup(affected)) return false;
+  PrintFormat("[EBG MEMBER LEFT SQUAD] group=%1 member=%2 entity=%3 reason=living soldier left his squad for good; forgotten at once, never cached, respawned or deleted", owner.Id, member.Id, entity);
+  cleanup.ReleaseRemovedMember(owner, member);
+  owner.Members.RemoveItem(member);
+  owner.ClearSince = -1; owner.ActiveSince = manager.Now();
+  if (owner.Members.IsEmpty()) { cleanup.ReleaseGroup(owner); manager.Records.RemoveItem(owner); }
+  return true;
+ }
  protected bool Changed(EBG_CacheManager manager, EBG_CacheGroup record)
  {
   if (!record.Zone || !record.Zone.Enabled || record.ReleaseRequested) return false;
@@ -62,6 +83,8 @@ class EBG_CacheRegroup
    // discarding the transaction; Build retains it with its survivor snapshots.
    SCR_ChimeraCharacter entity = member.Entity;
    if (!entity) return true;
+   // Left for good (EBG_MarkLeftSquad): retire him even when no native group remains.
+   if (entity.EBG_HasLeftSquad()) return true;
    if (entity.GetCharacterGroup() != record.Group) return true;
   }
   if (!record.Group) return record.Full && record.Full.GetState() != EBG_FullGroupPhase.CACHED;
@@ -105,6 +128,14 @@ class EBG_CacheRegroup
       continue;
      }
      SCR_AIGroup parent = member.Entity.GetCharacterGroup();
+     // A living soldier who left his squad for good (an AI Surrender prisoner)
+     // is retired from this ledger: never respawned, cached or deleted by us.
+     if (member.Entity.EBG_HasLeftSquad())
+     {
+      if (parent) { plan.Problem = "Regroup held: a soldier who left his squad is in a native roster"; return plan; }
+      plan.Removed.Insert(member);
+      continue;
+     }
      if (!parent) { plan.Problem = "Regroup held: living member has no authoritative native group"; return plan; }
      if (!plan.Groups.Contains(parent)) plan.Groups.Insert(parent);
     }
@@ -122,6 +153,7 @@ class EBG_CacheRegroup
     if (!agent) { plan.Problem = "Regroup held: native agent is unresolved"; return plan; }
     SCR_ChimeraCharacter entity = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
     if (!entity || !entity.GetCharacterController() || entity.GetCharacterController().IsDead() || entity.GetCharacterGroup() != group || agent.GetParentGroup() != group || plan.Entities.Contains(entity)) { plan.Problem = "Regroup held: native roster is incomplete or inconsistent"; return plan; }
+    if (entity.EBG_HasLeftSquad()) { plan.Problem = "Regroup held: a soldier who left his squad is in a native roster"; return plan; }
     EBG_CacheMember known = manager.FindMember(entity);
     EBG_CacheGroup previous = Owner(manager, known);
     if (known && (!previous || known.Dead)) { plan.Problem = "Regroup held: original member ownership is unresolved"; return plan; }
@@ -135,7 +167,7 @@ class EBG_CacheRegroup
   foreach (EBG_CacheGroup original : plan.Records)
    if (!original.Full)
    foreach (EBG_CacheMember survivor : original.Members)
-    if (!survivor.Dead && survivor.Entity && !plan.Entities.Contains(survivor.Entity)) { plan.Problem = "Regroup held: living member is absent from authoritative roster"; return plan; }
+    if (!survivor.Dead && survivor.Entity && !plan.Removed.Contains(survivor) && !plan.Entities.Contains(survivor.Entity)) { plan.Problem = "Regroup held: living member is absent from authoritative roster"; return plan; }
   return plan;
  }
  protected bool Commit(EBG_CacheManager manager, EBG_RegroupPlan plan)
@@ -182,9 +214,12 @@ class EBG_CacheRegroup
   foreach (EBG_CacheMember removed : plan.Removed)
   {
    EBG_CacheGroup originalOwner = Owner(manager, removed);
+   bool leftSquad = removed.Entity && removed.Entity.EBG_HasLeftSquad();
+   if (leftSquad)
+    PrintFormat("[EBG MEMBER LEFT SQUAD] group=%1 member=%2 entity=%3 reason=living soldier left his squad for good; retired by regroup, never cached, respawned or deleted", originalOwner.Id, removed.Id, removed.Entity);
    cleanup.ReleaseRemovedMember(originalOwner, removed);
    originalOwner.Members.RemoveItem(removed);
-   if (EBG_CacheDebug.Level > 0)
+   if (!leftSquad && EBG_CacheDebug.Level > 0)
     PrintFormat("[EBG MEMBER RETIRED] group=%1 member=%2 native=%3 reason=absent server entity after stable active roster; no respawn", originalOwner.Id, removed.Id, removed.PersistentId);
   }
   for (int i = 0; i < plan.Entities.Count(); i++)

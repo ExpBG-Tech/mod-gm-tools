@@ -9,7 +9,7 @@ enum EAC_ESpawnReason
  // Appended immediately before COUNT so no existing ordinal moves: m_Counts is
  // sized from COUNT and a shifted ordinal would silently rename every counter a
  // recorded campaign already printed.
- ISOLATED_HOME, AI_LIMIT, CACHED_WAKE_HEADROOM, COUNT
+ ISOLATED_HOME, AI_LIMIT, CACHED_WAKE_HEADROOM, RUINED_HOME, COUNT
 }
 
 // One fixed-size mission ledger. Counts are gate evaluations, not unique residents.
@@ -146,6 +146,7 @@ class EAC_Diagnostics
    case EAC_ESpawnReason.ISOLATED_HOME: return "isolated_home";
    case EAC_ESpawnReason.AI_LIMIT: return "engine_ai_limit";
    case EAC_ESpawnReason.CACHED_WAKE_HEADROOM: return "cached_wake_headroom";
+   case EAC_ESpawnReason.RUINED_HOME: return "ruined_home";
   }
   return "invalid_reason";
  }

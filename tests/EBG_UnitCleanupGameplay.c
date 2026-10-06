@@ -1,5 +1,7 @@
 // TEST ONLY. Unit Caching per-casualty cleanup gameplay fixture.
 // pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -UnitCleanup -TimeoutSeconds 540 -OrchestratorSlotGranted
+// Add -Rhs to also load RHS: Status Quo (linked from the installed addons) for the rhs-mg-team
+// and rhs-usmc-recon cases.
 // Real zone prefab and public SetValue, real manager enrollment/Tick/cleanup, native Kill.
 // Presence is injected through EBG_CacheManager.UpdatePlayers; the server has no players.
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed.
@@ -24,6 +26,30 @@ class EBGCleanupCase
  // Atomic per-casualty proof: the vanilla US E-tool casualty and the foreign-item casualty.
  bool ETool;
  bool EToolProven;
+ // Identity-less gear: a worn vest with its native identity stripped and an unregistered
+ // weapon part on the casualty's weapon (the RHS preset-vest and weapon-part situation).
+ bool Identityless;
+ // RHS: Status Quo units; skipped (available=0) unless the runner loaded RHS.
+ bool RequiresRhs;
+ // The rhs-mg-team save-provenance and deletion proof.
+ bool Rhs;
+ bool ProvenanceProven;
+ // Worn accessory in a storage-less LoadoutSlotInfo of a cloth the native vest path does not
+ // list (the RHS USMC boonie's Comtacs headset): it stays the casualty's own row, held and
+ // owned by the wearer, never parks the casualty and goes with the body. UnlistedCloth marks
+ // the prepared casualty's stock cloth unlisted (vanilla stand-in, test seam below).
+ bool ClothSlotCheck;
+ bool UnlistedCloth;
+ bool ClothSlotProven;
+ ref array<EntityID> AccessoryIds = {};
+ ref array<EntityID> AccessoryWearerIds = {};
+ ref array<EntityID> AccessoryClothIds = {};
+ SCR_ChimeraCharacter Prepared;
+ EntityID PreparedWeaponId;
+ EntityID PartId;
+ EntityID VestId;
+ ResourceName VestPrefab;
+ bool VestStripped;
  ref array<EntityID> OwnedIds = {};
  vector Point;
  vector PresenceAt;
@@ -61,6 +87,8 @@ class EXPG_GarrisonGameplay : GenericEntity
  static ref array<int> s_EbgDeletedState;
  static ref array<int> s_EbgDeletedSerial;
  static ref array<EntityID> s_Survivors;
+ // Stock cloths the test seam reports as unlisted to NativeVestAccessoryOwner.
+ static ref array<IEntity> s_UnlistedCloths;
  static bool s_InCleanupTick;
  static int s_TickState;
  static int s_TickSerial;
@@ -79,7 +107,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
-  s_Presence = {}; s_EbgDeleted = {}; s_EbgDeletedState = {}; s_EbgDeletedSerial = {}; s_Survivors = {}; s_SurvivorDeletes = 0; s_PartialStrips = 0; s_TickSerial = 0;
+  s_Presence = {}; s_EbgDeleted = {}; s_EbgDeletedState = {}; s_EbgDeletedSerial = {}; s_Survivors = {}; s_UnlistedCloths = {}; s_SurvivorDeletes = 0; s_PartialStrips = 0; s_TickSerial = 0;
   Started = Now(); Next = Started + 15;
   // Partial cases first: earlier records win the shared one-casualty-per-scan allowance.
   EBGCleanupCase awake = AddCase("sim-partial-awake", 0, 30, 1, 0, 0, 130); awake.ExpectAwake = true;
@@ -92,8 +120,26 @@ class EXPG_GarrisonGameplay : GenericEntity
   // its whole gear in one Tick (body root once, owned ground roots the same tick).
   EBGCleanupCase etool = AddCase("us-etool-atomic", 0, 30, 1, 300, 300, -1); etool.ETool = true;
   etool.Squad = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et"; etool.Size = 4;
+  // 1.8 persistence gives no UUID to prefabs outside its PrefabPersistenceConfigRule bases
+  // (RHS preset vests, RHS_WeaponPart_Base parts). Reproduced natively without RHS: the
+  // casualty's worn vest loses its identity (StopTracking) and an unregistered WeaponPart_Base
+  // stock rides his weapon. The save leaves them out, nothing blocks, body and weapon go together.
+  EBGCleanupCase identityless = AddCase("identityless-gear", 0, 30, 1, -300, 300, -1); identityless.Identityless = true;
   AddCase("sim-all-control", 0, 30, 6, -600, -600, -1);
   AddCase("full-all-control", 1, 30, 6, 600, -600, -1);
+  // RHS AFRF machine-gun team, both killed: PKP and AK-74M parts plus the 6B45 PKM preset vest
+  // have no native identity (server evidence 2026-10-06). Needs the runner's -Rhs switch.
+  EBGCleanupCase rhs = AddCase("rhs-mg-team", 0, 30, 2, 300, -300, -1); rhs.Rhs = true; rhs.RequiresRhs = true;
+  rhs.Squad = "{60E2D587BE5A9B43}Prefabs/Groups/OPFOR/RHS_AFRF/MSV/VKPO_Demiseason/Group_RHS_RF_MSV_VKPO_DS_MachineGunTeam.et"; rhs.Size = 2;
+  // B1: an accessory in a storage-less LoadoutSlotInfo of an unlisted cloth resolved no owner,
+  // so the casualty was parked (a CLEANUP KEEP line) or the accessory released as an ownership
+  // transfer with holder NULL. Vanilla stand-in: a stock Lifchik/6B3 canteen whose cloth the
+  // test seam marks unlisted. Same walk as the RHS USMC boonie's Comtacs headset.
+  EBGCleanupCase clothSlot = AddCase("cloth-slot-accessory", 0, 30, 1, -300, -300, -1); clothSlot.ClothSlotCheck = true; clothSlot.UnlistedCloth = true;
+  // RHS USMC MEF recon team (scout and scout RTO, both in Hat_USMC_Boonie_Comtac with the
+  // Peltor headset in its storage-less Comtacs slot), both killed. Needs -Rhs.
+  EBGCleanupCase usmc = AddCase("rhs-usmc-recon", 0, 30, 2, 300, 0, -1); usmc.ClothSlotCheck = true; usmc.RequiresRhs = true;
+  usmc.Squad = "{CE3326F78B0125CC}Prefabs/Groups/BLUFOR/RHS_USAF/RHS_USAF_USMC_MEF/Group_USAF_USMC_MEF_ReconTeam.et"; usmc.Size = 2;
   // Snapshot rule: a soldier killed while his group is Simulation cached keeps his body
   // until the survivors are restored; only then may cleanup delete it.
   EBGCleanupCase snapshot = AddCase("sim-death-while-cached", 0, 30, 0, -600, 600, -1); snapshot.SnapshotDeath = true;
@@ -184,6 +230,13 @@ class EXPG_GarrisonGameplay : GenericEntity
   EBG_CacheCleanup cleanup = EBG_CacheCleanup.Get();
   if (c.Phase == 0)
   {
+   // Never load an RHS resource unless RHS is loaded: a missing one only logs errors.
+   if (c.RequiresRhs && !RhsLoaded())
+   {
+    if (c.ClothSlotCheck) PrintFormat("[EBG CLEANUP TEST CLOTH SLOT] case=%1 available=0 reason='RHS: Status Quo and its content packs are not loaded; run with -Rhs'", c.Name);
+    else PrintFormat("[EBG CLEANUP TEST RHS] case=%1 available=0 reason='RHS: Status Quo and its content packs are not loaded; run with -Rhs'", c.Name);
+    c.Done = true; return;
+   }
    // Keep the Resource and the spawned entity in locals before casting; the inline form
    // returned null for every case in native runs (2026-10-05).
    Resource squad = Resource.Load(c.Squad);
@@ -209,6 +262,9 @@ class EXPG_GarrisonGameplay : GenericEntity
    }
    PrintFormat("[EBG CLEANUP TEST TERRAIN] case=%1 point=%2 surfaceY=%3 swimming=%4", c.Name, c.Point, GetGame().GetWorld().GetSurfaceY(c.Point[0], c.Point[2]), swimming);
    if (!Check(swimming == 0, c.Name + " squad stands on dry land")) { c.Done = true; return; }
+   // Before enrollment, so the identity-less gear enters the ledger as the casualty's own.
+   if (c.Identityless && !PrepareIdentityless(c)) { c.Done = true; return; }
+   if (c.UnlistedCloth && !PrepareUnlistedCloth(c)) { c.Done = true; return; }
    Resource zonePrefab = Resource.Load("{7E1080ED8F0633FD}PrefabsEditable/EXPBG/EBG_CacheZone.et");
    IEntity zoneEntity = GetGame().SpawnEntityPrefab(zonePrefab, GetGame().GetWorld(), Params(c.Point));
    c.Zone = EBG_CacheZone.Cast(zoneEntity);
@@ -238,11 +294,22 @@ class EXPG_GarrisonGameplay : GenericEntity
    IEntity leader = c.Group.GetLeaderEntity();
    foreach (EBG_CacheMember enrolled : c.Record.Members)
    {
-    if (c.Casualties.Count() < c.Kills && (c.Kills == c.Size || enrolled.Entity != leader))
+    bool chosen = c.Casualties.Count() < c.Kills && (c.Kills == c.Size || enrolled.Entity != leader);
+    // The identity-less case kills exactly the soldier whose gear it prepared.
+    if (c.Prepared) chosen = enrolled.Entity == c.Prepared;
+    if (chosen)
     {
      c.Casualties.Insert(enrolled); c.Bodies.Insert(enrolled.Entity); c.BodyIds.Insert(enrolled.Entity.GetID());
     }
     else { c.SurvivorIds.Insert(enrolled.Entity.GetID()); s_Survivors.Insert(enrolled.Entity.GetID()); }
+   }
+   if (c.ClothSlotCheck && !CollectSlotAccessories(c, cleanup)) { c.Done = true; return; }
+   if (c.Identityless)
+   {
+    IEntity part = GetGame().GetWorld().FindEntityByID(c.PartId);
+    IEntity vest = GetGame().GetWorld().FindEntityByID(c.VestId);
+    bool enrolledGear = c.Casualties.Count() == 1 && part && cleanup.IsHeld(part) && (!vest || cleanup.IsHeld(vest));
+    if (!Check(enrolledGear, c.Name + " identity-less vest and weapon part enrolled as the casualty's own rows")) { c.Done = true; return; }
    }
    if (c.SnapshotDeath)
    {
@@ -337,6 +404,17 @@ class EXPG_GarrisonGameplay : GenericEntity
     PrintFormat("[EBG CLEANUP TEST ETOOL SETUP] case=%1 owned=%2 etool=%3 provable=%4 reason='%5'", c.Name, c.OwnedIds.Count(), carriesETool, provable, cleanup.GetLastReason());
     Check(carriesETool, c.Name + " casualty carries the vanilla ALICE E-tool");
     Check(provable, c.Name + " whole casualty (body, gear and ground roots) proven deletable before any deletion");
+   }
+   if ((c.Identityless || c.Rhs) && !c.ProvenanceProven && remaining == c.Bodies.Count() && Now() >= c.Eligible - 3)
+   {
+    // Just before eligibility, nothing deleted yet: what a native save would write now.
+    c.ProvenanceProven = true;
+    ProveSaveProvenance(c, cleanup);
+   }
+   if (c.ClothSlotCheck && !c.ClothSlotProven && remaining == c.Bodies.Count() && Now() >= c.Eligible - 3)
+   {
+    c.ClothSlotProven = true;
+    ProveSlotAccessories(c, cleanup);
    }
    if (remaining > 0)
    {
@@ -468,6 +546,9 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!c.ExpectAwake && !c.ExpectCached) Check(c.Record.Alive == c.Size - c.Kills && SurvivorsAlive(c), c.Name + " survivors untouched by body cleanup");
   }
   if (c.ETool) CheckAtomic(c);
+  if (c.Identityless) CheckIdentitylessDeleted(c);
+  if (c.Rhs) CheckRhsDeleted(c);
+  if (c.ClothSlotCheck) CheckSlotAccessoriesDeleted(c);
   c.PhaseAt = Now();
   if (c.Kills == c.Size) { c.Phase = 9; return; }
   if (!c.ReturnPhase) { c.Done = true; return; }
@@ -641,6 +722,277 @@ class EXPG_GarrisonGameplay : GenericEntity
   PrintFormat("[EBG CLEANUP TEST ATOMIC] case=%1 owned=%2 etool=1 gone=%3 outerDeletes=%4 sameTick=%5 partialStrips=%6", c.Name, c.OwnedIds.Count(), gone, outer, sameTick, s_PartialStrips);
   Check(gone == 1 && sameTick == 1, c.Name + " body and all gear including the E-tool removed together in one cleanup tick");
  }
+ // RHS: Status Quo plus both content packs, as the runner's -Rhs switch loads them.
+ static bool RhsLoaded()
+ {
+  array<string> loaded = {};
+  GameProject.GetLoadedAddons(loaded);
+  int found = 0;
+  foreach (string addon : loaded)
+  {
+   string upper = addon;
+   upper.ToUpper();
+   if (upper == "595F2BF2F44836FB" || upper == "1337C0DE5DABBEEF" || upper == "BADC0DEDABBEDA5E") found++;
+  }
+  return found == 3;
+ }
+ // The prospective casualty (first non-leader) gets the identity-less gear before enrollment.
+ bool PrepareIdentityless(EBGCleanupCase c)
+ {
+  IEntity leader = c.Group.GetLeaderEntity();
+  array<AIAgent> agents = {};
+  c.Group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   SCR_ChimeraCharacter candidate = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!c.Prepared && candidate && candidate != leader) c.Prepared = candidate;
+  }
+  if (!Check(c.Prepared != null, c.Name + " non-leader casualty chosen before enrollment")) return false;
+  PersistenceSystem persistence = PersistenceSystem.GetInstance();
+  // Worn vest without native identity, like an RHS preset vest (no Vest_Base ancestor).
+  SCR_CharacterInventoryStorageComponent storage = SCR_CharacterInventoryStorageComponent.Cast(c.Prepared.FindComponent(SCR_CharacterInventoryStorageComponent));
+  IEntity vest;
+  if (storage) vest = storage.GetClothFromArea(LoadoutVestArea);
+  if (vest)
+  {
+   c.VestId = vest.GetID();
+   c.VestPrefab = SCR_ResourceNameUtils.GetPrefabName(vest);
+   if (persistence) persistence.StopTracking(vest);
+   c.VestStripped = persistence && persistence.GetId(vest).IsNull();
+  }
+  // Weapon part without native identity, like an RHS_WeaponPart_Base part: an unregistered
+  // WeaponPart_Base stock (no Attachment_Base ancestor, not an approved static part) that
+  // rides the weapon as a hierarchy child.
+  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(c.Prepared.FindComponent(BaseWeaponManagerComponent));
+  IEntity weapon;
+  if (weapons && weapons.GetCurrentWeapon()) weapon = weapons.GetCurrentWeapon().GetOwner();
+  if (!weapon && weapons)
+  {
+   array<IEntity> carried = {};
+   weapons.GetWeaponsList(carried);
+   foreach (IEntity carriedWeapon : carried) { if (!weapon && carriedWeapon && carriedWeapon.FindComponent(BaseWeaponComponent)) weapon = carriedWeapon; }
+  }
+  if (!Check(weapon != null, c.Name + " casualty carries a weapon")) return false;
+  Resource partResource = Resource.Load("{AD045AFAFFC1AB6E}Prefabs/Weapons/Attachments/Stocks/Stock_VZ58/Stock_VZ58_folding.et");
+  IEntity part = GetGame().SpawnEntityPrefab(partResource, GetGame().GetWorld(), Params(weapon.GetOrigin()));
+  if (!Check(part != null, c.Name + " unregistered weapon part spawned")) return false;
+  SCR_PhysicsHelper.ChangeSimulationState(part, SimulationState.NONE, true);
+  weapon.AddChild(part, -1);
+  c.PreparedWeaponId = weapon.GetID(); c.PartId = part.GetID();
+  bool partTracked = persistence && !persistence.GetId(part).IsNull();
+  int vestStripped = 0;
+  if (c.VestStripped) vestStripped = 1;
+  int tracked = 0;
+  if (partTracked) tracked = 1;
+  PrintFormat("[EBG CLEANUP TEST IDENTITYLESS SETUP] case=%1 casualty=%2 vest='%3' vestStripped=%4 weapon='%5' partTracked=%6 partOnWeapon=%7", c.Name, c.Prepared.GetID(), c.VestPrefab, vestStripped, SCR_ResourceNameUtils.GetPrefabName(weapon), tracked, part.GetParent() == weapon);
+  return Check(part.GetParent() == weapon && !partTracked, c.Name + " weapon part rides the casualty's weapon without native identity");
+ }
+ // Every entity the ledger holds for all of the case's casualties.
+ void RecordAllOwned(EBGCleanupCase c, EBG_CacheCleanup cleanup)
+ {
+  array<IEntity> heldEntities = {};
+  foreach (EBG_CacheMember casualty : c.Casualties) cleanup.CollectHeldMemberEntities(casualty, heldEntities);
+  c.OwnedIds.Clear();
+  foreach (IEntity item : heldEntities) { if (item) c.OwnedIds.Insert(item.GetID()); }
+ }
+ // The native save decision for this record (shared with ExportPersistentGroup), and the
+ // real export too when this world gives the zone and group durable identities.
+ void ProveSaveProvenance(EBGCleanupCase c, EBG_CacheCleanup cleanup)
+ {
+  RecordAllOwned(c, cleanup);
+  int blocking;
+  int riders = cleanup.CountSaveProvenance(c.Record, blocking);
+  string reason;
+  EBG_MissionGroupData saved = EBG_CacheManager.Get().ExportPersistentGroup(c.Record, reason);
+  int durable = 0;
+  int exported = 0;
+  int issueFree = 0;
+  int bodyRows = 0;
+  int riderRows = 0;
+  // Re-read now: the stripped vest counts only while it still has no native identity.
+  IEntity vestEntity = GetGame().GetWorld().FindEntityByID(c.VestId);
+  PersistenceSystem persistence = PersistenceSystem.GetInstance();
+  bool vestNoId = c.VestStripped && vestEntity && persistence && persistence.GetId(vestEntity).IsNull();
+  if (saved)
+  {
+   durable = 1;
+   if (cleanup.ExportPersistentGroup(saved, c.Record, reason)) exported = 1;
+   if (saved.Issue == "") issueFree = 1;
+   else PrintFormat("[EBG CLEANUP TEST SAVE ISSUE] case=%1 issue='%2'", c.Name, saved.Issue);
+   foreach (EBG_MissionObjectData row : saved.Objects)
+   {
+    EBG_CacheMember owner;
+    if (row.MemberIndex >= 0 && row.MemberIndex < c.Record.Members.Count()) owner = c.Record.Members[row.MemberIndex];
+    if (row.Corpse && row.Present && owner && c.Casualties.Contains(owner)) bodyRows++;
+    string prefab = row.Map.Prefab;
+    if (prefab.Contains("Stock_VZ58") || prefab.Contains("Vest_Ratin6B45") || prefab.Contains("RHS_PKP_") || prefab.Contains("RHS_AK74M_") || prefab.Contains("Handguard_AK100")) riderRows++;
+    // The stripped vest is a rider too: no row of the casualty may carry its prefab.
+    if (vestNoId && !row.Corpse && owner && c.Casualties.Contains(owner) && row.Map.Prefab == c.VestPrefab) riderRows++;
+   }
+  }
+  int vestStripped = 0;
+  if (vestNoId) vestStripped = 1;
+  if (c.Identityless)
+  {
+   PrintFormat("[EBG CLEANUP TEST IDENTITYLESS] case=%1 vestStripped=%2 riders=%3 blocking=%4 durable=%5 exported=%6 issueFree=%7 bodyRows=%8 riderRows=%9", c.Name, vestStripped, riders, blocking, durable, exported, issueFree, bodyRows, riderRows);
+  }
+  else PrintFormat("[EBG CLEANUP TEST RHS] case=%1 available=1 riders=%2 blocking=%3 durable=%4 exported=%5 issueFree=%6 bodyRows=%7 riderRows=%8 owned=%9", c.Name, riders, blocking, durable, exported, issueFree, bodyRows, riderRows, c.OwnedIds.Count());
+  Check(riders >= 1 && blocking == 0, c.Name + " identity-less gear is left out of the save and nothing blocks it");
+  Check(durable == 0 || (exported == 1 && issueFree == 1 && bodyRows == c.Casualties.Count() && riderRows == 0), c.Name + " native save export keeps the bodies, omits the identity-less gear and carries no provenance Issue");
+ }
+ void CheckIdentitylessDeleted(EBGCleanupCase c)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  int bodyByEbg = 0;
+  if (s_EbgDeleted.Contains(c.BodyIds[0])) bodyByEbg = 1;
+  int weaponGone = 0;
+  if (!world.FindEntityByID(c.PreparedWeaponId)) weaponGone = 1;
+  int partGone = 0;
+  if (!world.FindEntityByID(c.PartId)) partGone = 1;
+  int vestGone = 0;
+  if (!world.FindEntityByID(c.VestId)) vestGone = 1;
+  // A dropped weapon is its own outer delete, in the same Tick as the body.
+  int sameTick = 1;
+  int bodyAt = s_EbgDeleted.Find(c.BodyIds[0]);
+  int weaponAt = s_EbgDeleted.Find(c.PreparedWeaponId);
+  if (bodyAt < 0 || (weaponAt >= 0 && s_EbgDeletedSerial[weaponAt] != s_EbgDeletedSerial[bodyAt])) sameTick = 0;
+  int present = PresentOwned(c);
+  int proven = 0;
+  if (c.ProvenanceProven && c.OwnedIds.Count() > 1) proven = 1;
+  // The part went with its weapon; it was never released as UUID-less player loot.
+  int lineage = 0;
+  if (EBG_CacheCleanup.Get().HasReleasedLineage(c.Casualties[0])) lineage = 1;
+  PrintFormat("[EBG CLEANUP TEST IDENTITYLESS DELETED] case=%1 bodyByEbg=%2 weaponGone=%3 partGone=%4 vestGone=%5 present=%6 sameTick=%7 proven=%8 lineage=%9", c.Name, bodyByEbg, weaponGone, partGone, vestGone, present, sameTick, proven, lineage);
+  Check(bodyByEbg == 1 && weaponGone == 1 && partGone == 1 && vestGone == 1 && present == 0 && sameTick == 1 && proven == 1, c.Name + " body, its weapon and the identity-less vest and part removed together by EBG");
+  Check(lineage == 0, c.Name + " deleting the identity-less gear records no UUID-less release lineage");
+ }
+ void CheckRhsDeleted(EBGCleanupCase c)
+ {
+  int byEbg = 0;
+  foreach (EntityID bodyId : c.BodyIds) { if (s_EbgDeleted.Contains(bodyId)) byEbg++; }
+  int present = PresentOwned(c);
+  int proven = 0;
+  if (c.ProvenanceProven && c.OwnedIds.Count() > c.BodyIds.Count()) proven = 1;
+  int lineage = 0;
+  foreach (EBG_CacheMember casualty : c.Casualties) { if (EBG_CacheCleanup.Get().HasReleasedLineage(casualty)) lineage++; }
+  PrintFormat("[EBG CLEANUP TEST RHS DELETED] case=%1 bodies=%2 byEbg=%3 owned=%4 present=%5 proven=%6 lineage=%7", c.Name, c.BodyIds.Count(), byEbg, c.OwnedIds.Count(), present, proven, lineage);
+  Check(byEbg == c.BodyIds.Count() && present == 0 && proven == 1, c.Name + " RHS casualties removed whole by EBG with their PKP, AK-74M and 6B45 gear");
+  Check(lineage == 0, c.Name + " deleting the RHS weapon parts records no UUID-less release lineage");
+ }
+ // The cloth whose storage-less LoadoutSlotInfo holds this accessory: the slot is the item's
+ // own and belongs to the cloth's BaseLoadoutClothComponent. Independent of production code.
+ static IEntity SlotCloth(IEntity accessory)
+ {
+  if (!accessory) return null;
+  InventoryItemComponent item = InventoryItemComponent.Cast(accessory.FindComponent(InventoryItemComponent));
+  if (!item) return null;
+  InventoryStorageSlot slot = item.GetParentSlot();
+  if (!slot || !LoadoutSlotInfo.Cast(slot) || slot.GetStorage() || slot.GetAttachedEntity() != accessory) return null;
+  IEntity cloth = slot.GetOwner();
+  if (!cloth || cloth == accessory || !cloth.FindComponent(BaseLoadoutClothComponent) || slot.GetParentContainer() != cloth.FindComponent(BaseLoadoutClothComponent)) return null;
+  return cloth;
+ }
+ // Every such accessory in the character's hierarchy (bounded).
+ static void FindSlotAccessories(IEntity parent, array<IEntity> found, int depth)
+ {
+  if (!parent || depth > 4 || found.Count() > 64) return;
+  for (IEntity child = parent.GetChildren(); child; child = child.GetSibling())
+  {
+   if (SlotCloth(child) && !found.Contains(child)) found.Insert(child);
+   FindSlotAccessories(child, found, depth + 1);
+  }
+ }
+ // Vanilla stand-in, before enrollment: the first non-leader wearing a cloth with a
+ // storage-less loadout-slot accessory becomes the casualty and that cloth is unlisted.
+ bool PrepareUnlistedCloth(EBGCleanupCase c)
+ {
+  IEntity leader = c.Group.GetLeaderEntity();
+  array<AIAgent> agents = {};
+  c.Group.GetAgents(agents);
+  IEntity chosenCloth;
+  IEntity chosenAccessory;
+  foreach (AIAgent agent : agents)
+  {
+   SCR_ChimeraCharacter candidate = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (c.Prepared || !candidate || candidate == leader) continue;
+   array<IEntity> found = {};
+   FindSlotAccessories(candidate, found, 0);
+   if (found.IsEmpty()) continue;
+   c.Prepared = candidate; chosenAccessory = found[0]; chosenCloth = SlotCloth(found[0]);
+  }
+  if (!Check(c.Prepared != null && chosenCloth != null, c.Name + " non-leader wears a cloth with a storage-less loadout-slot accessory")) return false;
+  s_UnlistedCloths.Insert(chosenCloth);
+  PrintFormat("[EBG CLEANUP TEST CLOTH SLOT SETUP] case=%1 casualty=%2 cloth='%3' accessory='%4'", c.Name, c.Prepared.GetID(), SCR_ResourceNameUtils.GetPrefabName(chosenCloth), SCR_ResourceNameUtils.GetPrefabName(chosenAccessory));
+  return true;
+ }
+ // After enrollment: the casualties' accessories the native vest path does not resolve.
+ bool CollectSlotAccessories(EBGCleanupCase c, EBG_CacheCleanup cleanup)
+ {
+  foreach (SCR_ChimeraCharacter wearer : c.Bodies)
+  {
+   array<IEntity> found = {};
+   FindSlotAccessories(wearer, found, 0);
+   foreach (IEntity accessory : found)
+   {
+    if (!cleanup.EXPG_NativeVestMisses(accessory)) continue;
+    c.AccessoryIds.Insert(accessory.GetID());
+    c.AccessoryWearerIds.Insert(wearer.GetID());
+    IEntity cloth = SlotCloth(accessory);
+    EntityID clothId = cloth.GetID();
+    if (!c.AccessoryClothIds.Contains(clothId)) c.AccessoryClothIds.Insert(clothId);
+   }
+  }
+  PrintFormat("[EBG CLEANUP TEST CLOTH SLOT ENROLLED] case=%1 casualties=%2 accessories=%3 cloths=%4", c.Name, c.Casualties.Count(), c.AccessoryIds.Count(), c.AccessoryClothIds.Count());
+  return Check(c.Casualties.Count() > 0 && c.AccessoryIds.Count() >= c.Casualties.Count(), c.Name + " every casualty wears a storage-less cloth-slot accessory the native vest path does not resolve");
+ }
+ // Just before eligibility, after a transfer check (which released each accessory as an
+ // ownership transfer with holder NULL before the fix): held, owned by its wearer, unprotected.
+ void ProveSlotAccessories(EBGCleanupCase c, EBG_CacheCleanup cleanup)
+ {
+  cleanup.CheckGroupTransfers(c.Record);
+  RecordAllOwned(c, cleanup);
+  BaseWorld world = GetGame().GetWorld();
+  int unlisted = 0;
+  int held = 0;
+  int wearerHolder = 0;
+  int protectedChain = 0;
+  for (int i = 0; i < c.AccessoryIds.Count(); i++)
+  {
+   IEntity accessory = world.FindEntityByID(c.AccessoryIds[i]);
+   IEntity wearer = world.FindEntityByID(c.AccessoryWearerIds[i]);
+   if (!accessory || !wearer) continue;
+   if (cleanup.EXPG_NativeVestMisses(accessory)) unlisted++;
+   if (cleanup.IsHeld(accessory)) held++;
+   if (cleanup.EXPG_Holder(accessory) == wearer) wearerHolder++;
+   if (cleanup.EXPG_ProtectedChain(accessory)) protectedChain++;
+  }
+  int count = c.AccessoryIds.Count();
+  // Now held, each accessory enters the native save: its cloth-slot provenance must resolve,
+  // or the save carries an Issue and the whole group is blocked on the next load.
+  int blocking;
+  cleanup.CountSaveProvenance(c.Record, blocking);
+  PrintFormat("[EBG CLEANUP TEST CLOTH SLOT] case=%1 available=1 accessories=%2 unlisted=%3 held=%4 wearerHolder=%5 protectedChain=%6 blocking=%7 owned=%8", c.Name, count, unlisted, held, wearerHolder, protectedChain, blocking, c.OwnedIds.Count());
+  Check(count > 0 && unlisted == count && held == count && wearerHolder == count && protectedChain == 0, c.Name + " storage-less cloth-slot accessories stay held, owned by their wearer and unprotected");
+  Check(blocking == 0, c.Name + " held cloth-slot accessories add no save provenance Issue");
+ }
+ void CheckSlotAccessoriesDeleted(EBGCleanupCase c)
+ {
+  BaseWorld world = GetGame().GetWorld();
+  int byEbg = 0;
+  foreach (EntityID bodyId : c.BodyIds) { if (s_EbgDeleted.Contains(bodyId)) byEbg++; }
+  int accessoriesGone = 1;
+  foreach (EntityID accessoryId : c.AccessoryIds) { if (world.FindEntityByID(accessoryId)) accessoriesGone = 0; }
+  int clothGone = 1;
+  foreach (EntityID clothId : c.AccessoryClothIds) { if (world.FindEntityByID(clothId)) clothGone = 0; }
+  int present = PresentOwned(c);
+  int proven = 0;
+  if (c.ClothSlotProven && c.OwnedIds.Count() > c.BodyIds.Count()) proven = 1;
+  int lineage = 0;
+  foreach (EBG_CacheMember casualty : c.Casualties) { if (EBG_CacheCleanup.Get().HasReleasedLineage(casualty)) lineage++; }
+  PrintFormat("[EBG CLEANUP TEST CLOTH SLOT DELETED] case=%1 bodies=%2 byEbg=%3 accessoriesGone=%4 clothGone=%5 present=%6 proven=%7 lineage=%8", c.Name, c.BodyIds.Count(), byEbg, accessoriesGone, clothGone, present, proven, lineage);
+  Check(byEbg == c.BodyIds.Count() && accessoriesGone == 1 && clothGone == 1 && present == 0 && proven == 1, c.Name + " casualties removed whole by EBG with their cloth and its storage-less slot accessory");
+  Check(lineage == 0, c.Name + " the cloth-slot accessory records no UUID-less release lineage");
+ }
  void Report(EBGCleanupCase c, int remaining)
  {
   c.NextReport = Now() + 5;
@@ -719,6 +1071,23 @@ modded class EBG_CacheCleanup
   EXPG_GarrisonGameplay.s_InCleanupTick = true;
   super.Tick(record, players, now, transfersChecked);
   EXPG_GarrisonGameplay.s_InCleanupTick = false;
+ }
+ // Test seam: a stock cloth stands in for an unlisted modded cloth (the RHS USMC boonie).
+ override protected IEntity NativeVestAccessoryOwner(IEntity item, InventoryStorageSlot slot)
+ {
+  if (slot && EXPG_GarrisonGameplay.s_UnlistedCloths && EXPG_GarrisonGameplay.s_UnlistedCloths.Contains(slot.GetOwner())) return null;
+  return super.NativeVestAccessoryOwner(item, slot);
+ }
+ // Read-only views of the production ownership walk.
+ IEntity EXPG_Holder(IEntity item) { return Holder(item); }
+ bool EXPG_ProtectedChain(IEntity item) { return ProtectedOwnerChain(item); }
+ // A storage-less slot item the allow-listed native vest path does not resolve.
+ bool EXPG_NativeVestMisses(IEntity item)
+ {
+  if (!item) return false;
+  InventoryItemComponent inventory = InventoryItemComponent.Cast(item.FindComponent(InventoryItemComponent));
+  if (!inventory || !inventory.GetParentSlot() || inventory.GetParentSlot().GetStorage()) return false;
+  return NativeVestAccessoryOwner(item, inventory.GetParentSlot()) == null;
  }
 }
 // Full sleep deletes survivors outside cleanup Tick, so it is never attributed here.

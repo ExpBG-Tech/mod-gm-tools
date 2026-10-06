@@ -48,9 +48,11 @@ class EBG_FullSaveGate
   SCR_GameModeEditor mode = SCR_GameModeEditor.Cast(GetGame().GetGameMode());
   if (!mode || mode.Type() != SCR_GameModeEditor || !mode.IsRunning() || mode.GetState() != SCR_EGameModeState.GAME)
   { reason = "Full save protection supports the active vanilla GM game mode only"; return false; }
+  // A vanilla GM mission names GameMasterSystems in its header, hosted locally or on
+  // a server. Workbench World Editor play and some scenarios run without it.
   ResourceName systems = GetGame().GetSystemsConfig();
   if (systems != "{8DDC2A311929D52F}Configs/Systems/GameMasterSystems.conf")
-  { reason = "Full save protection requires the native GameMasterSystems configuration"; return false; }
+  { reason = "Full save protection requires the native GameMasterSystems systems config, which this session does not run (Workbench World Editor play or a scenario that replaces it); start the GM mission from the main menu or a server"; return false; }
   array<string> addons = {};
   GameProject.GetLoadedAddons(addons);
   if (addons.IsEmpty()) { reason = "Loaded addon ownership could not be verified"; return false; }
@@ -78,6 +80,16 @@ class EBG_FullSaveGate
    Print("[EBG FULL SAVE GATE] " + reason, LogLevel.WARNING);
   }
   return false;
+ }
+
+ // Status text only: the runtime rules TryAcquire applies, read before any group
+ // tries to sleep and without touching the native save permission. A locally
+ // hosted vanilla GM mission names GameMasterSystems in its header and passes;
+ // Workbench World Editor play has no systems config and fails here.
+ static bool Available(out string reason)
+ {
+  reason = "";
+  return SupportedRuntime(reason) && CanCaptureForCDF(reason);
  }
 
  // Call immediately before reserving the first Full transaction, before Save/delete.

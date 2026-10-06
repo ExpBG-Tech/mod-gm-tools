@@ -123,6 +123,11 @@ class EAC_RoutineStats
  protected static ref array<int> s_Wanted = {};
  protected static ref array<float> s_NextTrace = {};
  protected static int s_IndoorAdmitted, s_IndoorRejected, s_Emerged, s_EmergeFailed, s_Fallback, s_IdleRecovered;
+ // indoor_spawn counts CANDIDATES that passed the footprint/roof test, which is
+ // how retail-1 read 2887/3248 with not one resident ever placed indoors. These
+ // count residents actually committed indoors, and indoor slots handed to the
+ // outdoor ladder after INDOOR_FALLBACK_FAILURES geometry failures.
+ protected static int s_IndoorLive, s_IndoorToOutdoor;
  protected static int s_TableStarted, s_TableJoined, s_TableInvited, s_MaxHomeResidents;
  protected static int s_TableWanted, s_MaxStep;
  // table_joined has never once been non-zero across six campaigns. Which gate
@@ -241,6 +246,7 @@ class EAC_RoutineStats
   s_Wanted.Clear(); s_Wanted.Resize(EAC_RoutineAnchors.KINDS);
   s_NextTrace.Clear(); s_NextTrace.Resize(EAC_RoutineAnchors.KINDS);
   s_IndoorAdmitted = 0; s_IndoorRejected = 0; s_Emerged = 0; s_EmergeFailed = 0; s_Fallback = 0; s_IdleRecovered = 0;
+  s_IndoorLive = 0; s_IndoorToOutdoor = 0;
   s_TableStarted = 0; s_TableJoined = 0; s_TableInvited = 0; s_MaxHomeResidents = 0;
   s_TableWanted = 0; s_MaxStep = 0;
   s_Invite.Clear(); s_Invite.Resize(INVITE_REASONS);
@@ -349,6 +355,22 @@ class EAC_RoutineStats
   if (admitted) { if (s_IndoorAdmitted < LIMIT) s_IndoorAdmitted++; }
   else if (s_IndoorRejected < LIMIT) s_IndoorRejected++;
  }
+
+ static void RecordIndoorLive()
+ {
+  if (!Replication.IsServer()) return;
+  CheckWorld();
+  if (s_IndoorLive < LIMIT) s_IndoorLive++;
+ }
+
+ static void RecordIndoorToOutdoor()
+ {
+  if (!Replication.IsServer()) return;
+  CheckWorld();
+  if (s_IndoorToOutdoor < LIMIT) s_IndoorToOutdoor++;
+ }
+
+ static int GetIndoorLiveCount() { CheckWorld(); return s_IndoorLive; }
 
  static void RecordEmergence(bool emerged)
  {
@@ -1149,6 +1171,8 @@ class EAC_RoutineStats
   string result = "fallback_anchor=" + s_Fallback.ToString();
   result += " indoor_spawn=" + s_IndoorAdmitted.ToString();
   result += "/" + (s_IndoorAdmitted + s_IndoorRejected).ToString();
+  result += " indoor_live=" + s_IndoorLive.ToString();
+  result += " indoor_to_outdoor=" + s_IndoorToOutdoor.ToString();
   result += " emerged=" + s_Emerged.ToString();
   result += " emerge_failed=" + s_EmergeFailed.ToString();
   result += " emerge_move_failed=" + s_EmergeMoveFailed.ToString();

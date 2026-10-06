@@ -101,9 +101,14 @@ class EBG_OptimizerControl
   }
   if (action == 1 || (action == 2 && State == 2)) Preparing = false;
   Disabling = action == 2 && !Preparing;
+  // A few switched zones each tell the acting GM what they do after their next
+  // pass; with more, the map labels carry it instead of a burst of chat lines.
+  bool notify = EBG_CacheZone.Zones.Count() <= 4;
   foreach (EBG_CacheZone zone : EBG_CacheZone.Zones)
   {
-   if (zone) zone.EBG_SetGlobalEnabled(action == 1);
+   if (!zone) continue;
+   zone.EBG_SetGlobalEnabled(action == 1);
+   if (notify) zone.EBG_RequestNotice(ActingPlayer);
   }
   if (!Preparing) State = 0;
   Pending = 0; Blocked = 0;

@@ -80,6 +80,35 @@ class EBG_CacheZone : GenericEntity
  [RplProp()] string BlockedReason;
  [RplProp()] string Status = "Initializing";
  [RplProp()] bool Editing;
+ // Server diagnostics only: never replicated on their own, saved or read by a
+ // cache, ownership or wake decision. EnrollmentNote says why AI inside the
+ // affected radius stayed out of the latest enrollment pass; PlayerAwake* count
+ // the enrolled groups a player character keeps awake in the latest tick and the
+ // nearest such player (XZ metres). Both are folded into Status.
+ string EnrollmentNote;
+ int EnrollmentPasses;
+ int PlayerAwakeCount;
+ float PlayerAwakeDistance = -1;
+ protected int m_NoticePlayer;
+ protected int m_NoticePass;
+ // A Game Master saved this module's settings or used a global switch: tell that
+ // GM once what the module does, after its next completed enrollment pass (at once
+ // while it cannot enroll: disabled, held for editing or restoring).
+ void EBG_RequestNotice(int playerId)
+ {
+  if (!Replication.IsServer() || playerId <= 0) return;
+  m_NoticePlayer = playerId;
+  m_NoticePass = EnrollmentPasses;
+ }
+ bool EBG_NoticePending() { return m_NoticePlayer > 0; }
+ int EBG_TakeNotice()
+ {
+  if (m_NoticePlayer <= 0) return 0;
+  if (Enabled && !Editing && !HasPendingSettings() && EnrollmentPasses <= m_NoticePass) return 0;
+  int playerId = m_NoticePlayer;
+  m_NoticePlayer = 0;
+  return playerId;
+ }
  protected ref array<int> m_PendingKeys = {};
  protected ref array<float> m_PendingValues = {};
  bool HasPendingSettings() { return !m_PendingKeys.IsEmpty(); }

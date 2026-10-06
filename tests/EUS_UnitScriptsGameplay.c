@@ -1,10 +1,12 @@
 // TEST ONLY. EXPBG Unit Scripts native gameplay fixture.
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EUS_UnitScriptsGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EUS_UnitScriptsGameplay.c -TimeoutSeconds 420 -ExpectResult '\[EUS TEST RESULT\] checks=[1-9]\d* failures=0 reason=completed' -OrchestratorSlotGranted
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed.
-// The runner's built-in evidence check is Garrison's, so judge this run by exactly one
-// "[EUS TEST RESULT] checks=N failures=0 reason=completed" line and no script errors.
+// -ExpectResult judges the run by exactly one passing result line and no script errors.
 // Real US fire team on GM Eden, production EUS_Manager entry points (the same ones
 // the attributes and context actions call), native damage, a native Move waypoint.
+// It also reads the packed (merged) editor configs: EXPBG Night discipline is a
+// Group tab attribute, the unit script attributes stay in the EXPBG Unit Scripts
+// tab and right-click keeps only Hold Position, Freeze and Release.
 // No players, no GM UI, no possession, no save/load: those stay client-test gates.
 class EXPG_GarrisonGameplayClass : GenericEntityClass {}
 class EXPG_GarrisonGameplay : GenericEntity
@@ -12,6 +14,10 @@ class EXPG_GarrisonGameplay : GenericEntity
  static const float FIXTURE_SECONDS = 260;
  static const ResourceName SQUAD = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
  static const ResourceName MOVE = "{750A8D1695BD6998}Prefabs/AI/Waypoints/AIWaypoint_Move.et";
+ static const ResourceName ATTRIBUTE_LIST = "{F3D6C6D25642352C}Configs/Editor/AttributeLists/Edit.conf";
+ static const ResourceName CONTEXT_ACTIONS = "{2C1D87DE93C77A27}Configs/Editor/ActionLists/Context/TempEdit.conf";
+ static const string GROUP_TAB = "{C952695559974DF0}Configs/Editor/AttributeCategories/Group.conf";
+ static const string UNIT_SCRIPTS_TAB = "{4F3669E88510C238}Configs/Editor/AttributeCategories/EUS_UnitScripts.conf";
  vector Origin = "4773.46 0 7094.57";
  int Checks;
  int Failures;
@@ -39,6 +45,11 @@ class EXPG_GarrisonGameplay : GenericEntity
  float LeaderMax;
  float SmokeSince = -1;
  bool StanceRequested;
+ bool StanceProbeAdded;
+ float StanceProbeAt = -1;
+ float CrouchLatency = -1;
+ ref SCR_AICharacterStanceSetting HolderStanceProbe;
+ ref SCR_AICharacterStanceSetting FrozenStanceProbe;
  bool HolderCrouched;
  bool FrozenStanceChanged;
  bool LoiterLost;
@@ -152,6 +163,84 @@ class EXPG_GarrisonGameplay : GenericEntity
   return living;
  }
 
+ // The packed editor configs, i.e. the shared lists every module appends to. Each
+ // Resource stays in a local while its containers are read.
+ void CheckEditorConfigs()
+ {
+  int attributeCount = 0;
+  int scriptAttributesInTab = 0;
+  string disciplineTab = string.Empty;
+  string disciplineEntries = string.Empty;
+  Resource attributeResource = Resource.Load(ATTRIBUTE_LIST);
+  BaseResourceObject attributeObject;
+  if (attributeResource && attributeResource.IsValid()) attributeObject = attributeResource.GetResource();
+  BaseContainer attributeRoot;
+  if (attributeObject) attributeRoot = attributeObject.ToBaseContainer();
+  BaseContainerList attributeEntries;
+  if (attributeRoot) attributeEntries = attributeRoot.GetObjectArray("m_aAttributes");
+  if (attributeEntries) attributeCount = attributeEntries.Count();
+  if (attributeCount > 4096) attributeCount = 4096;
+  for (int attributeIndex = 0; attributeIndex < attributeCount; attributeIndex++)
+  {
+   BaseContainer attributeEntry = attributeEntries.Get(attributeIndex);
+   if (!attributeEntry) continue;
+   string attributeClass = attributeEntry.GetClassName();
+   ResourceName attributeTab = ResourceName.Empty;
+   attributeEntry.Get("m_CategoryConfig", attributeTab);
+   string attributeTabPath = attributeTab;
+   if (attributeClass == "EUS_UnitScriptAttribute" || attributeClass == "EUS_SquadScriptAttribute")
+   {
+    if (attributeTabPath == UNIT_SCRIPTS_TAB) scriptAttributesInTab++;
+    continue;
+   }
+   if (attributeClass != "EUS_DisciplineAttribute") continue;
+   disciplineTab = attributeTabPath;
+   BaseContainerList modeEntries = attributeEntry.GetObjectArray("m_aValues");
+   int modeCount = 0;
+   if (modeEntries) modeCount = modeEntries.Count();
+   if (modeCount > 16) modeCount = 16;
+   for (int modeIndex = 0; modeIndex < modeCount; modeIndex++)
+   {
+    BaseContainer modeEntry = modeEntries.Get(modeIndex);
+    if (!modeEntry) continue;
+    string modeName = string.Empty;
+    float modeValue = 0;
+    modeEntry.Get("m_sEntryName", modeName);
+    modeEntry.Get("m_fEntryFloatValue", modeValue);
+    int modeCode = Math.Round(modeValue);
+    disciplineEntries += string.Format("%1=%2;", modeName, modeCode);
+   }
+  }
+
+  int actionCount = 0;
+  int quickActions = 0;
+  int otherActions = 0;
+  Resource actionResource = Resource.Load(CONTEXT_ACTIONS);
+  BaseResourceObject actionObject;
+  if (actionResource && actionResource.IsValid()) actionObject = actionResource.GetResource();
+  BaseContainer actionRoot;
+  if (actionObject) actionRoot = actionObject.ToBaseContainer();
+  BaseContainerList actionEntries;
+  if (actionRoot) actionEntries = actionRoot.GetObjectArray("m_Actions");
+  if (actionEntries) actionCount = actionEntries.Count();
+  if (actionCount > 4096) actionCount = 4096;
+  for (int actionIndex = 0; actionIndex < actionCount; actionIndex++)
+  {
+   BaseContainer actionEntry = actionEntries.Get(actionIndex);
+   if (!actionEntry) continue;
+   string actionClass = actionEntry.GetClassName();
+   if (actionClass.IndexOf("EUS_") != 0) continue;
+   if (actionClass == "EUS_HoldContextAction" || actionClass == "EUS_FreezeContextAction" || actionClass == "EUS_ReleaseContextAction") quickActions++;
+   else otherActions++;
+  }
+
+  PrintFormat("[EUS TEST CONFIG] attributes=%1 disciplineTab='%2' disciplineEntries='%3' unitScriptAttributesInTab=%4 contextActions=%5 eusQuickActions=%6 otherEusActions=%7", attributeCount, disciplineTab, disciplineEntries, scriptAttributesInTab, actionCount, quickActions, otherActions);
+  Check(disciplineTab == GROUP_TAB, "EXPBG Night discipline is an attribute of the vanilla Group tab");
+  Check(disciplineEntries == "None=0;Light discipline=1;Terror tactics=2;", "EXPBG Night discipline offers None, Light discipline and Terror tactics");
+  Check(scriptAttributesInTab == 2, "unit and squad script attributes (animations) stay in the EXPBG Unit Scripts tab");
+  Check(quickActions == 3 && otherActions == 0, "right-click keeps only EXPBG Hold Position, Freeze and Release Unit Scripts");
+ }
+
  override void EOnFrame(IEntity owner, float timeSlice)
  {
   if (Finished || Now() < Next) return;
@@ -169,6 +258,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   if (Phase == 0)
   {
+   CheckEditorConfigs();
    // Keep Resource and spawned entity in locals before casting (inline form returned null natively).
    Resource squad = Resource.Load(SQUAD);
    IEntity squadEntity = GetGame().SpawnEntityPrefab(squad, GetGame().GetWorld(), Params(Origin));
@@ -260,9 +350,27 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!StanceRequested && elapsed > 4)
    {
     StanceRequested = true;
+    // Native stance path: the AI's own SCR_AISetStance node applies the current
+    // stance setting. A raw SetStanceChange alone is a one-shot input that a
+    // follower's KeepInFormation tree overwrites with STAND every 0.5 s, held or
+    // not, so the probe adds the vanilla setting a scenario would add (plus the raw
+    // request for a behavior without a stance node). Hold must let it through;
+    // Freeze's own lock (priority 7000) must outrank the same setting.
+    ECharacterStance frozenProbe = ECharacterStance.CROUCH;
+    if (FrozenStance == ECharacterStance.CROUCH) frozenProbe = ECharacterStance.STAND;
+    HolderStanceProbe = SCR_AICharacterStanceSetting.Create(SCR_EAISettingOrigin.SCENARIO, SCR_EAIBehaviorCause.ALWAYS, ECharacterStance.CROUCH);
+    FrozenStanceProbe = SCR_AICharacterStanceSetting.Create(SCR_EAISettingOrigin.SCENARIO, SCR_EAIBehaviorCause.ALWAYS, frozenProbe);
+    SCR_AICharacterSettingsComponent holderSettings = SCR_AICharacterSettingsComponent.FindOnControlledEntity(Holder);
+    SCR_AICharacterSettingsComponent frozenSettings = SCR_AICharacterSettingsComponent.FindOnControlledEntity(Frozen);
+    StanceProbeAdded = holderSettings && frozenSettings && holderSettings.AddCharacterSetting(HolderStanceProbe, false, false) && frozenSettings.AddCharacterSetting(FrozenStanceProbe, false, false);
     SCR_AIStanceHandling.SetStance(Holder.GetCharacterController(), ECharacterStance.CROUCH);
+    StanceProbeAt = Now();
    }
-   if (StanceRequested && Holder.GetCharacterController().GetStance() == ECharacterStance.CROUCH) HolderCrouched = true;
+   if (StanceProbeAdded && !HolderCrouched && Holder.GetCharacterController().GetStance() == ECharacterStance.CROUCH)
+   {
+    HolderCrouched = true;
+    CrouchLatency = Now() - StanceProbeAt;
+   }
    if (Smoking(Animated))
    {
     if (SmokeSince < 0) SmokeSince = Now();
@@ -274,9 +382,16 @@ class EXPG_GarrisonGameplay : GenericEntity
    Check(HolderMax <= 1.5, "Hold keeps the soldier within 1.5 m for 30 s under a squad move order");
    Check(FrozenMax <= 1.0, "Freeze keeps the soldier within 1.0 m for 30 s under a squad move order");
    Check(AnimatedMax <= 1.5, "Animation keeps the soldier within 1.5 m for 30 s under a squad move order");
-   // Informational: a forced SetStance on an AI is overridden by its own behaviour; Hold adds no stance lock (only Freeze/animations do).
-   PrintFormat("[EUS TEST CONTROL] holdForcedCrouch=%1", HolderCrouched);
-   Check(!FrozenStanceChanged, "Freeze keeps the frozen stance");
+   SCR_AIUtilityComponent probeUtility = Utility(Holder);
+   SCR_AIBehaviorBase holderBehavior;
+   if (probeUtility) holderBehavior = probeUtility.GetCurrentBehavior();
+   PrintFormat("[EUS TEST STANCE] probeAdded=%1 holderCrouched=%2 crouchLatency=%3 holderStance=%4 frozenStance=%5 frozenLock=%6 holderBehavior=%7", StanceProbeAdded, HolderCrouched, CrouchLatency, typename.EnumToString(ECharacterStance, Holder.GetCharacterController().GetStance()), typename.EnumToString(ECharacterStance, Frozen.GetCharacterController().GetStance()), typename.EnumToString(ECharacterStance, FrozenStance), holderBehavior);
+   Check(StanceProbeAdded && HolderCrouched, "Hold leaves stance native: a vanilla stance setting crouches the held soldier through his own AI");
+   Check(!FrozenStanceChanged, "Freeze keeps the frozen stance against a conflicting vanilla stance setting");
+   SCR_AICharacterSettingsComponent holderProbeOwner = SCR_AICharacterSettingsComponent.FindOnControlledEntity(Holder);
+   SCR_AICharacterSettingsComponent frozenProbeOwner = SCR_AICharacterSettingsComponent.FindOnControlledEntity(Frozen);
+   if (holderProbeOwner && HolderStanceProbe) holderProbeOwner.RemoveSetting(HolderStanceProbe);
+   if (frozenProbeOwner && FrozenStanceProbe) frozenProbeOwner.RemoveSetting(FrozenStanceProbe);
    Check(SmokeSince >= 0 && !LoiterLost && Now() - SmokeSince >= 10, "Animation plays the vanilla smoking loiter and stays in it");
    Advance(4);
    return;
@@ -350,6 +465,12 @@ class EXPG_GarrisonGameplay : GenericEntity
    Check(Group.EUS_Discipline == EUS_Codes.DISCIPLINE_LIGHT && held == living && living > 0, "Light Discipline owns every living member's light setting");
    Check(lit == 0, "Light Discipline keeps flashlights off");
    Check(EUS_Manager.Reserves(Group), "squad with night discipline is reserved from Unit Caching");
+   // A multi-group edit with differing values writes every selected group again.
+   int appliedBefore = Report.Applied;
+   Check(!Manager.SetDiscipline(Group, EUS_Codes.DISCIPLINE_LIGHT, Report) && Report.Applied == appliedBefore && Group.EUS_Discipline == EUS_Codes.DISCIPLINE_LIGHT, "the current night discipline again is ignored (not re-applied or counted)");
+   // The Group tab attribute entry refuses a write that does not come from the editing Game Master.
+   Manager.DisciplineAttribute(null, 0, Group, EUS_Codes.DISCIPLINE_TERROR);
+   Check(Group.EUS_Discipline == EUS_Codes.DISCIPLINE_LIGHT && Manager.FindDiscipline(Group) != null, "EXPBG Night discipline attribute write without the editing Game Master is refused");
    Check(Manager.SetDiscipline(Group, EUS_Codes.DISCIPLINE_TERROR, Report), "Terror Tactics applied");
    Advance(9);
    return;

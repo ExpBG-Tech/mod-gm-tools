@@ -1,0 +1,5 @@
+MatPBRBasic {
+ Color 0.058 0.058 0.058 1
+ BCRMap "{6EE5B9A23A069D10}EIIArt/HD/Data/Drive_BaseColor.1001.edds"
+ OpacityMap "{6EE5B9A23A069D10}EIIArt/HD/Data/Drive_BaseColor.1001.edds"
+}

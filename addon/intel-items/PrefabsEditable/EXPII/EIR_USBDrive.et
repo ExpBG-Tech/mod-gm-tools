@@ -6,23 +6,33 @@ GenericEntity : "{C95E11C60810F432}Prefabs/Items/Core/Item_Base.et" {
   InventoryItemComponent "{5222EB4D0C73006B}" {
    Attributes SCR_ItemAttributeCollection "{5222EB4D0A2B466B}" {
     ItemDisplayName EIR_DriveUIInfo "{5222EB4D07D865FA}" {
-     Name "USB Drive"
+     Name "#EII-USBDrive_InventoryName"
      Description "Empty. Use it at an EXPBG server rack to download intel; hover it here to read what it stores."
     }
-    ItemPhysAttributes ItemPhysicalAttributes PhysicalAttributes { Weight 0.02 SizeSetupStrategy Manual }
+    ItemPhysAttributes ItemPhysicalAttributes PhysicalAttributes { Weight 0.2 SizeSetupStrategy Manual }
     m_Size SLOT_1x1
     m_bStackable 0
     m_bRefundable 0
    }
   }
   MeshObject "{C342AD143BE58CD6}" {
-   Object "{624487A55A9380C7}Assets/Props/Debris/Electronic/FragmentElectronic_dbr_02.xob"
+   Object "{1372E94742F549D1}EIIArt/HD/HD.xob"
   }
-  RigidBody "{E17194F3643BC859}" { Mass 0.02 ModelGeometry 1 }
+  RigidBody "{E17194F3643BC859}" {
+   Mass 0.2
+   ModelGeometry 0
+   Geometries {
+    PhysicsBoxGeometry EIR_DriveBody {
+     LayerPreset "ItemFireView"
+     Offset 0 0.005 -0.0013
+     Extents 0.075 0.01 0.105
+    }
+   }
+  }
   SCR_EditableEntityComponent "{1C5FD9714E60E445}" : "{996046FE206C699A}Prefabs/Editor/Components/Default_SCR_EditableEntityComponent.ct" {
    m_UIInfo SCR_EditableEntityUIInfo "{53A0645334A46E3B}" {
-    Name "EXPBG USB Drive"
-    Description "Portable drive for server rack intel. Players download rack intel onto it, hand it over, and hover it in the inventory to read it."
+    Name "#EII-USBDrive_Name"
+    Description "#EII-USBDrive_Description"
     m_Image "{6A56D6B7C2F806CD}UI/Textures/EXPII/EIR_Download_Card.edds"
     m_aAuthoredLabels { 1 120 157026 }
    }

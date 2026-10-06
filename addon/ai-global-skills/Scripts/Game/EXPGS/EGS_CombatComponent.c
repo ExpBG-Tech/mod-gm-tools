@@ -3,7 +3,8 @@
 // leave the unit untouched:
 // - skill tier and aim accuracy are read by the aiming-error node (EGS_AimErrorOffset.c);
 // - spotting speed is folded into the vanilla perception update;
-// - magazines of the primary firearm are refilled after inventory changes (no grenades);
+// - magazines of the primary firearm are refilled after inventory changes (no grenades;
+//   weapons without a magazine template, such as the RHS M40A5, use the magazine they carry);
 // - warning shots use the vanilla suppress behaviour against a point next to the player.
 modded class SCR_AICombatComponent
 {
@@ -20,6 +21,8 @@ modded class SCR_AICombatComponent
 	protected int m_iEGS_RefillsLeft;
 	protected int m_iEGS_MagazineBaseline;
 	protected bool m_bEGS_AmmoCheckQueued;
+	// Magazine well -> magazine prefab, only for weapons without a magazine template.
+	protected ref map<typename, ResourceName> m_mEGS_SeenMagazines;
 
 	protected SCR_AISuppressBehavior m_EGS_WarningBehavior;
 	protected EventHandlerManagerComponent m_EGS_WarningEvents;
@@ -115,7 +118,10 @@ modded class SCR_AICombatComponent
 
 		EGS_EndWarningShots(false);
 		vector point = EGS_Manager.WarningPoint(owner.GetOrigin(), target.GetOrigin());
-		SCR_AISuppressionVolumeSphere volume = new SCR_AISuppressionVolumeSphere(point, 1.0);
+		// Aim sphere at least 3 m (XZ) from the shooter, its sweep clear of the target
+		// (WarningOffset); vanilla aim heights at and beyond its rim are kept finite by
+		// EGS_SuppressionVolume.c.
+		SCR_AISuppressionVolumeSphere volume = new SCR_AISuppressionVolumeSphere(point, EGS_Manager.WARNING_RADIUS);
 		SCR_AISuppressBehavior behavior = new SCR_AISuppressBehavior(m_Utility, null, volume, EGS_Manager.WARNING_WINDOW_S, EGS_Manager.WARNING_FIRE_RATE, SCR_AIActionBase.PRIORITY_LEVEL_PLAYER);
 		m_Utility.AddAction(behavior);
 		m_EGS_WarningBehavior = behavior;
@@ -242,7 +248,9 @@ modded class SCR_AICombatComponent
 
 	//------------------------------------------------------------------------------------------------
 	//! Primary firearm magazine: long gun first, handgun otherwise; base muzzle only, so
-	//! underbarrel grenades, launchers and throwables are never refilled.
+	//! underbarrel grenades, launchers and throwables are never refilled. A firearm whose
+	//! magazine cannot be told (EGS_ResolveMagazine) gives way to the next one, so a sniper
+	//! with an unknown rifle magazine still gets handgun magazines instead of nothing.
 	protected bool EGS_FindRefillMuzzle(out BaseMuzzleComponent outMuzzle, out ResourceName outMagazine)
 	{
 		if (!m_WpnManager)
@@ -250,8 +258,9 @@ modded class SCR_AICombatComponent
 
 		array<IEntity> weapons = {};
 		m_WpnManager.GetWeaponsList(weapons);
-		BaseWeaponComponent best;
-		int bestRank;
+		array<BaseWeaponComponent> firearms = {};
+		array<int> ranks = {};
+		int topRank = 0;
 		foreach (IEntity weaponEntity : weapons)
 		{
 			if (!weaponEntity)
@@ -262,18 +271,34 @@ modded class SCR_AICombatComponent
 				continue;
 
 			int rank = EGS_Roles.FirearmRank(weapon.GetWeaponType());
-			if (rank > bestRank)
+			if (rank <= 0)
+				continue;
+
+			firearms.Insert(weapon);
+			ranks.Insert(rank);
+			if (rank > topRank)
+				topRank = rank;
+		}
+
+		// Highest rank first; equal ranks keep the weapon-slot order, so the firearm picked
+		// first is the one picked before whenever its magazine is known.
+		for (int wanted = topRank; wanted > 0; wanted--)
+		{
+			foreach (int position, BaseWeaponComponent firearm : firearms)
 			{
-				best = weapon;
-				bestRank = rank;
+				if (ranks[position] == wanted && EGS_FindWeaponMagazine(firearm, outMuzzle, outMagazine))
+					return true;
 			}
 		}
 
-		if (!best)
-			return false;
+		return false;
+	}
 
+	//------------------------------------------------------------------------------------------------
+	protected bool EGS_FindWeaponMagazine(BaseWeaponComponent weapon, out BaseMuzzleComponent outMuzzle, out ResourceName outMagazine)
+	{
 		array<BaseMuzzleComponent> muzzles = {};
-		best.GetMuzzlesList(muzzles);
+		weapon.GetMuzzlesList(muzzles);
 		foreach (BaseMuzzleComponent muzzle : muzzles)
 		{
 			if (!muzzle || muzzle.GetMuzzleType() != EMuzzleType.MT_BaseMuzzle)
@@ -283,7 +308,7 @@ modded class SCR_AICombatComponent
 			if (inMagazine && !inMagazine.CanBeReloaded())
 				continue;
 
-			ResourceName magazine = muzzle.GetDefaultMagazineOrProjectileName();
+			ResourceName magazine = EGS_ResolveMagazine(muzzle);
 			if (magazine.IsEmpty())
 				continue;
 
@@ -293,6 +318,65 @@ modded class SCR_AICombatComponent
 		}
 
 		return false;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! The muzzle's magazine template when it has one (vanilla, unchanged). Weapons that ship
+	//! with an empty template (RHS M40A5: MagazineTemplate "") use the magazine they have
+	//! loaded, then the one last seen for their magazine well (a check during a reload has no
+	//! loaded magazine), then a matching spare from the inventory.
+	protected ResourceName EGS_ResolveMagazine(BaseMuzzleComponent muzzle)
+	{
+		ResourceName magazine = muzzle.GetDefaultMagazineOrProjectileName();
+		if (!magazine.IsEmpty())
+			return magazine;
+
+		// A plain BaseMagazineWell would match any magazine (RHS spectrum devices): no key.
+		typename wellType = BaseMagazineWell;
+		BaseMagazineWell well = muzzle.GetMagazineWell();
+		if (well)
+			wellType = well.Type();
+
+		bool keyed = wellType != BaseMagazineWell;
+
+		magazine = EGS_MagazinePrefab(muzzle.GetMagazine());
+		if (magazine.IsEmpty() && keyed && m_mEGS_SeenMagazines)
+			m_mEGS_SeenMagazines.Find(wellType, magazine);
+
+		if (magazine.IsEmpty() && keyed && m_InventoryManager)
+		{
+			SCR_MagazinePredicate predicate = new SCR_MagazinePredicate();
+			predicate.magWellType = wellType;
+			IEntity spare = m_InventoryManager.FindItem(predicate);
+			if (spare)
+				magazine = EGS_MagazinePrefab(BaseMagazineComponent.Cast(spare.FindComponent(BaseMagazineComponent)));
+		}
+
+		if (magazine.IsEmpty() || !keyed)
+			return magazine;
+
+		if (!m_mEGS_SeenMagazines)
+			m_mEGS_SeenMagazines = new map<typename, ResourceName>();
+
+		m_mEGS_SeenMagazines.Set(wellType, magazine);
+		return magazine;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected static ResourceName EGS_MagazinePrefab(BaseMagazineComponent magazineComponent)
+	{
+		if (!magazineComponent)
+			return ResourceName.Empty;
+
+		IEntity magazineEntity = magazineComponent.GetOwner();
+		if (!magazineEntity)
+			return ResourceName.Empty;
+
+		EntityPrefabData prefabData = magazineEntity.GetPrefabData();
+		if (!prefabData)
+			return ResourceName.Empty;
+
+		return prefabData.GetPrefabName();
 	}
 
 	//------------------------------------------------------------------------------------------------

@@ -14,6 +14,8 @@ modded class SCR_EditableCharacterComponent
  // Server only, world-time seconds.
  protected float m_fEUD_GestureReady;
  protected float m_fEUD_GestureUntil;
+ // Server only: talking gestures started on this unit (one per conversation start).
+ protected int m_iEUD_GestureStarts;
 
  //------------------------------------------------------------------------------------------------
  string EUD_GetName() { return m_sEUD_Name; }
@@ -150,8 +152,11 @@ modded class SCR_EditableCharacterComponent
  }
 
  //------------------------------------------------------------------------------------------------
- // Server: short vanilla character gesture, rate limited per unit. Gestures are
- // replicated by the character controller; nothing here is sent to clients.
+ // Server: talking gestures started on this unit (fixtures count one per conversation).
+ int EUD_GetGestureStarts() { return m_iEUD_GestureStarts; }
+ // Server: short vanilla character gesture, rate limited per unit. Called once per
+ // conversation, when it starts (EUD_SpeakAction); Continue and Restart never replay
+ // it. Gestures are replicated by the character controller; nothing here is sent.
  void EUD_PlayGesture()
  {
   if (!Replication.IsServer() || !GetGame() || !GetGame().GetWorld()) return;
@@ -163,8 +168,9 @@ modded class SCR_EditableCharacterComponent
   CharacterControllerComponent controller = character.GetCharacterController();
   if (!controller || controller.IsPlayingGesture()) return;
   m_fEUD_GestureReady = now + EUD_Dialog.GESTURE_GAP;
-  if (controller.TryStartCharacterGesture(gesture, EUD_Dialog.GESTURE_MS))
-   m_fEUD_GestureUntil = now + EUD_Dialog.GESTURE_MS * 0.001;
+  if (!controller.TryStartCharacterGesture(gesture, EUD_Dialog.GESTURE_MS)) return;
+  m_fEUD_GestureUntil = now + EUD_Dialog.GESTURE_MS * 0.001;
+  m_iEUD_GestureStarts++;
  }
  // Server: stop only a gesture this module started and that is still running.
  void EUD_StopGesture()

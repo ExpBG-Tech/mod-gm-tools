@@ -66,6 +66,9 @@ class EBG_CacheGroup
  string Reason;
  string LastCacheRejection;
  string RegroupReason;
+ // Non-empty while an optional module keeps this record awake (EBG_CacheManager.
+ // KeepAwakeReason); the scheduler logs each change. Runtime only; never persisted.
+ string KeepAwake;
  protected string m_LastRecoveryWarning;
  protected float m_NextRecoveryWarning;
  protected string m_DebugLast;
@@ -130,6 +133,87 @@ class EBG_ZoneProtection
 {
  vector Origin;
  bool WakeKnown, Wake, SleepKnown, Sleep;
+}
+// One enrollment pass of one zone: why groups inside its affected radius stayed
+// out. Text for the zone status and the Game Master notice only; enrollment,
+// caching and ownership never read it.
+class EBG_EnrollmentTally
+{
+ int LeftSquad;
+ ref array<string> Reasons = {};
+ ref array<int> Counts = {};
+ void Add(string reason)
+ {
+  int index = Reasons.Find(reason);
+  if (index < 0)
+  {
+   Reasons.Insert(reason);
+   Counts.Insert(1);
+   return;
+  }
+  Counts[index] = Counts[index] + 1;
+ }
+ // Soldiers who left their squad for good (EBG_MarkLeftSquad: AI Surrender's
+ // prisoners). AI Surrender switches their AI off, so the AI world's agent list
+ // no longer holds them; this server list does. Weak entity handles, pruned here.
+ protected static ref array<SCR_ChimeraCharacter> s_LeftSquad = {};
+ static void TrackLeftSquad(SCR_ChimeraCharacter character)
+ {
+  if (character && Replication.IsServer() && !s_LeftSquad.Contains(character)) s_LeftSquad.Insert(character);
+ }
+ // Living soldiers outside any group who left their squad, inside the radius. They
+ // are never enrolled; the GM is told so.
+ void CountLeftSquad(vector origin, float radiusSq)
+ {
+  for (int i = s_LeftSquad.Count() - 1; i >= 0; i--)
+  {
+   SCR_ChimeraCharacter character = s_LeftSquad[i];
+   CharacterControllerComponent controller;
+   if (character) controller = character.GetCharacterController();
+   if (!controller || controller.IsDead())
+   {
+    s_LeftSquad.Remove(i);
+    continue;
+   }
+   if (character.GetCharacterGroup()) continue;
+   if (EBG_CacheGeometry.DistanceSq(character.GetOrigin(), origin) <= radiusSq) LeftSquad++;
+  }
+ }
+ // A living soldier inside the radius, or a group still spawning at a point inside it.
+ static bool Nearby(SCR_AIGroup group, array<AIAgent> members, vector origin, float radiusSq)
+ {
+  bool living;
+  foreach (AIAgent member : members)
+  {
+   if (!member) continue;
+   SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(member.GetControlledEntity());
+   if (!character) continue;
+   CharacterControllerComponent controller = character.GetCharacterController();
+   if (!controller || controller.IsDead()) continue;
+   living = true;
+   if (EBG_CacheGeometry.DistanceSq(character.GetOrigin(), origin) <= radiusSq) return true;
+  }
+  return !living && !group.EBG_HasCompletedInitialSpawn() && EBG_CacheGeometry.DistanceSq(group.GetOrigin(), origin) <= radiusSq;
+ }
+ string Note(int affected, bool managed)
+ {
+  string text;
+  for (int i = 0; i < Reasons.Count(); i++)
+  {
+   if (text.IsEmpty()) text = "Not enrolled: ";
+   else text += "; ";
+   string groups = "groups";
+   if (Counts[i] == 1) groups = "group";
+   text += string.Format("%1 %2 %3", Counts[i], groups, Reasons[i]);
+  }
+  if (text.IsEmpty() && !managed) text = string.Format("No AI group with a free living soldier inside the %1 m affected radius", affected);
+  if (LeftSquad > 0)
+  {
+   if (!text.IsEmpty()) text += " | ";
+   text += string.Format("%1 prisoners or soldiers who left their squad nearby are never cached", LeftSquad);
+  }
+  return text;
+ }
 }
 class EBG_CacheManager
 {
@@ -384,6 +468,18 @@ class EBG_CacheManager
    if (record.Group == group) return record;
   return null;
  }
+ // Published seam: true while cached or transitional state of this squad is held
+ // (Simulation snapshot, Full transaction or recovery; Garrison adds its records).
+ // A module that would take a living member out of the squad (AI Surrender) waits
+ // until the squad is plainly awake, so no snapshot ever restores a prisoner.
+ static bool IsCacheHeld(SCR_AIGroup group)
+ {
+  if (!group || !Instance) return false;
+  EBG_CacheGroup record = Instance.FindGroup(group);
+  if (!record) return false;
+  if (record.Full || record.Simulation || record.PersistentScalarRollbackPending) return true;
+  return record.Recovery != "";
+ }
  bool IsReserved(SCR_AIGroup group)
  {
   if (Regroup.ReservesGroup(group)) return true;
@@ -394,6 +490,15 @@ class EBG_CacheManager
   foreach (EBG_CacheGroup record : Records)
    if (record.Full && (record.FullGroupId == id || record.Full.HasReservedUUID(id))) return true;
   return false;
+ }
+ // Published seam, the sleep-side twin of IsReserved. Enrollment consults only
+ // IsReserved, so a module that starts running live scripts on an already enrolled
+ // squad (EXPBG Unit Scripts) returns a reason here: the record then never starts
+ // a Simulation or Full sleep and a suspended record restores. Empty (the default)
+ // resumes the normal clear-delay rules. Read once per scheduler tick and record.
+ string KeepAwakeReason(SCR_AIGroup group)
+ {
+  return string.Empty;
  }
  EBG_CacheMember FindMember(IEntity entity)
  {
@@ -612,45 +717,61 @@ class EBG_CacheManager
   array<AIAgent> agents = sharedAgents;
   if (!agents) { agents = {}; world.GetAIAgents(agents); }
   map<SCR_AIGroup, bool> visited = new map<SCR_AIGroup, bool>();
+  PersistenceSystem enrollmentPersistence = PersistenceSystem.GetInstance();
+  vector zoneOrigin = zone.GetOrigin();
+  float affectedSq = zone.Affected * zone.Affected;
+  // Diagnostics only: why groups inside the affected radius stayed out. The
+  // enrollment decision below is unchanged; only the order of its pure checks
+  // now names the first one that refused a group.
+  EBG_EnrollmentTally tally = new EBG_EnrollmentTally();
   foreach (AIAgent agent : agents)
   {
    SCR_AIGroup group = SCR_AIGroup.Cast(agent);
    if (!group) group = SCR_AIGroup.Cast(agent.GetParentGroup());
-   if (!group || visited.Contains(group)) continue;
-   PersistenceSystem enrollmentPersistence = PersistenceSystem.GetInstance();
-   if (enrollmentPersistence && EBG_MissionPersistence.Reserves(enrollmentPersistence.GetId(group)) && !FindGroup(group)) continue;
+   if (!group) continue;
+   if (visited.Contains(group)) continue;
    visited.Insert(group, true);
-   if (FindGroup(group) || IsReserved(group) || group.EBG_Exclude || !group.EBG_HasCompletedInitialSpawn()) continue;
-   if (group.GetPlayerCount() > 0 || group.IsSlave() || group.GetMaster() || group.IsCreatedByCommander()) continue;
-   if (group.GetLifecyclePolicy() == SCR_EAIGroupLifecyclePolicy.ProximityDriven) continue;
    array<AIAgent> members = {};
    group.GetAgents(members);
-   if (members.IsEmpty()) continue;
-   bool inside;
-   bool outside;
-   bool unsafe;
-   foreach (AIAgent memberAgent : members)
+   // A group with no living soldier inside the radius is never enrolled; one
+   // still spawning at a point inside it is only reported.
+   if (!EBG_EnrollmentTally.Nearby(group, members, zoneOrigin, affectedSq)) continue;
+   EBG_CacheGroup existing = FindGroup(group);
+   if (existing)
    {
-    SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(memberAgent.GetControlledEntity());
-    if (!character || !character.GetCharacterController() || !EBG_MissionPersistence.MayEnroll(character) || character.EBG_WasPlayerControlled() || (enrollmentPersistence && EBG_MissionPersistence.HasUnresolvedRelease(enrollmentPersistence.GetId(character)))) { unsafe = true; break; }
-    if (character.GetCharacterController().IsDead()) continue;
-    // A split/merged native group does not transfer logical member ownership.
-    // Require release of the existing record before another group can enroll it.
-    if (FindMember(character) || Regroup.ReservesMember(character)) { unsafe = true; break; }
-    if (EBG_CacheGeometry.DistanceSq(character.GetOrigin(), zone.GetOrigin()) <= zone.Affected * zone.Affected) inside = true;
-    else outside = true;
+    if (existing.Zone != zone) tally.Add("managed by another cache zone");
+    continue;
    }
-   if (!inside || unsafe) continue;
+   string skip;
+   if (enrollmentPersistence && EBG_MissionPersistence.Reserves(enrollmentPersistence.GetId(group))) skip = "waiting for saved mission ownership to bind";
+   else if (IsReserved(group))
+   {
+    // Text only: a module that also publishes a keep-awake reason (Unit Scripts) names itself.
+    string holder = KeepAwakeReason(group);
+    if (holder.IsEmpty()) skip = "held by another EXPBG module (Unit Scripts, Garrison, ambient crowds) or a pending cache transfer";
+    else skip = "held by another EXPBG module (" + holder + ")";
+   }
+   else if (group.EBG_Exclude) skip = "marked Exclude from EXPBG optimization";
+   else if (!group.EBG_HasCompletedInitialSpawn()) skip = "still spawning members";
+   else if (group.GetPlayerCount() > 0) skip = "containing a player";
+   else if (group.IsSlave() || group.GetMaster() || group.IsCreatedByCommander()) skip = "commanded by another group or the commander";
+   else if (group.GetLifecyclePolicy() == SCR_EAIGroupLifecyclePolicy.ProximityDriven) skip = "run by the vanilla proximity spawner";
+   else skip = MemberSkip(members, enrollmentPersistence);
    // Soldiers only: a civilian-faction group inside the zone is never enrolled.
    // Civilians are cached by EXPBG Ambient Civilians. Each skipped group is named
    // once in the server log so a Game Master can see why it stayed awake.
-   if (zone.MilitaryOnly > 0 && !IsMilitaryGroup(group))
+   if (skip.IsEmpty() && zone.MilitaryOnly > 0 && !IsMilitaryGroup(group))
    {
     if (!m_SoldiersOnlySkipped.Contains(group))
     {
      m_SoldiersOnlySkipped.Insert(group);
      PrintFormat("[EBG] Soldiers only: zone left group %1 alone (faction '%2', utility=%3). Switch 'Soldiers only' off on the zone to cache it.", group, group.GetFactionName(), group.FindComponent(SCR_AIGroupUtilityComponent) != null);
     }
+    skip = "of a civilian faction ('Soldiers only' is on)";
+   }
+   if (!skip.IsEmpty())
+   {
+    tally.Add(skip);
     continue;
    }
    EBG_CacheGroup record = new EBG_CacheGroup();
@@ -677,6 +798,32 @@ class EBG_CacheManager
    UpdateRecord(record);
 
   }
+  bool managed;
+  foreach (EBG_CacheGroup zoneRecord : Records)
+  {
+   if (zoneRecord.Zone == zone) { managed = true; break; }
+  }
+  tally.CountLeftSquad(zoneOrigin, affectedSq);
+  zone.EnrollmentNote = tally.Note(zone.Affected, managed);
+  zone.EnrollmentPasses++;
+ }
+ // Enrollment refusals that depend on a member; empty when every member may enroll.
+ // The same per-member checks enrollment always made, each naming itself for the status.
+ protected string MemberSkip(array<AIAgent> members, PersistenceSystem persistence)
+ {
+  foreach (AIAgent memberAgent : members)
+  {
+   SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(memberAgent.GetControlledEntity());
+   if (!character || !character.GetCharacterController()) return "with an unsupported member entity";
+   if (character.EBG_WasPlayerControlled()) return "with a member a player controls or once possessed";
+   if (character.EBG_HasLeftSquad()) return "still holding a soldier who left his squad";
+   if (!EBG_MissionPersistence.MayEnroll(character) || (persistence && EBG_MissionPersistence.HasUnresolvedRelease(persistence.GetId(character)))) return "with an unresolved saved member release";
+   if (character.GetCharacterController().IsDead()) continue;
+   // A split/merged native group does not transfer logical member ownership.
+   // Require release of the existing record before another group can enroll it.
+   if (FindMember(character) || Regroup.ReservesMember(character)) return "with a member another cache record still owns";
+  }
+  return string.Empty;
  }
  // Only the validated regroup commit calls this. Existing records/member objects
  // are reused whenever possible so cleanup and persistent history retain identity.
@@ -868,6 +1015,15 @@ class EBG_CacheManager
   if (record.Recovery != "") record.Reason = record.Recovery;
   if (record.PersistenceIssue != "") record.Reason = "Saved ownership held: " + record.PersistenceIssue;
   if (record.RegroupReason != "") record.Reason = record.RegroupReason;
+  // Lowest-priority reason; any reason skips sleep and wakes a suspended record.
+  string keepAwake = KeepAwakeReason(record.Group);
+  if (keepAwake != record.KeepAwake)
+  {
+   if (keepAwake != "") PrintFormat("[EBG KEEP AWAKE] group=%1 native=%2 anchor=%3 held: %4", record.Id, record.Group, record.Anchor, keepAwake);
+   else PrintFormat("[EBG KEEP AWAKE] group=%1 native=%2 anchor=%3 released; normal sleep rules resume", record.Id, record.Group, record.Anchor);
+   record.KeepAwake = keepAwake;
+  }
+  if (keepAwake != "" && record.Reason == "") record.Reason = keepAwake;
  }
  bool InVolume(EBG_CacheGroup record, bool sleep)
  {
@@ -968,6 +1124,7 @@ class EBG_CacheManager
     }
    }
    zone.ManagedCount = 0; zone.AliveCount = 0; zone.DeadCount = 0; zone.SkippedCount = 0; zone.CachedCount = 0; zone.PendingCount = 0; zone.RecoveryCount = 0; zone.BlockedReason = "";
+   zone.PlayerAwakeCount = 0; zone.PlayerAwakeDistance = -1;
   }
   foreach (EBG_CacheGroup record : Records) UpdateRecord(record);
   InvalidateProtection();
@@ -1102,6 +1259,15 @@ class EBG_CacheManager
     {
      if (zone.Strategy == 0) record.Reason = string.Format("Whole zone awake: player near module or any managed member (sleep radius %1 m)", zone.ZoneSleep);
      else record.Reason = string.Format("Group awake: player near group anchor or member (sleep radius %1 m)", zone.GroupSleep);
+     // Status text only: how many groups a player keeps awake, and how close. The
+     // full players x members distance scan runs only while a notice is pending or
+     // debug is on (its only readers); the replicated status shows no distance.
+     zone.PlayerAwakeCount++;
+     if (zone.DebugMessages > 0 || EBG_CacheDebug.Level > 0 || zone.EBG_NoticePending())
+     {
+      float playerDistance = NearestPlayerDistance(record);
+      if (playerDistance >= 0 && (zone.PlayerAwakeDistance < 0 || playerDistance < zone.PlayerAwakeDistance)) zone.PlayerAwakeDistance = playerDistance;
+     }
     }
     else
     {
@@ -1159,10 +1325,108 @@ class EBG_CacheManager
    else if (zone.Editing) zone.Status = "Held active for editing";
    else zone.Status = string.Format("%1 groups / %2 survivors / %3 cached / %4 pending / %5 recovery / %6 blocked", zone.ManagedCount, zone.AliveCount, zone.CachedCount, zone.PendingCount, zone.RecoveryCount, zone.SkippedCount);
    if (!zone.Editing && zone.SkippedCount > 0 && !zone.BlockedReason.IsEmpty()) zone.Status += " | " + zone.BlockedReason;
+   string fullUnavailable = ZoneNotes(zone);
    string saveStatus = EBG_FullSaveGate.GetStatus();
-   if (saveStatus != "") zone.Status += " | " + saveStatus;
+   if (saveStatus != "" && saveStatus != fullUnavailable) zone.Status += " | " + saveStatus;
    zone.PublishStatus();
+   int noticePlayer = zone.EBG_TakeNotice();
+   if (noticePlayer > 0) EBG_ZoneFeedback.Send(noticePlayer, ZoneNoticeText(zone));
   }
+ }
+ // Appends why an enabled zone enrolls or caches nothing: enrollment refusals,
+ // player characters inside the sleep radius and Full cache this session cannot
+ // run. Returns the Full refusal (empty when Full is available or not selected).
+ protected string ZoneNotes(EBG_CacheZone zone)
+ {
+  if (!zone.Enabled || zone.Editing || zone.HasPendingSettings() || EBG_OptimizerControl.Preparing) return string.Empty;
+  if (!zone.EnrollmentNote.IsEmpty()) zone.Status += " | " + zone.EnrollmentNote;
+  if (zone.PlayerAwakeCount > 0) zone.Status += " | " + PlayerAwakeNote(zone, false);
+  string fullUnavailable = FullUnavailable(zone);
+  if (!fullUnavailable.IsEmpty()) zone.Status += " | Full cache unavailable in this session: " + fullUnavailable;
+  string standalone = StandaloneNote();
+  if (!standalone.IsEmpty()) zone.Status += " | " + standalone;
+  return fullUnavailable;
+ }
+ // The retired standalone EXPBG mods next to the pack (EBG_StandaloneConflict reads
+ // the loaded-addon list once per mission). Status and notice text only.
+ static string StandaloneNote()
+ {
+  if (!GetGame()) return string.Empty;
+  string loaded = EBG_StandaloneConflict.Loaded(SCR_BaseGameMode.Cast(GetGame().GetGameMode()));
+  if (loaded.IsEmpty()) return string.Empty;
+  return "old standalone EXPBG mods are loaded next to GM Tools (" + loaded + "); disable them, their duplicate scripts and prefabs make caching unpredictable";
+ }
+ // Read once per scheduler tick; the loaded-addon list is only read for Full zones.
+ protected float m_FullCheckedAt = -1;
+ protected string m_FullRefusal;
+ string FullUnavailable(EBG_CacheZone zone)
+ {
+  if (!zone || zone.Mode != 1) return string.Empty;
+  float now = Now();
+  if (now != m_FullCheckedAt)
+  {
+   m_FullCheckedAt = now;
+   string reason;
+   if (EBG_FullSaveGate.Available(reason)) m_FullRefusal = string.Empty;
+   else m_FullRefusal = reason;
+  }
+  return m_FullRefusal;
+ }
+ // withDistance: the one-time notice and the debug panel (a per-second sample anyway)
+ // name the nearest player character's distance. The replicated zone status leaves
+ // it out; a moving player would otherwise change and re-replicate it every few seconds.
+ static string PlayerAwakeNote(EBG_CacheZone zone, bool withDistance = true)
+ {
+  string nearest = "a player character is";
+  if (withDistance && zone.PlayerAwakeDistance >= 0)
+  {
+   // XZ metres, rounded down to 10 m so it never reads as the radius itself.
+   float metres = Math.Floor(zone.PlayerAwakeDistance / 10) * 10;
+   nearest += string.Format(" %1 m away,", metres);
+  }
+  return string.Format("%1 awake: %2 inside the %3 m sleep radius (a Game Master's own character counts; the free GM camera does not)", zone.PlayerAwakeCount, nearest, zone.ZoneSleep);
+ }
+ // XZ metres from the nearest player character to this record's protection
+ // centre (anchor, or the module for whole-zone activation) or a living member.
+ protected float NearestPlayerDistance(EBG_CacheGroup record)
+ {
+  if (Players.IsEmpty() || !record.Zone) return -1;
+  vector center = record.Anchor;
+  if (record.Zone.Strategy == 0) center = record.Zone.GetOrigin();
+  float best = float.MAX;
+  foreach (vector player : Players)
+  {
+   best = Math.Min(best, EBG_CacheGeometry.DistanceSq(player, center));
+   foreach (EBG_CacheMember member : record.Members)
+   {
+    if (!member.Dead) best = Math.Min(best, EBG_CacheGeometry.DistanceSq(player, member.Position));
+   }
+  }
+  return Math.Sqrt(best);
+ }
+ // One plain-language line for the Game Master who saved the zone or used a
+ // global switch, from the latest tick. Read only.
+ string ZoneNoticeText(EBG_CacheZone zone)
+ {
+  vector origin = zone.GetOrigin();
+  string mode = "Simulation";
+  if (zone.Mode == 1) mode = "Full";
+  string text = string.Format("Cache zone @ %1, %2 (%3): ", Math.Round(origin[0]), Math.Round(origin[2]), mode);
+  if (!zone.Enabled) return text + "disabled; its AI stay awake. Enable the zone to cache them.";
+  if (zone.Editing || zone.HasPendingSettings() || EBG_OptimizerControl.Preparing) return text + zone.Status;
+  string groups = "groups";
+  if (zone.ManagedCount == 1) groups = "group";
+  text += string.Format("%1 %2 enrolled, %3 cached.", zone.ManagedCount, groups, zone.CachedCount);
+  string fullUnavailable = FullUnavailable(zone);
+  if (!fullUnavailable.IsEmpty()) text += " Full cache unavailable in this session: " + fullUnavailable + "; Simulation mode still works.";
+  if (!zone.EnrollmentNote.IsEmpty()) text += " " + zone.EnrollmentNote + ".";
+  if (zone.PlayerAwakeCount > 0) text += " " + PlayerAwakeNote(zone) + ".";
+  else if (zone.ManagedCount > zone.CachedCount && zone.SkippedCount == 0 && fullUnavailable.IsEmpty())
+   text += string.Format(" Groups cache after %1 s with no player character within %2 m.", zone.SleepDelay, zone.ZoneSleep);
+  if (zone.SkippedCount > 0 && !zone.BlockedReason.IsEmpty()) text += " Held: " + zone.BlockedReason + ".";
+  string standalone = StandaloneNote();
+  if (!standalone.IsEmpty()) text += " Warning: " + standalone + ".";
+  return text;
  }
 }
 modded class SCR_AIGroup

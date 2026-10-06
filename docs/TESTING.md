@@ -31,7 +31,12 @@ Fixture `tests/EBG_UnitCleanupGameplay.c`, selected with the runner switch
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -UnitCleanup -TimeoutSeconds 540 -OrchestratorSlotGranted
 ```
 
-Cases (letters used below):
+Add `-Rhs` to also load RHS: Status Quo and both content packs, linked by GUID
+from the installed addons (never copied); without it the two RHS cases only log
+`available=0`. `-Rhs` also works with a custom fixture run with `-FixturePath`
+and `-ExpectResult` (AI Global Skills ammo refill, Unit Scripts RHS discipline).
+
+Cases (letters used below; the fixture runs 14):
 
 | | Case |
 | --- | --- |
@@ -42,8 +47,12 @@ Cases (letters used below):
 | G | `sim-partial-wakeband` |
 | H | `foreign-item` |
 | J | `us-etool-atomic` |
+| K | `identityless-gear` |
 | E | `sim-all-control` |
 | F | `full-all-control` |
+| L | `rhs-mg-team` (needs `-Rhs`) |
+| M | `cloth-slot-accessory` |
+| N | `rhs-usmc-recon` (needs `-Rhs`) |
 | I | `sim-death-while-cached` |
 
 The letters match the fixture source. Each case spawns a real USSR rifle squad
@@ -55,15 +64,35 @@ while the squad sleeps, so the fixture gates only safety for I: the body is neve
 deleted by EBG and survivors stay alive (known limit; sleeping units are hidden
 and untargetable in normal play). Deletions are attributed to `EBG_CacheCleanup.Tick` together
 with the cache state at deletion (0 awake, 1 Simulation cached, 2 Full cached).
+K gives one casualty a worn vest stripped of its native identity and an
+unregistered WeaponPart_Base stock on his weapon (the RHS preset-vest and
+weapon-part situation without RHS). L is the RHS AFRF machine-gun team (PKP,
+AK-74M parts and the 6B45 preset vest without native identity). M is the
+vanilla stand-in for B1: the first non-leader whose worn cloth carries an
+accessory in a storage-less `LoadoutSlotInfo` (a stock Lifchik or 6B3 canteen)
+dies, and a test seam reports that cloth to `NativeVestAccessoryOwner` as
+unlisted. N is the RHS USMC MEF recon team (scout and scout RTO, both in
+`Hat_USMC_Boonie_Comtac` with the Peltor headset in its storage-less Comtacs
+slot). M and N must show, just before eligibility and after an explicit
+transfer check, every such accessory still held, owned by its wearer and not a
+protected ownership chain, then the bodies deleted with cloth and accessory and
+no UUID-less lineage.
 The runner's `Test-UnitCleanupEvidence` requires one distinct
-`[EBG CLEANUP TEST RESULT] ... failures=0 cases=10 reason=complete` line (stdout,
+`[EBG CLEANUP TEST RESULT] ... failures=0 cases=14 reason=complete` line (stdout,
 `console.log` and `script.log` each repeat it), `state=0 whileCached=0` for A and
 D, `state=1 whileCached=1` for B, `state=2 whileCached=1` for C, the I
 `[EBG CLEANUP TEST SNAPSHOT]` line (`heldWhileCached=1 restored=1 deletedByEbg=1`,
 or `knownLimitation=death-not-confirmed-while-suspended deletedByEbg=0`), the H
 `[EBG CLEANUP TEST FOREIGN] ... present=0 firstByEbg=1 secondByEbg=1 foreignGone=1`
 line (an unregistered magazine inside the body is deleted with it), the J
-`[EBG CLEANUP TEST ATOMIC] ... sameTick=1 partialStrips=0` line, no
+`[EBG CLEANUP TEST ATOMIC] ... sameTick=1 partialStrips=0` line, the K
+`[EBG CLEANUP TEST IDENTITYLESS] ... blocking=0` and
+`[EBG CLEANUP TEST IDENTITYLESS DELETED] ... lineage=0` lines, the M
+`[EBG CLEANUP TEST CLOTH SLOT] case=cloth-slot-accessory available=1
+accessories=n unlisted=n held=n wearerHolder=n protectedChain=0 blocking=0` and
+`[EBG CLEANUP TEST CLOTH SLOT DELETED] ... accessoriesGone=1 clothGone=1
+present=0 proven=1 lineage=0` lines, L and N passing with `-Rhs` (otherwise
+their `available=0` lines), no `[EBG CLEANUP KEEP]`, no
 `[EBG CLEANUP TEST SURVIVOR DELETE]` or `[EBG CLEANUP TEST PARTIAL STRIP]`, no
 script errors and a clean shutdown. The fixture deadline is 400 s of world time; `-UnitCleanup` defaults
 `-TimeoutSeconds` to 540 and refuses less than 480. Portable verifier cases:

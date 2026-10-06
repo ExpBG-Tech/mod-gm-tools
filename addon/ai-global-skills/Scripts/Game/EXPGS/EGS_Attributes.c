@@ -206,7 +206,9 @@ class EGS_RoeDefaultAttribute : EGS_ModuleAttribute {}
 class EGS_RefillCountAttribute : EGS_ModuleAttribute {}
 
 //------------------------------------------------------------------------------------------------
-//! Per-group rules of engagement in the group's attribute dialog (shown while a module exists).
+//! "EXPBG ROE": per-group rules of engagement in the vanilla Group tab of the group's
+//! attribute dialog, next to Set combat mode (shown while a module exists). The editor
+//! writes only changed values, once per edited group.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class EGS_GroupRoeAttribute : SCR_BaseEditorAttribute
 {

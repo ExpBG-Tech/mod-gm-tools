@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{F673447B16CD185C}EIIArt/HD/Data/ManufacturerInfo_BaseColor.1003.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

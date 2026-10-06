@@ -1,9 +1,13 @@
-// Native 1.8 GM saves keep the zone and its five settings. The crowd itself is
-// transient (EAU_Director.KeepOutOfSaves): a loaded zone that is On gathers a
-// fresh crowd, so a restore can never duplicate protesters.
+// Native 1.8 GM saves keep the zone and its seven settings. The crowd itself is
+// transient (EAU_Director.KeepOutOfSaves), and so is a sleeping zone's memory of
+// it: a loaded zone that is On gathers a fresh crowd once a player is near, so a
+// restore can never duplicate protesters.
 class EAU_ProtestZoneSerializer : GenericEntitySerializer
 {
- static const int VERSION = 1;
+ // 2 added the Crowd sound setting, 3 the Wake distance. Version 1 saves hold five
+ // settings and load with Alternate, version 1 and 2 saves load with the 300 m
+ // wake distance (EAU_ProtestZone.RestoreSettings).
+ static const int VERSION = 3;
 
  override static typename GetTargetType() { return EAU_ProtestZone; }
  override static EEntityDeserializeEvent GetDeserializeEvent() { return EEntityDeserializeEvent.AFTER_FINALIZE; }
@@ -33,7 +37,11 @@ class EAU_ProtestZoneSerializer : GenericEntitySerializer
   int version;
   array<int> settings = {};
   if (!zone || !context.ReadValue("eauVersion", version) || !context.ReadValue("settings", settings)) return false;
-  if (version != VERSION || settings.Count() != EAU_ProtestZone.SETTING_COUNT) return false;
+  int expected = EAU_ProtestZone.SETTING_COUNT;
+  if (version == 1) expected = EAU_ProtestZone.LEGACY_SETTING_COUNT;
+  else if (version == 2) expected = EAU_ProtestZone.SOUND_SETTING_COUNT;
+  else if (version != VERSION) return false;
+  if (settings.Count() != expected) return false;
   // Native saves omit an empty base object when the prefab supplies its defaults.
   if (context.DoesObjectExist("base"))
   {

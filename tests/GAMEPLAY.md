@@ -117,11 +117,29 @@ It has a 120-second deadline and its own `[EXPG BODY RESULT]` marker. Select
 exclusive with `-FreshTrim`. Require its checks, clean shutdown and exit status
 separately. Source reviewed; native execution pending.
 
+`EXPG_RepeatGarrisonGameplay.c` (custom fixture, same driver name and house)
+repeats the production Add Garrison server calls (CanFit, fresh roster,
+AdoptFresh) with US fire teams on one building: at least three adds (the third
+while the first garrison is Full cached) and more until some soldiers stand
+around the house (at most eight). Every add must be accepted and placed in full
+(no trim, no refusal) on valid posts that keep clear of every fixed post, and
+earlier garrisons stay untouched. Then the garrisons sleep (one Simulation, the
+rest Full), the second wakes alone, all wake on their posts, and Force Move
+releases the second alone. Deadline 330 s. Source reviewed; native execution
+pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RepeatGarrisonGameplay.c -ExpectResult '\[EXPG REPEAT RESULT\] checks=[1-9]\d* failures=0 adds=[3-8] guards=[1-9]\d* capacity=[1-9]\d* posts=[1-9]\d* building=\d+ around=[1-9]\d* spawn=0 reason=completed' -TimeoutSeconds 480 -OrchestratorSlotGranted
+```
+
 ## Unit Caching per-casualty cleanup fixture (-UnitCleanup)
 
 `tests/EBG_UnitCleanupGameplay.c` reuses the generated-world driver name and is
 selected by `-UnitCleanup`, which is mutually exclusive with `-FreshTrim` and
-`-BodyClearance`. It spawns real USSR rifle squads and one US fire team, each with its own cache
+`-BodyClearance`. `-Rhs` (unit cleanup only) also loads RHS: Status Quo and both
+content packs, linked by GUID from the installed addons, for the two RHS cases;
+without it they only log `available=0`. It spawns real USSR rifle squads, one US
+fire team and, with `-Rhs`, two RHS teams, each with its own cache
 zone (Affected 40, Wake 60, Sleep 200, clear delay 5), injects player presence
 through `EBG_CacheManager.UpdatePlayers`, and kills with native damage. It
 attributes deletions to `EBG_CacheCleanup.Tick` and records the cache state at
@@ -130,9 +148,17 @@ deletion (0 awake, 1 Simulation cached, 2 Full cached).
 Cases: `sim-partial-awake`, `sim-partial-cached`, `full-partial-cached`,
 `full-partial-awake-then-cache`, `sim-partial-wakeband`, `foreign-item` (an
 unregistered magazine inside the body goes with it), `us-etool-atomic`,
-`sim-all-control`, `full-all-control` and `sim-death-while-cached` (a soldier
-killed while his squad is Simulation cached keeps his body until the survivors
-are restored, then cleanup deletes it). Simulation and Full are both covered,
+`identityless-gear` (a worn vest without native identity and an unregistered
+WeaponPart_Base stock are left out of the save, block nothing and go with the
+body), `sim-all-control`, `full-all-control`, `rhs-mg-team` (`-Rhs`: the RHS AFRF
+machine-gun team with identity-less PKP, AK-74M and 6B45 gear),
+`cloth-slot-accessory` (B1 vanilla stand-in: a stock Lifchik/6B3 canteen in a
+storage-less `LoadoutSlotInfo` whose cloth a test seam reports as unlisted to
+`NativeVestAccessoryOwner`), `rhs-usmc-recon` (`-Rhs`: the USMC MEF recon team in
+`Hat_USMC_Boonie_Comtac`, Peltor headset in the storage-less Comtacs slot) and
+`sim-death-while-cached` (a soldier killed while his squad is Simulation cached
+keeps his body until the survivors are restored, then cleanup deletes it): 14
+cases. Simulation and Full are both covered,
 including deletion while Full cached and Full restoration of the survivors
 without refill. The wake-band case asserts the hold directly (owned rows intact,
 no clear-delay timer, production `PlayerNear` true), and every deleted case
@@ -140,21 +166,51 @@ checks that deletion did not precede corpse age plus the clear delay. Full needs
 the runner passes.
 
 `Test-UnitCleanupEvidence` requires one distinct complete RESULT line (stdout,
-`console.log` and `script.log` each repeat it) with `failures=0` and `cases=10`;
+`console.log` and `script.log` each repeat it) with `failures=0` and `cases=14`;
 `state=0 whileCached=0` for `sim-partial-awake` and
 `full-partial-awake-then-cache`, `state=1 whileCached=1` for `sim-partial-cached`,
 `state=2 whileCached=1` for `full-partial-cached`; the
 `[EBG CLEANUP TEST SNAPSHOT] ... heldWhileCached=1 restored=1 deletedByEbg=1`
 line; the `[EBG CLEANUP TEST FOREIGN] ... present=0 firstByEbg=1 secondByEbg=1
 foreignGone=1` line; the `[EBG CLEANUP TEST ATOMIC] ... sameTick=1
-partialStrips=0` line; no `[EBG CLEANUP TEST SURVIVOR DELETE]` or
-`[EBG CLEANUP TEST PARTIAL STRIP]`; and a clean shutdown. The fixture
+partialStrips=0` line; the `identityless-gear` IDENTITYLESS lines
+(`blocking=0`, `lineage=0`); the `cloth-slot-accessory`
+`[EBG CLEANUP TEST CLOTH SLOT] ... accessories=n unlisted=n held=n wearerHolder=n
+protectedChain=0 blocking=0` and `[EBG CLEANUP TEST CLOTH SLOT DELETED] ... accessoriesGone=1
+clothGone=1 present=0 proven=1 lineage=0` lines; with `-Rhs` the passing
+`rhs-mg-team` and `rhs-usmc-recon` lines (`bodies=2 byEbg=2`, at least two
+accessories), otherwise their `available=0` lines; no `[EBG CLEANUP KEEP]`, no
+`[EBG CLEANUP TEST SURVIVOR DELETE]` or `[EBG CLEANUP TEST PARTIAL STRIP]`; and a
+clean shutdown. The fixture
 deadline is 400 s of world time; `-UnitCleanup` defaults `-TimeoutSeconds` to 540
 and refuses less than 480.
 
 ```powershell
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -UnitCleanup -TimeoutSeconds 540 -OrchestratorSlotGranted
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -UnitCleanup -Rhs -TimeoutSeconds 540 -OrchestratorSlotGranted
 ```
 
 It proves no GM UI, real player movement, multiplayer or save/load. Status:
 source reviewed; native execution pending.
+
+## Unit Caching local-host fixture
+
+`tests/EBG_LocalCacheGameplay.c` (custom fixture, same driver name) models a
+locally hosted or single-player GM session: one host character injected through
+`EBG_CacheManager.UpdatePlayers` and two USSR rifle squads next to a Full zone
+with the module radii (affected 300, wake 700, sleep 900, clear delay 5). One
+squad enrolls; the other is marked Exclude and loses a soldier through AI
+Surrender's prisoner path (RemoveAgent, AI off, `EBG_MarkLeftSquad`); the zone
+status must name both. With the host 780 m away the squad must stay awake for
+20 s and the status and notice must say a player character keeps it awake inside
+the 900 m sleep radius; at 1200 m it must Full-cache (GameMasterSystems present)
+and the note must clear; back at the squad it must wake with six soldiers. An
+empty Simulation zone must report that no AI group is inside its affected
+radius. Deadline 260 s. The engine is the dedicated diagnostic server, so it
+does not prove listen-host or single-player replication, GM hint rendering or
+save/load. `tests/Test-CacheZoneFeedback.ps1` guards the same wiring portably.
+Source reviewed; native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete' -OrchestratorSlotGranted
+```

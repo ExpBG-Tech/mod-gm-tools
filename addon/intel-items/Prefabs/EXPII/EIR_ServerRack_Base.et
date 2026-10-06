@@ -4,7 +4,7 @@ GenericEntity {
   EIR_RackComponent "{06C4305DE56041F8}" {
   }
   MeshObject "{7C0243CC63C03D68}" {
-   Object "{3C7169F6D7968307}Assets/Structures/BuildingsParts/Electrical/ElectricCabinet/ElectricCabinetInterior_01.xob"
+   Object "{A8B42D7DA7CA4C27}EIIArt/ServerRack/ServerRack.xob"
   }
   RigidBody "{B1BF213313F1D915}" {
    ModelGeometry 1
@@ -33,8 +33,8 @@ GenericEntity {
   }
   SCR_EditableEntityComponent "{B56CB5B6C83E80D2}" : "{996046FE206C699A}Prefabs/Editor/Components/Default_SCR_EditableEntityComponent.ct" {
    m_UIInfo SCR_EditableEntityUIInfo "{305AC76ABC5D7F5F}" {
-    Name "EXPBG Intel - Server Rack"
-    Description "Static server rack. Game Master sets the intel title, text and download time. Players with a USB drive download it; the download stops beyond 3 m."
+    Name "#EII-ServerRack_Name"
+    Description "#EII-ServerRack_Description"
     m_Image "{38C2078B7B519EF1}UI/Textures/EXPII/EII_IntelItems.edds"
     m_aAuthoredLabels { 1 122 157026 }
    }

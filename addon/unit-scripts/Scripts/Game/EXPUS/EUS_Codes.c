@@ -13,17 +13,16 @@ class EUS_Codes
  // Squad attribute only: members differ, apply nothing.
  static const int MIXED = -1;
 
- // Night discipline modes (SCR_AIGroup.EUS_Discipline).
+ // Night discipline modes (SCR_AIGroup.EUS_Discipline). They are the entry
+ // values of the "EXPBG Night discipline" group attribute (Group tab).
  static const int DISCIPLINE_OFF = 0;
  static const int DISCIPLINE_LIGHT = 1;
  static const int DISCIPLINE_TERROR = 2;
 
- // Context action codes.
+ // Context action codes (the right-click quick actions).
  static const int ACTION_HOLD = 1;
  static const int ACTION_FREEZE = 2;
  static const int ACTION_RELEASE = 3;
- static const int ACTION_LIGHT = 4;
- static const int ACTION_TERROR = 5;
 
  // Above the installed editor (6000) and scenario (5000) setting origins.
  static const int SETTING_PRIORITY = 7000;
@@ -54,7 +53,7 @@ class EUS_Codes
  {
   if (mode == DISCIPLINE_LIGHT) return "Light Discipline";
   if (mode == DISCIPLINE_TERROR) return "Terror Tactics";
-  return "Off";
+  return "None";
  }
 
  static string ActionName(int action)
@@ -62,8 +61,6 @@ class EUS_Codes
   if (action == ACTION_HOLD) return "EXPBG Hold Position";
   if (action == ACTION_FREEZE) return "EXPBG Freeze";
   if (action == ACTION_RELEASE) return "EXPBG Release Unit Scripts";
-  if (action == ACTION_LIGHT) return "EXPBG Light Discipline";
-  if (action == ACTION_TERROR) return "EXPBG Terror Tactics";
   return "EXPBG Unit Scripts";
  }
 

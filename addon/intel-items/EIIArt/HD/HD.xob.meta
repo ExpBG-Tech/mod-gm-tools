@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{1372E94742F549D1}EIIArt/HD/HD.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

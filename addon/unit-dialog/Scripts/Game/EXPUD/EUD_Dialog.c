@@ -17,7 +17,7 @@ class EUD_Dialog
  // Gesture choices are indices into GestureId; 0 is off.
  static const int GESTURE_CHOICES = 5;
  static const int GESTURE_MS = 2000;
- // Seconds between gestures of one unit, and between talk requests of one player.
+ // Seconds between gestures of one unit, and between end requests of one player.
  static const float GESTURE_GAP = 1.5;
  static const float REQUEST_GAP = 0.5;
 
@@ -142,13 +142,15 @@ class EUD_Dialog
  }
 
  //------------------------------------------------------------------------------------------------
- // Client: ask the server to play (or stop) the speaker's talking gesture. The
- // request travels through the local player controller, which this client owns.
- static void RequestTalk(RplId speaker, bool ended)
+ // Client: the conversation ended; ask the server to stop the speaker's talking
+ // gesture if it still runs. The gesture starts once per conversation, on the
+ // server, from EUD_SpeakAction; no request can start one. The request travels
+ // through the local player controller, which this client owns.
+ static void RequestEnd(RplId speaker)
  {
   if (!speaker.IsValid() || !GetGame()) return;
   SCR_PlayerController controller = SCR_PlayerController.Cast(GetGame().GetPlayerController());
-  if (controller) controller.EUD_RequestTalk(speaker, ended);
+  if (controller) controller.EUD_RequestEnd(speaker);
  }
 }
 

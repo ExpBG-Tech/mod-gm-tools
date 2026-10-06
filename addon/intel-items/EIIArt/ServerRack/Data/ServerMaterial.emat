@@ -1,0 +1,9 @@
+MatPBRBasic {
+ Color 0.825 0.825 0.825 1
+ Emissive 0.223 0.223 0.223 0
+ EmissiveLV 2.494
+ EmissiveMap "{1263AA8201DEA103}EIIArt/ServerRack/Data/ServerMaterial_emissive.edds"
+ BCRMap "{3F5B6C27A1FFD0D2}EIIArt/ServerRack/Data/ServerMaterial_albedo.edds"
+ OpacityMap "{3F5B6C27A1FFD0D2}EIIArt/ServerRack/Data/ServerMaterial_albedo.edds"
+ NMOMap "{1DE98B95E2C70FCC}EIIArt/ServerRack/Data/ServerMaterial_normal.edds"
+}

@@ -163,6 +163,33 @@ Minor UI notes: the EXPBG sound legend overlaps the entity browser's Filters pan
 is open; the testing-only cache monitor overlaps the browser's top-left cards.
 Mouse look by injected input: large cursor jumps barely rotate the view, 20 px steps rotate it well.
 
+### Session log, part 4: 0.1.5 client run with ACE and RHS (2026-10-06)
+
+Server 0.1.5 / CDF Compat 0.1.3 from Workshop, production modset (ACE, RHS, GME), admin via `#login`, player <player>.
+
+**Input findings**
+- The action key (right mouse) only fires from a held press. Injected `right_click` and `f` do nothing; a PowerShell `user32 mouse_event` press (down, 180 ms, up) works. Injected Escape does not reach the game either; use the on-screen Close/End buttons.
+- GM "Teleport player" on any entity moves the player next to it. "Create player" on the ground respawns a dead player in place, with a faction filter (used to play as RHS USAF).
+
+| # | Result | Evidence |
+|---|---|---|
+| T1 Intel read (#25) | PASS | One window, `[br]` line breaks, second press does not stack; server `[EII] read` twice with diagnostics on. Window overlaps the "Read intel / Pick up" prompt (layout fix queued for 0.1.6). |
+| T4 Unit Dialog | PASS | Name and lines read back after save; "Speak to Sgt Miller"; Continue, Restart, End conversation work. Window overlaps the "Speak to" prompt (fix queued). Also PASS on an RHS AFRF group (multi-edit tab, "Speak to Serzhant Volkov"). |
+| T7 Unit Scripts | PASS | Hold 4 applied, Freeze, Light Discipline, Terror Tactics, Release 5 released; vanilla, ACE and GME entries plus EXPBG Add Garrison still listed. Also PASS on RHS AFRF. |
+| T9 AI Global Skills | PASS (vanilla + RHS) | Faction selector lists RHS_ION, RHS_AFRF, RHS_USAF; `faction=RHS_AFRF slot=0 value=2`; warning shots by USSR SL at a US player and by RHS AFRF machine gunner (`Character_RHS_RF_MSV_VKPO_DS_AMG_3`) at an RHS USMC player, then engage. Group ROE override logs once per selected member (dedupe queued). |
+| T10 Civil Protest Zone | PASS (audio not checked) | 10-15 civilians gather, pointing/waving gestures visible on the client, Off removes the crowd. The GM area visual is a large opaque white cylinder even when Off. |
+| T12 Native autosave with zone on | PASS | Zone enabled, nothing cached: `[PERSISTENCE] Save (AUTO)` 15:14 completed. Cached-group refusal covered by the native fixture. |
+| T16 Sound legend | PASS | Hidden under the entity browser and back after closing. The legend still draws over the GM context menu (fix queued). |
+| AI Surrender (vanilla path, RHS) | PASS | Chance 100, threshold 50: two GM-neutralized AFRF members -> both survivors `[EXPBG SURRENDER]`, interrogation points spawned, 0 script errors. |
+
+**Bugs found (fixes queued for 0.1.6)**
+- GM entity browser search finds none of the seven 0.1.5 entries (Surrender, Global Skills, Protest Zone, Briefing Board, both racks, USB drive): the vanilla search only matches string-table names. Browsing with the EXPBG filter shows them.
+- GM context menu on a soldier is taller than an 868 px window with ACE + GME + all EXPBG entries; Move camera / Teleport player fall off the top. EXPBG ROE moves to the group properties.
+- Casualty cleanup and RHS gear: `[EBG CLEANUP PROVENANCE HOLD] reason='Cleanup item without native identity is not a verified model leaf'` for Ratnik vests and PKP/AK-74M attachments (nativeId all zero; RHS gear is not built on the persistence-tracked vanilla bases). The lines at zone enable are log-only, but every autosave then saved the group with an issue, so after a restart the whole RHS group stayed in recovery and its casualties were never cleaned. Bodies of soldiers who died before the zone existed are not EBG's (vanilla garbage handles them).
+- Player-facing modals (intel, dialog) overlap the interaction prompt.
+
+Open from this run: T15 (civilian cars did not appear within 6 minutes; re-test), T17/T18 (re-test after 0.1.6), T13 (needs a non-admin voted GM).
+
 ## 7. Client test matrix for 0.1.6 (untested or changed features)
 
 Player action key in the test profile: right mouse (`mouse:button1`, "pressed"); `x` toggles weapon raised/lowered.
@@ -176,7 +203,7 @@ Mouse look by injected input: 20 px cursor steps rotate the view; large jumps ba
 | T4 | Unit Dialog | GM sets name + lines on AI; player Speak to; Continue/Restart/End/Escape | window, lines, gesture; late joiner sees action |
 | T5 | Unit Dialog across Full cache | dialog on a member of a Full-cached squad; sleep, wake | respawned member keeps dialog |
 | T6 | Unit Dialog in CDF | CDF save/restart/load | dialog restored |
-| T7 | Unit Scripts | Hold, Freeze, animations, Release, Light Discipline / Terror Tactics; damage breaks | units stay; flashlights; context menu still lists vanilla actions and EXPBG Add Garrison |
+| T7 | Unit Scripts | right-click Hold, Freeze, Release; animations (EXPBG Unit Scripts tab); group Edit properties > Group tab > EXPBG Night discipline: Light discipline / Terror tactics / None; damage breaks | units stay; flashlights; EXPBG right-click entries are only Hold/Freeze/Release; context menu still lists vanilla actions and EXPBG Add Garrison |
 | T8 | AI Surrender (ACE loaded) | place module, kill members until threshold | ACE surrender animation/state; Interrogate prompt; marker or identity window |
 | T9 | AI Global Skills | module; faction selector; ROE warning shots; ammo refill | `[EXPBG AI SKILLS]` lines; behaviour visible |
 | T10 | Civil Protest Zone | place, On | crowd gathers, gestures visible on client, crowd audio; Off removes |
@@ -189,3 +216,4 @@ Mouse look by injected input: 20 px cursor steps rotate the view; large jumps ba
 | T17 | Corpse protection 80 m | body at 65 m and 120 m, wait 11 min | 65 m body stays |
 | T18 | Wreck persistence | destroy a vehicle, wait | wreck persists |
 | T19 | CDF Compat 0.1.4 diagnostics | CDF load | `[EBG CDF AUTHORS]`, `[EBG CDF EMPTY GROUPS]`, `[CDF TIMING]` lines, no AuthorEntityRemoved |
+| T20 | Repeated EXPBG Add Garrison | one house: EXPBG Add Garrison with a fire team, then again 3-4 times on the same house (one add while the first garrison is Full cached); approach and leave; Force Move one squad | every add after the first replies "Garrison reinforcement is deploying", no "already has a garrison"; all soldiers present (free posts first, extras inside, then around the house facing out); one server `[EXPG Garrison] group=... added to building ...: placed N of N soldiers` line per add; each squad caches and wakes on its posts; Force Move releases only that squad |

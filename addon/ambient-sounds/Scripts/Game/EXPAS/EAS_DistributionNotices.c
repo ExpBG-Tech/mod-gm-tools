@@ -243,6 +243,28 @@
 // Russian source contain original full-scale samples. No audible quality or
 // seamless-loop certification is implied by conversion or numeric checks.
 //
+// ## Mixkit — Rioting crowd (#376), supplied 2026-10-06
+//
+// "Rioting crowd", Mixkit sound effect 376 from [Mixkit](https://mixkit.co),
+// supplied by the owner as `mixkit-rioting-crowd-376.wav`, becomes
+// `EAS_Crowd_Rioting.wav` (crowd recording 4). License: the
+// [Mixkit Sound Effects Free License](https://mixkit.co/license/modal/sfxFree/),
+// free for commercial and non-commercial projects, no attribution required; the
+// sound may not be redistributed or sold as a standalone sound file. The
+// derivative is incorporated into the addon; the original download is not kept
+// in this repository, and neither file may be offered as a standalone sound. The
+// supplied file has not independently been matched to the provider download.
+//
+// Original: stereo PCM16, 44.1 kHz, 1,899,194 frames (43.0656 s),
+// SHA-256 40c08185f55ccda23e32864542372bfa228eed39838ec3c5ea6c4071c756e7ac.
+// Derivative: mono PCM16, 44.1 kHz, 1,810,994 frames (41.0656 s), RMS 1700,
+// peak 10562, resource GUID 73886D83A1A7DA79,
+// SHA-256 1777b1e1c6a5cedda6cff798871a67963d4e1013530906355b78db064bd7b436.
+// Changes: L/R averaged to mono; the last 2.0 s equal-power crossfaded into the
+// start for a seamless loop; gain x0.411 (-7.7 dB) to RMS 1700, matching
+// EAS_Crowd_Angry (RMS 1673). The 44.1 kHz rate was kept; the other crowd
+// derivatives are 24 kHz. No audible quality or loop certification is implied.
+//
 //
 // Original code license:
 // MIT License

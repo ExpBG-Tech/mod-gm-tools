@@ -1,9 +1,0 @@
-MetaFileClass {
- Name "{2C1D87DE93C77A27}Configs/Editor/ActionLists/Context/TempEdit.conf"
- Configurations {
-  CONFResourceClass PC {
-  }
-  CONFResourceClass HEADLESS : PC {
-  }
- }
-}

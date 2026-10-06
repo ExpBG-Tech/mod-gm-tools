@@ -1,0 +1,4 @@
+MatPBRBasic {
+ BCRMap "{4A5D17736F74C726}EIIArt/ServerRack/serverrack2/Data/mat2_Base_Color.edds"
+ OpacityMap "{4A5D17736F74C726}EIIArt/ServerRack/serverrack2/Data/mat2_Base_Color.edds"
+}

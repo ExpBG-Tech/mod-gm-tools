@@ -9,6 +9,8 @@ $config = [ordered]@{
  InstalledAddonsRoot = ''
  IncidentLog = ''
  BuildAddonsDirectory = ''
+ # Release housekeeping moves superseded payloads to <ArchiveRoot>/<repository folder>; empty = off.
+ ArchiveRoot = ''
 }
 if ($IsWindows) {
  if (${env:ProgramFiles(x86)}) {

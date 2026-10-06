@@ -1,4 +1,7 @@
 // EXPBG Unit Scripts context actions (Configs/Editor/ActionLists/Context/TempEdit.conf).
+// Only the quick actions live here: Hold Position, Freeze and Release. Night
+// discipline is the "EXPBG Night discipline" attribute in the group's Group tab
+// (EUS_DisciplineAttribute) and animations are in the EXPBG Unit Scripts tab.
 // Visibility uses replicated editable state only; the server re-checks every
 // unit, authorizes the Game Master and replies with one summary.
 [BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
@@ -31,14 +34,6 @@ class EUS_UnitContextAction : SCR_SelectedEntitiesContextAction
   return group;
  }
 
- // A soldier's squad through the replicated editable hierarchy (clients have no AI agents).
- protected SCR_AIGroup SquadOf(SCR_EditableEntityComponent editable)
- {
-  SCR_AIGroup group = AISquad(editable);
-  if (group != null || AIUnit(editable) == null) return group;
-  return AISquad(editable.GetAIGroup());
- }
-
  override bool CanBeShown(SCR_EditableEntityComponent selectedEntity, vector cursorWorldPosition, int flags)
  {
   return AIUnit(selectedEntity) != null || AISquad(selectedEntity) != null;
@@ -47,6 +42,16 @@ class EUS_UnitContextAction : SCR_SelectedEntitiesContextAction
  override bool CanBePerformed(SCR_EditableEntityComponent selectedEntity, vector cursorWorldPosition, int flags)
  {
   return CanBeShown(selectedEntity, cursorWorldPosition, flags);
+ }
+
+ // A soldier already running this script does not list it again (re-applying only
+ // re-binds him where he stands; a moved unit is re-anchored on its own). A squad
+ // always lists it, since its members may differ.
+ protected bool ShownUnlessRunning(SCR_EditableEntityComponent selectedEntity, int code)
+ {
+  SCR_ChimeraCharacter actor = AIUnit(selectedEntity);
+  if (actor) return actor.EUS_Script != code;
+  return AISquad(selectedEntity) != null;
  }
 
  override void Perform(SCR_EditableEntityComponent hoveredEntity, notnull set<SCR_EditableEntityComponent> selectedEntities, vector cursorWorldPosition, int flags, int param = -1)
@@ -64,6 +69,11 @@ class EUS_HoldContextAction : EUS_UnitContextAction
  {
   return EUS_Codes.ACTION_HOLD;
  }
+
+ override bool CanBeShown(SCR_EditableEntityComponent selectedEntity, vector cursorWorldPosition, int flags)
+ {
+  return ShownUnlessRunning(selectedEntity, EUS_Codes.HOLD);
+ }
 }
 
 [BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
@@ -73,10 +83,16 @@ class EUS_FreezeContextAction : EUS_UnitContextAction
  {
   return EUS_Codes.ACTION_FREEZE;
  }
+
+ override bool CanBeShown(SCR_EditableEntityComponent selectedEntity, vector cursorWorldPosition, int flags)
+ {
+  return ShownUnlessRunning(selectedEntity, EUS_Codes.FREEZE);
+ }
 }
 
 // Shown only when a selected unit runs a script or a selected squad has
-// scripted members or night discipline.
+// scripted members or night discipline (Release on a squad also sets its
+// night discipline back to None).
 [BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
 class EUS_ReleaseContextAction : EUS_UnitContextAction
 {
@@ -92,41 +108,5 @@ class EUS_ReleaseContextAction : EUS_UnitContextAction
   SCR_AIGroup group = AISquad(selectedEntity);
   if (!group) return false;
   return group.EUS_Scripted > 0 || group.EUS_Discipline != EUS_Codes.DISCIPLINE_OFF;
- }
-}
-
-// Discipline is per squad; a selected soldier stands for his squad.
-[BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
-class EUS_LightDisciplineContextAction : EUS_UnitContextAction
-{
- protected int DisciplineMode()
- {
-  return EUS_Codes.DISCIPLINE_LIGHT;
- }
-
- override protected int ActionCode()
- {
-  return EUS_Codes.ACTION_LIGHT;
- }
-
- override bool CanBeShown(SCR_EditableEntityComponent selectedEntity, vector cursorWorldPosition, int flags)
- {
-  SCR_AIGroup group = SquadOf(selectedEntity);
-  if (!group) return false;
-  return group.EUS_Discipline != DisciplineMode();
- }
-}
-
-[BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
-class EUS_TerrorTacticsContextAction : EUS_LightDisciplineContextAction
-{
- override protected int DisciplineMode()
- {
-  return EUS_Codes.DISCIPLINE_TERROR;
- }
-
- override protected int ActionCode()
- {
-  return EUS_Codes.ACTION_TERROR;
  }
 }

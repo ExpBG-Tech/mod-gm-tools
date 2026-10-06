@@ -1,5 +1,5 @@
-// Rules of engagement per AI group (server state; the GM override is replicated so the
-// context menu and late joiners see it).
+// Rules of engagement per AI group (server state; the GM override, set with the EXPBG ROE
+// group attribute, is replicated so clients and late joiners see it).
 // Return Fire Only -> vanilla RETURN_FIRE. Fire on Sight -> vanilla FIRE_AT_WILL.
 // Warning Shots First -> RETURN_FIRE while armed (they still answer fire); when a member
 // selects a player as target, that member fires a short burst beside the player, the group

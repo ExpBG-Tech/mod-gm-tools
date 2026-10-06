@@ -10,6 +10,8 @@ class ESR_ResultDialog : SCR_ConfigurableDialogUi
  protected static ESR_ResultDialog s_Open;
  protected TextWidget m_wESR_Text;
 
+ static bool IsOpen() { return s_Open != null; }
+
  static bool Open(string title, string content)
  {
   if (System.IsConsoleApp() || !GetGame() || !GetGame().GetMenuManager() || !GetGame().GetWorkspace()) return false;
@@ -71,5 +73,19 @@ class ESR_ResultDialog : SCR_ConfigurableDialogUi
  {
   super.OnMenuClose();
   if (s_Open == this) s_Open = null;
+ }
+}
+
+// The vanilla action menu (the interaction prompt) is on the HUD ALWAYS_TOP layer, drawn
+// above every MenuManager layout. Vanilla hides it and blocks interactions only while a
+// menu is open (MenuManager.IsAnyMenuOpen), and the interrogation window is a dialog. Apply
+// the same rule while it is open: the prompt fades out, no hidden action can be
+// performed, and both come back as soon as it closes.
+modded class SCR_InteractionHandlerComponent
+{
+ protected override bool GetCanInteractScript(IEntity controlledEntity)
+ {
+  if (ESR_ResultDialog.IsOpen()) return false;
+  return super.GetCanInteractScript(controlledEntity);
  }
 }

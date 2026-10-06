@@ -1,7 +1,7 @@
 # EXPBG GM Tools
 
 Keep implementation original. GME is a read-only reference, not a code or asset source.
-One server-authoritative squad per building. Do not split soldiers into groups.
+Each garrison is one server-authoritative squad; EXPBG Add Garrison on a garrisoned building adds another independent garrison (no limit). Do not split soldiers into groups.
 Keep fixed posts, interior patrol routes and cache ownership in one building record.
 Never replenish casualties on cache restoration. Restore ownership before resuming AI.
 Use installed engine APIs, bounded shared work and event-driven teardown.

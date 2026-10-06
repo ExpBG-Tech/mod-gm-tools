@@ -50,6 +50,8 @@ class EBG_CacheAttribute : SCR_BaseValueListEditorAttribute
    zone.SetValue(m_Key, var.GetBool());
   }
   else zone.SetValue(m_Key, var.GetFloat());
+  // One plain-language notice to this GM after the zone's next enrollment pass.
+  zone.EBG_RequestNotice(playerID);
  }
 }
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]

@@ -8,6 +8,10 @@ class EAC_ResidentRecord
  // Unexpected entity removal is terminal for admission, without claiming death.
  bool Removed;
  ResourceName CharacterPrefab;
+ // Consecutive indoor placements this slot lost to geometry or navmesh. At
+ // EAC_PedestrianSpawner.INDOOR_FALLBACK_FAILURES the slot is admitted outdoors
+ // instead; any activation resets it. Mission-only, never saved.
+ int IndoorFailures;
 }
 
 class EAC_HouseholdRecord

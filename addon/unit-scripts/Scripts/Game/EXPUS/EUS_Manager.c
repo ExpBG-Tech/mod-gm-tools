@@ -95,6 +95,34 @@ class EUS_Manager
   return group.EUS_Discipline != EUS_Codes.DISCIPLINE_OFF || group.EUS_Scripted > 0;
  }
 
+ // Unit Caching keeps a squad it already manages awake while any of its living
+ // members runs a unit script or the squad has night discipline (see
+ // EBG_CacheManager.KeepAwakeReason). Read on every cache tick, so releasing the
+ // last script and the discipline ends the hold on the next tick. Empty: no hold.
+ static string HoldReason(SCR_AIGroup group)
+ {
+  EUS_Manager manager = Current();
+  if (!group || !manager) return string.Empty;
+  int scripted;
+  if (!manager.m_Units.IsEmpty())
+  {
+   array<AIAgent> agents = {};
+   group.GetAgents(agents);
+   foreach (AIAgent agent : agents)
+   {
+    SCR_ChimeraCharacter member = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
+    if (member && member.EUS_Script != EUS_Codes.NONE) scripted++;
+   }
+  }
+  bool disciplined = group.EUS_Discipline != EUS_Codes.DISCIPLINE_OFF;
+  if (scripted == 0 && !disciplined) return string.Empty;
+  string reason = "Held awake by EXPBG Unit Scripts:";
+  if (scripted > 0) reason += string.Format(" %1 scripted", scripted);
+  if (scripted > 0 && disciplined) reason += ",";
+  if (disciplined) reason += " " + EUS_Codes.DescribeDiscipline(group.EUS_Discipline);
+  return reason;
+ }
+
  float Now()
  {
   return m_World.GetWorldTime() * 0.001;
@@ -185,6 +213,9 @@ class EUS_Manager
    if (report) report.Refuse("unknown night discipline");
    return false;
   }
+  // The current mode again (an edit of several groups with differing values writes
+  // every selected group): nothing is re-applied, logged or reported.
+  if (record && record.Mode == mode) return false;
   string reason = EUS_DisciplineRecord.Eligibility(group);
   if (!reason.IsEmpty())
   {
@@ -234,20 +265,6 @@ class EUS_Manager
   array<SCR_AIGroup> groups = {};
   foreach (SCR_EditableEntityComponent editable : selection) Collect(editable, actors, groups);
 
-  if (action == EUS_Codes.ACTION_LIGHT || action == EUS_Codes.ACTION_TERROR)
-  {
-   // Discipline is per squad; a selected soldier stands for his squad.
-   foreach (SCR_ChimeraCharacter soldier : actors)
-   {
-    SCR_AIGroup squad = soldier.GetCharacterGroup();
-    if (squad && !groups.Contains(squad)) groups.Insert(squad);
-   }
-   int mode = EUS_Codes.DISCIPLINE_LIGHT;
-   if (action == EUS_Codes.ACTION_TERROR) mode = EUS_Codes.DISCIPLINE_TERROR;
-   foreach (SCR_AIGroup disciplined : groups) SetDiscipline(disciplined, mode, report);
-   return;
-  }
-
   int code = EUS_Codes.NONE;
   if (action == EUS_Codes.ACTION_HOLD) code = EUS_Codes.HOLD;
   else if (action == EUS_Codes.ACTION_FREEZE) code = EUS_Codes.FREEZE;
@@ -282,6 +299,7 @@ class EUS_Manager
   if (group) ApplyGroup(group, code, report);
  }
 
+ // "EXPBG Night discipline" in the group's Group tab (EUS_DisciplineAttribute).
  void DisciplineAttribute(SCR_AttributesManagerEditorComponent attributes, int playerId, SCR_AIGroup group, int mode)
  {
   EUS_Report report = Report(playerId, "EXPBG Night discipline: " + EUS_Codes.DescribeDiscipline(mode));
@@ -442,12 +460,20 @@ class EUS_Manager
  }
 }
 
-// Unit Caching must not enroll scripted squads (see EUS_Manager.Reserves).
+// Unit Caching must not enroll scripted squads (see EUS_Manager.Reserves) and
+// keeps a squad it already manages awake while scripted (EUS_Manager.HoldReason).
 modded class EBG_CacheManager
 {
  override bool IsReserved(SCR_AIGroup group)
  {
   if (EUS_Manager.Reserves(group)) return true;
   return super.IsReserved(group);
+ }
+
+ override string KeepAwakeReason(SCR_AIGroup group)
+ {
+  string held = EUS_Manager.HoldReason(group);
+  if (!held.IsEmpty()) return held;
+  return super.KeepAwakeReason(group);
  }
 }

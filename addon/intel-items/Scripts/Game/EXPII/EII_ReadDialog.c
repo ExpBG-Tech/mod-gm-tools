@@ -62,3 +62,17 @@ class EII_ReadDialog : SCR_ConfigurableDialogUi
   if (s_Open == this) s_Open = null;
  }
 }
+
+// The vanilla action menu (the interaction prompt) is on the HUD ALWAYS_TOP layer, drawn
+// above every MenuManager layout. Vanilla hides it and blocks interactions only while a
+// menu is open (MenuManager.IsAnyMenuOpen), and the intel reader is a dialog. Apply
+// the same rule while it is open: the prompt fades out, no hidden action can be
+// performed, and both come back as soon as it closes.
+modded class SCR_InteractionHandlerComponent
+{
+ protected override bool GetCanInteractScript(IEntity controlledEntity)
+ {
+  if (EII_ReadDialog.IsOpen()) return false;
+  return super.GetCanInteractScript(controlledEntity);
+ }
+}

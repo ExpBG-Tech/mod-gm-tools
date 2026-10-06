@@ -4,12 +4,16 @@
 // Until Run-Gameplay.ps1 gains a -UnitDialog evidence switch, its garrison evidence
 // check reports FAIL; judge this run by the [EXPG UNIT DIALOG RESULT] line instead.
 // Real vanilla riflemen, production state/validation/registry/attribute/codec code,
-// the Character_Base action entry, native gesture start and native Kill. No players,
+// the Character_Base action entry, the server half of "Speak to" (talking gesture
+// once per conversation, counted), native gesture start and native Kill. No players,
 // no GM UI, no conversation window, no multiplayer/JIP and no save/load round trip.
 class EXPG_GarrisonGameplayClass : GenericEntityClass {}
 class EXPG_GarrisonGameplay : GenericEntity
 {
  static const float FIXTURE_SECONDS = 120;
+ // An open conversation outlasts the gesture (2 s), the unit gap (1.5 s) and the
+ // action repeat window (1 s) before it ends and a new one starts.
+ static const float CONVERSATION_SECONDS = 5;
  static const ResourceName RIFLEMAN = "{26A9756790131354}Prefabs/Characters/Factions/BLUFOR/US_Army/Character_US_Rifleman.et";
  int Checks;
  int Failures;
@@ -19,6 +23,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  float PhaseAt;
  bool Finished;
  bool GesturePlayed;
+ int GestureBase;
  EntityID SpeakerId;
  EntityID ListenerId;
  vector Origin = "4773.46 0 7094.57";
@@ -97,9 +102,10 @@ class EXPG_GarrisonGameplay : GenericEntity
   if (Phase == 1) { if (Now() - PhaseAt >= 3) { StateChecks(); Phase = 2; } return; }
   if (Phase == 2) { StartGesture(); return; }
   if (Phase == 3) { ObserveGesture(); return; }
-  if (Phase == 4) { KillSpeaker(); return; }
-  if (Phase == 5) { if (Now() - PhaseAt >= 2) DeathChecks(); return; }
-  if (Phase == 6) { if (Now() - PhaseAt >= 1) CleanupChecks(); return; }
+  if (Phase == 4) { if (Now() - PhaseAt >= CONVERSATION_SECONDS) NextConversation(); return; }
+  if (Phase == 5) { KillSpeaker(); return; }
+  if (Phase == 6) { if (Now() - PhaseAt >= 2) DeathChecks(); return; }
+  if (Phase == 7) { if (Now() - PhaseAt >= 1) CleanupChecks(); return; }
  }
 
  void SpawnPair()
@@ -223,16 +229,26 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(!SCR_BaseEditorAttributeVar.PropCompare(longText, longReader, null), "long text always counts as changed");
  }
 
+ // Conversation start: the server half of "Speak to" (EUD_SpeakAction.PerformAction on
+ // the authority). A dedicated server has no local player controller, so no window opens.
  void StartGesture()
  {
-  SCR_EditableCharacterComponent unit = EUD_Dialog.Find(Speaker());
-  if (!Check(unit && unit.EUD_SetGesture(1) && unit.EUD_GetGesture() == 1, "talking gesture choice stored")) { Phase = 4; return; }
-  unit.EUD_PlayGesture();
+  IEntity speaker = Speaker();
+  IEntity listener = Listener();
+  SCR_EditableCharacterComponent unit = EUD_Dialog.Find(speaker);
+  if (!Check(unit && unit.EUD_SetGesture(1) && unit.EUD_GetGesture() == 1, "talking gesture choice stored")) { Phase = 5; return; }
+  EUD_SpeakAction action = FindSpeakAction(speaker);
+  GestureBase = unit.EUD_GetGestureStarts();
+  if (action) action.PerformAction(speaker, listener);
+  Check(action && unit.EUD_GetGestureStarts() == GestureBase + 1, "starting a conversation plays the talking gesture once");
+  // A held key re-performs the action; that is still the same conversation.
+  if (action) action.PerformAction(speaker, listener);
+  Check(unit.EUD_GetGestureStarts() == GestureBase + 1, "a repeated Speak to perform does not replay the gesture");
   Phase = 3;
   PhaseAt = Now();
  }
 
- // Observation only: whether the native AI controller accepts a scripted gesture.
+ // Observation only: whether the native AI controller shows the scripted gesture.
  void ObserveGesture()
  {
   ChimeraCharacter character = ChimeraCharacter.Cast(Speaker());
@@ -241,9 +257,30 @@ class EXPG_GarrisonGameplay : GenericEntity
   if (controller && controller.IsPlayingGesture()) GesturePlayed = true;
   if (!GesturePlayed && Now() - PhaseAt < 3) return;
   PrintFormat("[EXPG UNIT DIALOG GESTURE] choice=1 playingWithin3s=%1", GesturePlayed);
-  SCR_EditableCharacterComponent unit = EUD_Dialog.Find(Speaker());
-  if (unit) unit.EUD_StopGesture();
   Phase = 4;
+ }
+
+ // The first conversation stays open (Continue/Restart send the server nothing),
+ // then ends the way the window's end request does, and the listener speaks again.
+ void NextConversation()
+ {
+  IEntity speaker = Speaker();
+  SCR_EditableCharacterComponent unit = EUD_Dialog.Find(speaker);
+  EUD_SpeakAction action = FindSpeakAction(speaker);
+  int firstStarts = -1;
+  int totalStarts = -1;
+  if (unit)
+  {
+   firstStarts = unit.EUD_GetGestureStarts() - GestureBase;
+   unit.EUD_StopGesture();
+   if (action) action.PerformAction(speaker, Listener());
+   totalStarts = unit.EUD_GetGestureStarts() - GestureBase;
+   unit.EUD_StopGesture();
+  }
+  PrintFormat("[EXPG UNIT DIALOG GESTURE COUNT] firstConversation=%1 afterSecondStart=%2", firstStarts, totalStarts);
+  Check(firstStarts == 1, "no further gesture while the conversation stays open");
+  Check(totalStarts == 2, "a new conversation plays the gesture once again");
+  Phase = 5;
  }
 
  void KillSpeaker()
@@ -253,7 +290,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   if (victim) damage = SCR_CharacterDamageManagerComponent.Cast(victim.GetDamageManager());
   if (!Check(damage != null, "speaker damage manager found")) { Finish("kill"); return; }
   damage.Kill(Instigator.CreateInstigator(null));
-  Phase = 5;
+  Phase = 6;
   PhaseAt = Now();
  }
 
@@ -269,7 +306,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   SCR_EntityHelper.DeleteEntityAndChildren(speaker);
   SCR_EditableCharacterComponent other = EUD_Dialog.Find(listener);
   Check(other && other.EUD_Clear() && !other.EUD_IsConfigured() && !other.EUD_HasDialog(), "clearing all fields removes the dialog");
-  Phase = 6;
+  Phase = 7;
   PhaseAt = Now();
  }
 

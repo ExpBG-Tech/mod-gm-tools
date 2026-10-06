@@ -1,5 +1,6 @@
-// EXPBG Unit Scripts attributes (EXPBG Unit Scripts category). Values are read
-// and written on the server; writes are authorized against the editor owner.
+// EXPBG Unit Scripts attributes: unit and squad scripts in the EXPBG Unit Scripts
+// tab, night discipline in the vanilla Group tab. Values are read and written on
+// the server; writes are authorized against the editor owner.
 // Mission-only: ReadVariable answers only inside a live attribute session and
 // IsSerializable is false, so native/CDF Game Master saves never replay them.
 
@@ -109,7 +110,11 @@ class EUS_SquadScriptAttribute : EUS_UnitScriptAttribute
  }
 }
 
-// AI squad: Force Night Discipline (Off, Light Discipline, Terror Tactics).
+// AI squad: "EXPBG Night discipline" in the vanilla Group tab of the group's
+// attribute dialog, next to Set combat mode (None, Light discipline, Terror
+// tactics). It replaces the former right-click Light Discipline and Terror
+// Tactics actions. The editor writes only changed values, once per edited group;
+// EUS_Manager.SetDiscipline logs each change once and ignores the current mode.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class EUS_DisciplineAttribute : SCR_BaseFloatValueHolderEditorAttribute
 {

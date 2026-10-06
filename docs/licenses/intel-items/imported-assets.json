@@ -1,0 +1,410 @@
+{
+  "description": "Third-party resources imported into addon/intel-items (paths relative to that addon). source/source_sha256 identify the file inside the Workshop data.pak; path/guid/sha256/bytes identify the shipped file. New rows are upserted by tools/art/import_heine_assets.py.",
+  "sources": [
+    {
+      "workshopId": "61110CC4F1FF9C8A",
+      "name": "Placeables for GM byHeine",
+      "version": "3.1.5",
+      "author": "Heine.CRV",
+      "license": "Arma Public License Share Alike (APL-SA)",
+      "pakSha256": "a3fb367a0cd1f800158494dc28219d44923187116bbcf233f21de34101a1e3d8",
+      "url": "https://reforger.armaplatform.com/workshop/61110CC4F1FF9C8A"
+    },
+    {
+      "workshopId": "628EDA2ABC937159",
+      "name": "Structures For GM byHeine",
+      "version": "1.2.29",
+      "author": "Heine.CRV",
+      "license": "Arma Public License Share Alike (APL-SA)",
+      "pakSha256": "752cffa6c7c738d1211d83310239faa8fca42db6cf6fcb6ea089f8ff5ef9fbd3",
+      "url": "https://reforger.armaplatform.com/workshop/628EDA2ABC937159"
+    }
+  ],
+  "assets": [
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ArmoredLaptop/Notebook/Data/laptop_BCR.edds",
+      "source_sha256": "381a924871b7e2f729d4350645cb080b70f8b0f11af2ed77295fb0500d98b1e6",
+      "path": "EIIArt/ArmoredLaptop/Notebook/Data/laptop_BCR.edds",
+      "guid": "C36E8BB6232EDCF4",
+      "sha256": "381a924871b7e2f729d4350645cb080b70f8b0f11af2ed77295fb0500d98b1e6",
+      "bytes": 751476,
+      "changes": "Texture bytes unchanged; path Models/ArmoredLaptop/Notebook/Data/laptop_BCR.edds -> EIIArt/ArmoredLaptop/Notebook/Data/laptop_BCR.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ArmoredLaptop/Notebook/Data/laptop_emissive.edds",
+      "source_sha256": "62a3042c8da04116bca43e288fbf7302ae6b0107811481ef97d0464aaa75ebf4",
+      "path": "EIIArt/ArmoredLaptop/Notebook/Data/laptop_emissive.edds",
+      "guid": "2FDEF75CB4CA4A08",
+      "sha256": "62a3042c8da04116bca43e288fbf7302ae6b0107811481ef97d0464aaa75ebf4",
+      "bytes": 6722,
+      "changes": "Texture bytes unchanged; path Models/ArmoredLaptop/Notebook/Data/laptop_emissive.edds -> EIIArt/ArmoredLaptop/Notebook/Data/laptop_emissive.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ArmoredLaptop/Notebook/Data/laptop_normal.edds",
+      "source_sha256": "2a20fa2d8f0880c3fd3a76932dafc707e595a54f566cb68d11b37908fe3c6e7e",
+      "path": "EIIArt/ArmoredLaptop/Notebook/Data/laptop_normal.edds",
+      "guid": "84D17403E894BB4A",
+      "sha256": "2a20fa2d8f0880c3fd3a76932dafc707e595a54f566cb68d11b37908fe3c6e7e",
+      "bytes": 405028,
+      "changes": "Texture bytes unchanged; path Models/ArmoredLaptop/Notebook/Data/laptop_normal.edds -> EIIArt/ArmoredLaptop/Notebook/Data/laptop_normal.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ArmoredLaptop/Notebook/Data/loginsenha_BCR.edds",
+      "source_sha256": "7379ba3f7f8f2efd64c5824d9c5ccc9bf700ea5d90a5685bb46384c7ed609846",
+      "path": "EIIArt/ArmoredLaptop/Notebook/Data/loginsenha_BCR.edds",
+      "guid": "1635C1219215B625",
+      "sha256": "7379ba3f7f8f2efd64c5824d9c5ccc9bf700ea5d90a5685bb46384c7ed609846",
+      "bytes": 355375,
+      "changes": "Texture bytes unchanged; path Models/ArmoredLaptop/Notebook/Data/loginsenha_BCR.edds -> EIIArt/ArmoredLaptop/Notebook/Data/loginsenha_BCR.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ArmoredLaptop/Notebook/Data/notebook.emat",
+      "source_sha256": "f827df441d11cb536379404e3bd5b430e399e998ccc5c5ff23d472649bcfb20d",
+      "path": "EIIArt/ArmoredLaptop/Notebook/Data/notebook.emat",
+      "guid": "C9FEF711C6965091",
+      "sha256": "c2bd3457e5e6dc3558c326da012765d354421a7e86092d3b6615ddb0ea67a4c9",
+      "bytes": 313,
+      "changes": "Resource references remapped; the upstream texture paths (models/Notebook/Data/...) were stale and were repointed, by their upstream GUIDs, to the imported ArmoredLaptop textures; path Models/ArmoredLaptop/Notebook/Data/notebook.emat -> EIIArt/ArmoredLaptop/Notebook/Data/notebook.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ArmoredLaptop/Notebook/Data/telanote.emat",
+      "source_sha256": "827754242d25606cecc5c7569de2a10ef2ee8f2fcccb0468f03193bcb7152dbc",
+      "path": "EIIArt/ArmoredLaptop/Notebook/Data/telanote.emat",
+      "guid": "B907531F4FFF11AF",
+      "sha256": "a335f6ed7cf990ca49a7e8e5d7e0aeeb9f7edd034e59949b476b3a6bfa15247b",
+      "bytes": 313,
+      "changes": "Resource references remapped; path Models/ArmoredLaptop/Notebook/Data/telanote.emat -> EIIArt/ArmoredLaptop/Notebook/Data/telanote.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ArmoredLaptop/Notebook/Military_laptop.xob",
+      "source_sha256": "1f2635eb6d5277084170da4f33d0600c88e2036d081f547910561b1d9078d09e",
+      "path": "EIIArt/ArmoredLaptop/Notebook/Military_laptop.xob",
+      "guid": "9427C74B777DD605",
+      "sha256": "b0d54b89e4e416166a0d80ccee04c94d04843123fed9d3fb790b827f32d3c583",
+      "bytes": 214239,
+      "changes": "Resource references remapped (equal-length strings in the XOB HEAD chunk only; all other bytes unchanged); path Models/ArmoredLaptop/Notebook/Military_laptop.xob -> EIIArt/ArmoredLaptop/Notebook/Military_laptop.xob"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/HD/Data/Drive.emat",
+      "source_sha256": "5e1bbdd92d860ad195f1f90ed94e2aedd4927c1e9c0f79abc047e05736b9c1fd",
+      "path": "EIIArt/HD/Data/Drive.emat",
+      "guid": "EFC18FC9EA096CBA",
+      "sha256": "70ddc2a3536e50eb849873ee970e00ade6bf69fabbace7d8f2ea19c62ca2c84e",
+      "bytes": 184,
+      "changes": "Resource references remapped; path Models/HD/Data/Drive.emat -> EIIArt/HD/Data/Drive.emat"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/HD/Data/Drive_BaseColor.1001.edds",
+      "source_sha256": "4bbf03a01af70c6d8e18203a27fac6f45df3b4628cc60f9bb7668621ccfa4d8b",
+      "path": "EIIArt/HD/Data/Drive_BaseColor.1001.edds",
+      "guid": "6EE5B9A23A069D10",
+      "sha256": "4bbf03a01af70c6d8e18203a27fac6f45df3b4628cc60f9bb7668621ccfa4d8b",
+      "bytes": 48291,
+      "changes": "Texture bytes unchanged; path Models/HD/Data/Drive_BaseColor.1001.edds -> EIIArt/HD/Data/Drive_BaseColor.1001.edds"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/HD/Data/Manufacturer Info_BaseColor.1003.edds",
+      "source_sha256": "699f1a9a4a39705208692b8f59fdb5818ca78491d88b54ee9ff96a1619f611f6",
+      "path": "EIIArt/HD/Data/ManufacturerInfo_BaseColor.1003.edds",
+      "guid": "F673447B16CD185C",
+      "sha256": "699f1a9a4a39705208692b8f59fdb5818ca78491d88b54ee9ff96a1619f611f6",
+      "bytes": 259969,
+      "changes": "Texture bytes unchanged; space removed from the filename; path Models/HD/Data/Manufacturer Info_BaseColor.1003.edds -> EIIArt/HD/Data/ManufacturerInfo_BaseColor.1003.edds"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/HD/Data/USB.emat",
+      "source_sha256": "ad2c90f2ccda570fbda7f5a5eb71c62bd56a163690e139864ab80d1ada0de9d2",
+      "path": "EIIArt/HD/Data/USB.emat",
+      "guid": "2EB1042AF78B969F",
+      "sha256": "5184ed0ebe267c8cf9d45148e1fe2dcead0a0afbd983d8452c6405535e353b04",
+      "bytes": 153,
+      "changes": "Resource references remapped; path Models/HD/Data/USB.emat -> EIIArt/HD/Data/USB.emat"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/HD/Data/USB_BaseColor.1001.edds",
+      "source_sha256": "6452edd49e367a000e85ce6f19964880548cd06e607811e656975353f052f6e4",
+      "path": "EIIArt/HD/Data/USB_BaseColor.1001.edds",
+      "guid": "2507F0EF6E2F8DEC",
+      "sha256": "6452edd49e367a000e85ce6f19964880548cd06e607811e656975353f052f6e4",
+      "bytes": 60730,
+      "changes": "Texture bytes unchanged; path Models/HD/Data/USB_BaseColor.1001.edds -> EIIArt/HD/Data/USB_BaseColor.1001.edds"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/HD/Data/manufacturer.emat",
+      "source_sha256": "d86e8844576b7bfbccb0e6dd68e187c67e57e5542fbd50ead76261ea95d7871a",
+      "path": "EIIArt/HD/Data/manufacturer.emat",
+      "guid": "6C8429D1CFC5B091",
+      "sha256": "b99d1fa44634f52238cfb3f20792b3adcc515aaab509ff016c03552984478a9b",
+      "bytes": 179,
+      "changes": "Resource references remapped; path Models/HD/Data/manufacturer.emat -> EIIArt/HD/Data/manufacturer.emat"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/HD/HD.xob",
+      "source_sha256": "5d0871aaa750886ce4e58aaad0163417fbcdc93ee72cadef732d926cc3a92239",
+      "path": "EIIArt/HD/HD.xob",
+      "guid": "1372E94742F549D1",
+      "sha256": "e37b8c987e5a34a5a3d66daf0df8646133e44a1ea7d7a8a1040a172f0d8ffdde",
+      "bytes": 274324,
+      "changes": "Resource references remapped (equal-length strings in the XOB HEAD chunk only; all other bytes unchanged); path Models/HD/HD.xob -> EIIArt/HD/HD.xob"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/Data/large_digital_tablet_Mat_BaseColor.edds",
+      "source_sha256": "79a001b9e31ef3ea827204b3de7c050ffea3ce197a31b2266fa575c263d928a6",
+      "path": "EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_BaseColor.edds",
+      "guid": "0F6CA1871A2F2757",
+      "sha256": "79a001b9e31ef3ea827204b3de7c050ffea3ce197a31b2266fa575c263d928a6",
+      "bytes": 131964,
+      "changes": "Texture bytes unchanged; path Models/NewProps/tablet/Data/large_digital_tablet_Mat_BaseColor.edds -> EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_BaseColor.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/Data/large_digital_tablet_Mat_NormalOpenGL.edds",
+      "source_sha256": "86edbad1544399c641b1546f0ddc2c1af382db8f27eb7cba4c9809ae015f188d",
+      "path": "EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_NormalOpenGL.edds",
+      "guid": "D402C8EAAE144C65",
+      "sha256": "86edbad1544399c641b1546f0ddc2c1af382db8f27eb7cba4c9809ae015f188d",
+      "bytes": 80020,
+      "changes": "Texture bytes unchanged; path Models/NewProps/tablet/Data/large_digital_tablet_Mat_NormalOpenGL.edds -> EIIArt/NewProps/tablet/Data/large_digital_tablet_Mat_NormalOpenGL.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/Data/large_digital_tablet_screen_standing_Mat_BaseColor.edds",
+      "source_sha256": "ebff268a9e24156bfc06655b1a4194c71eb0aeb94cc82e6cad3562098a6e705a",
+      "path": "EIIArt/NewProps/tablet/Data/large_digital_tablet_screen_standing_Mat_BaseColor.edds",
+      "guid": "24357D2BF1844A9F",
+      "sha256": "ebff268a9e24156bfc06655b1a4194c71eb0aeb94cc82e6cad3562098a6e705a",
+      "bytes": 853965,
+      "changes": "Texture bytes unchanged; path Models/NewProps/tablet/Data/large_digital_tablet_screen_standing_Mat_BaseColor.edds -> EIIArt/NewProps/tablet/Data/large_digital_tablet_screen_standing_Mat_BaseColor.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/Data/note.emat",
+      "source_sha256": "25873221edb4ac5f3afdfba665da55e4481a6d5605831139a65cad66668f7adb",
+      "path": "EIIArt/NewProps/tablet/Data/note.emat",
+      "guid": "AD7BFEBC039FA87F",
+      "sha256": "d9b4a375792dea95bdc14166d64b1ecc9745c7da3f90c1edcfbee1ab1fea7a4e",
+      "bytes": 337,
+      "changes": "Resource references remapped; path Models/NewProps/tablet/Data/note.emat -> EIIArt/NewProps/tablet/Data/note.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/Data/taliba.edds",
+      "source_sha256": "84976146372a3e886a20a58be3f187848aac4327498b51ce8a4db50a937b560a",
+      "path": "EIIArt/NewProps/tablet/Data/taliba.edds",
+      "guid": "058E51724D775F36",
+      "sha256": "84976146372a3e886a20a58be3f187848aac4327498b51ce8a4db50a937b560a",
+      "bytes": 2578779,
+      "changes": "Texture bytes unchanged; path Models/NewProps/tablet/Data/taliba.edds -> EIIArt/NewProps/tablet/Data/taliba.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/Data/tela.emat",
+      "source_sha256": "732f1c6e8d4a6c8a8137dc845c3574f7def41760a77557688107aef2a5b69c6f",
+      "path": "EIIArt/NewProps/tablet/Data/tela.emat",
+      "guid": "565331EF7DD6520E",
+      "sha256": "7b6034ddf1e24f05c135aa1358f8a2e29fa0e4e1824aff15ba340bd5172ba648",
+      "bytes": 428,
+      "changes": "Resource references remapped; path Models/NewProps/tablet/Data/tela.emat -> EIIArt/NewProps/tablet/Data/tela.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/Data/tela2.emat",
+      "source_sha256": "fdc8bd7ce3c7b4743a5e432e1e4b5702c11526b327170370974465c9a43b297a",
+      "path": "EIIArt/NewProps/tablet/Data/tela2.emat",
+      "guid": "038F689E62A9A662",
+      "sha256": "34522e0f906958a548f0f624bf6dbaae688777afc45c7993f48ce27935f93303",
+      "bytes": 391,
+      "changes": "Resource references remapped; path Models/NewProps/tablet/Data/tela2.emat -> EIIArt/NewProps/tablet/Data/tela2.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/tablet/tablet.xob",
+      "source_sha256": "1b91f3ba63f3c76feaf907eba42101089b079e21ba58556461f17c59c04dd9d4",
+      "path": "EIIArt/NewProps/tablet/tablet.xob",
+      "guid": "08A3C017FC7B16A7",
+      "sha256": "f13190c64a8980b183e0c88acc8a832446b50808c14c0473c8c2964049d194e0",
+      "bytes": 188583,
+      "changes": "Resource references remapped (equal-length strings in the XOB HEAD chunk only; all other bytes unchanged); path Models/NewProps/tablet/tablet.xob -> EIIArt/NewProps/tablet/tablet.xob"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/ServerRack/Data/ServerMaterial.emat",
+      "source_sha256": "0c367a77d878ac18e4746b9ed2876a404281dbcd8f6d64138831b112a2efadef",
+      "path": "EIIArt/ServerRack/Data/ServerMaterial.emat",
+      "guid": "E91A23AAF3B83E4A",
+      "sha256": "b2932a6ca4b1cefaee1be8c7af5210d920ea2b48e395c6af8bf8d03cfe2bcc02",
+      "bytes": 413,
+      "changes": "Resource references remapped; path Models/ServerRack/Data/ServerMaterial.emat -> EIIArt/ServerRack/Data/ServerMaterial.emat"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/ServerRack/Data/ServerMaterial_albedo.edds",
+      "source_sha256": "046cf8e9ee7af8e089ba03db619019cc5fe786b10097c62f6362f70542eee9a3",
+      "path": "EIIArt/ServerRack/Data/ServerMaterial_albedo.edds",
+      "guid": "3F5B6C27A1FFD0D2",
+      "sha256": "046cf8e9ee7af8e089ba03db619019cc5fe786b10097c62f6362f70542eee9a3",
+      "bytes": 269227,
+      "changes": "Texture bytes unchanged; path Models/ServerRack/Data/ServerMaterial_albedo.edds -> EIIArt/ServerRack/Data/ServerMaterial_albedo.edds"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/ServerRack/Data/ServerMaterial_emissive.edds",
+      "source_sha256": "d896ad783e674f6c371373aaa8a076448890bc3c61797bd41bcf0730d77c07f3",
+      "path": "EIIArt/ServerRack/Data/ServerMaterial_emissive.edds",
+      "guid": "1263AA8201DEA103",
+      "sha256": "d896ad783e674f6c371373aaa8a076448890bc3c61797bd41bcf0730d77c07f3",
+      "bytes": 47513,
+      "changes": "Texture bytes unchanged; path Models/ServerRack/Data/ServerMaterial_emissive.edds -> EIIArt/ServerRack/Data/ServerMaterial_emissive.edds"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/ServerRack/Data/ServerMaterial_normal.edds",
+      "source_sha256": "a21341f26c38f3c3a79115777d6ada44d65582f031e663ffcde92c19ecfe5620",
+      "path": "EIIArt/ServerRack/Data/ServerMaterial_normal.edds",
+      "guid": "1DE98B95E2C70FCC",
+      "sha256": "a21341f26c38f3c3a79115777d6ada44d65582f031e663ffcde92c19ecfe5620",
+      "bytes": 2796440,
+      "changes": "Texture bytes unchanged; path Models/ServerRack/Data/ServerMaterial_normal.edds -> EIIArt/ServerRack/Data/ServerMaterial_normal.edds"
+    },
+    {
+      "sourceMod": "61110CC4F1FF9C8A",
+      "sourceVersion": "3.1.5",
+      "source": "Models/ServerRack/ServerRack.xob",
+      "source_sha256": "ce8e01e64638e4755eaad4ed3f687776c0cc6756e785618dc32b8cc0ccb10fa6",
+      "path": "EIIArt/ServerRack/ServerRack.xob",
+      "guid": "A8B42D7DA7CA4C27",
+      "sha256": "deb22331d3c2489855201d18fac040318157798c8c0c64680016ef80df51fcc2",
+      "bytes": 28561,
+      "changes": "Resource references remapped (equal-length strings in the XOB HEAD chunk only; all other bytes unchanged); path Models/ServerRack/ServerRack.xob -> EIIArt/ServerRack/ServerRack.xob"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/Data/mat1.emat",
+      "source_sha256": "c4d3fcd5a791e8fed816fc4d8f316d814557ed3aefd86c7cafe0cadc619b502c",
+      "path": "EIIArt/ServerRack/serverrack2/Data/mat1.emat",
+      "guid": "A7D1A6572DCB68B5",
+      "sha256": "15caa8945880659e5f5de668fe4e0a2120b7d4fd225e2695acfe4008166f593d",
+      "bytes": 187,
+      "changes": "Resource references remapped; path Models/ServerRack/serverrack2/Data/mat1.emat -> EIIArt/ServerRack/serverrack2/Data/mat1.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/Data/mat1_Base_Color.edds",
+      "source_sha256": "c70b2c7ee64fbd5d30e63340888619ad396e7c1832d9144add9215ccf3f50e20",
+      "path": "EIIArt/ServerRack/serverrack2/Data/mat1_Base_Color.edds",
+      "guid": "20CA6EBEC84C6A26",
+      "sha256": "c70b2c7ee64fbd5d30e63340888619ad396e7c1832d9144add9215ccf3f50e20",
+      "bytes": 527869,
+      "changes": "Texture bytes unchanged; path Models/ServerRack/serverrack2/Data/mat1_Base_Color.edds -> EIIArt/ServerRack/serverrack2/Data/mat1_Base_Color.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/Data/mat2.emat",
+      "source_sha256": "bfa403472948f6460588ce450d81846907e4f8b492c28c9f82f6512fbb17d70d",
+      "path": "EIIArt/ServerRack/serverrack2/Data/mat2.emat",
+      "guid": "5EAF7C3132B4CE86",
+      "sha256": "e50831bf9fc2d40fede2eeef9837347ef05d6d22bb59e64200927ae3edc2f819",
+      "bytes": 187,
+      "changes": "Resource references remapped; path Models/ServerRack/serverrack2/Data/mat2.emat -> EIIArt/ServerRack/serverrack2/Data/mat2.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/Data/mat2_Base_Color.edds",
+      "source_sha256": "5b845eee4d910930b0e24412cba315ee07eed0720cfc53c90ef6b3c4601bbdb3",
+      "path": "EIIArt/ServerRack/serverrack2/Data/mat2_Base_Color.edds",
+      "guid": "4A5D17736F74C726",
+      "sha256": "5b845eee4d910930b0e24412cba315ee07eed0720cfc53c90ef6b3c4601bbdb3",
+      "bytes": 137637,
+      "changes": "Texture bytes unchanged; path Models/ServerRack/serverrack2/Data/mat2_Base_Color.edds -> EIIArt/ServerRack/serverrack2/Data/mat2_Base_Color.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/Data/mat3.emat",
+      "source_sha256": "4d4305b0760f5ec9c9a194ea362a652301328aa3dd02a56bbefd6801d1e2b6b0",
+      "path": "EIIArt/ServerRack/serverrack2/Data/mat3.emat",
+      "guid": "F5AAEB55A8409983",
+      "sha256": "3c9ba35e3355e8e6c1776c81c55b6204e7468c10a218d559280a54c99008c37d",
+      "bytes": 187,
+      "changes": "Resource references remapped; path Models/ServerRack/serverrack2/Data/mat3.emat -> EIIArt/ServerRack/serverrack2/Data/mat3.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/Data/mat3 _Base_Color.edds",
+      "source_sha256": "9afc14e76dc34f5e27e836ddaedde27a14961845b058b4ed4f0d43cc376226e0",
+      "path": "EIIArt/ServerRack/serverrack2/Data/mat3_Base_Color.edds",
+      "guid": "3BBEBEA4B79D8E7C",
+      "sha256": "9afc14e76dc34f5e27e836ddaedde27a14961845b058b4ed4f0d43cc376226e0",
+      "bytes": 473266,
+      "changes": "Texture bytes unchanged; space removed from the filename; path Models/ServerRack/serverrack2/Data/mat3 _Base_Color.edds -> EIIArt/ServerRack/serverrack2/Data/mat3_Base_Color.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/Data/mat4.emat",
+      "source_sha256": "bfa403472948f6460588ce450d81846907e4f8b492c28c9f82f6512fbb17d70d",
+      "path": "EIIArt/ServerRack/serverrack2/Data/mat4.emat",
+      "guid": "E0241DA77C4765E8",
+      "sha256": "e50831bf9fc2d40fede2eeef9837347ef05d6d22bb59e64200927ae3edc2f819",
+      "bytes": 187,
+      "changes": "Resource references remapped; path Models/ServerRack/serverrack2/Data/mat4.emat -> EIIArt/ServerRack/serverrack2/Data/mat4.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/ServerRack/serverrack2/serverbox2.xob",
+      "source_sha256": "4e4a7c78f28df4da20606ef77e14453977fb8d7bf0cb00baa52243ed0846d9c0",
+      "path": "EIIArt/ServerRack/serverrack2/serverbox2.xob",
+      "guid": "7396026AD692D203",
+      "sha256": "4eaac42b6c536f49af79f27875c5f98467ba60a9e739def7ebe6c695d8d0b3f7",
+      "bytes": 228209,
+      "changes": "Resource references remapped (equal-length strings in the XOB HEAD chunk only; all other bytes unchanged); path Models/ServerRack/serverrack2/serverbox2.xob -> EIIArt/ServerRack/serverrack2/serverbox2.xob"
+    }
+  ]
+}

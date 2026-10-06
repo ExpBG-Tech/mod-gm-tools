@@ -41,6 +41,9 @@ class EAS_Runtime
  protected static const int LEGEND_HEIGHT = 100;
  protected CanvasWidget m_DebugCanvas;
  protected TextWidget m_DebugLegend;
+ // GM context menus the overlay listens to: right-click actions and waypoint commands.
+ protected SCR_BaseContextMenuEditorUIComponent m_DebugActionsMenu;
+ protected SCR_BaseContextMenuEditorUIComponent m_DebugCommandsMenu;
  protected ref array<ref LineDrawCommand> m_DebugLines = {};
  protected ref array<ref CanvasWidgetCommand> m_DebugCommands = {};
  protected float m_DebugWidth;
@@ -429,6 +432,9 @@ class EAS_Runtime
   // editor menu; the overlay must not cover them (the legend sat on the browser
   // Filters). It returns at the next poll once the editor menu has focus again.
   if (EditorMenuCovered()) { ClearDebug(); return; }
+  // A GM context menu is part of the editor menu (it keeps focus) and is drawn below
+  // the overlay; hide while one is open, return at the next poll after it closes.
+  if (EditorContextMenuOpen()) { ClearDebug(); return; }
   float width = workspace.DPIUnscale(workspace.GetWidth());
   float height = workspace.DPIUnscale(workspace.GetHeight());
   if (!m_DebugCanvas || !m_DebugLegend)
@@ -444,6 +450,10 @@ class EAS_Runtime
    m_DebugEditor.GetOnDeactivate().Insert(ClearDebug);
    m_DebugEditor.GetOnClosed().Insert(ClearDebug);
    SCR_MenuHelper.GetOnMenuFocusLost().Insert(OnDebugMenuFocusLost);
+   m_DebugActionsMenu = EditorContextMenu(SCR_ContextMenuActionsEditorUIComponent);
+   if (m_DebugActionsMenu) m_DebugActionsMenu.GetOnContextMenuToggle().Insert(OnDebugContextMenuToggle);
+   m_DebugCommandsMenu = EditorContextMenu(SCR_CommandActionsEditorUIComponent);
+   if (m_DebugCommandsMenu) m_DebugCommandsMenu.GetOnContextMenuToggle().Insert(OnDebugContextMenuToggle);
    m_DebugLegend = TextWidget.Cast(workspace.CreateWidgetInWorkspace(WidgetType.TextWidgetTypeID, 0, 0, LEGEND_WIDTH, LEGEND_HEIGHT,
     WidgetFlags.VISIBLE | WidgetFlags.IGNORE_CURSOR | WidgetFlags.NOFOCUS | WidgetFlags.NO_LOCALIZATION, null, 20));
    if (!m_DebugLegend) { ClearDebug(); return; }
@@ -530,6 +540,9 @@ class EAS_Runtime
    SCR_MenuHelper.GetOnMenuFocusLost().Remove(OnDebugMenuFocusLost);
   }
   m_DebugEditor = null;
+  if (m_DebugActionsMenu) m_DebugActionsMenu.GetOnContextMenuToggle().Remove(OnDebugContextMenuToggle);
+  if (m_DebugCommandsMenu) m_DebugCommandsMenu.GetOnContextMenuToggle().Remove(OnDebugContextMenuToggle);
+  m_DebugActionsMenu = null; m_DebugCommandsMenu = null;
   if (m_DebugCanvas) m_DebugCanvas.RemoveFromHierarchy();
   if (m_DebugLegend) m_DebugLegend.RemoveFromHierarchy();
   m_DebugCanvas = null; m_DebugLegend = null;
@@ -549,6 +562,33 @@ class EAS_Runtime
   if (!menuEditor) return false;
   EditorMenuBase editorMenu = menuEditor.GetMenu();
   return editorMenu && !editorMenu.IsFocused();
+ }
+
+ // A GM context menu opening hides the overlay at once (vanilla toggle event).
+ protected void OnDebugContextMenuToggle(bool isOpened)
+ {
+  if (isOpened) ClearDebug();
+ }
+
+ // A GM context menu of the editor menu, found the way the vanilla tooltip manager
+ // finds it (SCR_TooltipManagerEditorUIComponent).
+ protected static SCR_BaseContextMenuEditorUIComponent EditorContextMenu(typename menuType)
+ {
+  SCR_MenuEditorComponent menuEditor = SCR_MenuEditorComponent.Cast(SCR_MenuEditorComponent.GetInstance(SCR_MenuEditorComponent));
+  if (!menuEditor) return null;
+  EditorMenuBase editorMenu = menuEditor.GetMenu();
+  if (!editorMenu) return null;
+  MenuRootComponent root = editorMenu.GetRootComponent();
+  if (!root) return null;
+  return SCR_BaseContextMenuEditorUIComponent.Cast(root.FindComponent(menuType));
+ }
+
+ protected static bool EditorContextMenuOpen()
+ {
+  SCR_BaseContextMenuEditorUIComponent actions = EditorContextMenu(SCR_ContextMenuActionsEditorUIComponent);
+  if (actions && actions.IsContextMenuOpen()) return true;
+  SCR_BaseContextMenuEditorUIComponent commands = EditorContextMenu(SCR_CommandActionsEditorUIComponent);
+  return commands && commands.IsContextMenuOpen();
  }
 
  protected void Shutdown()

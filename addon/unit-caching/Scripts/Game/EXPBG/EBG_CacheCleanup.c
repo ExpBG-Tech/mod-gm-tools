@@ -196,6 +196,8 @@ class EBG_CacheCleanup
 	{
 		PersistenceSystem system = PersistenceSystem.GetInstance();
 		if (!system) return;
+		array<IEntity> riders = {};
+		CollectProvenanceRiders(record, system, riders);
 		foreach (EBG_CleanupObject object : m_Objects)
 		{
 			if (object.Group != record || !object.Held || !object.Entity || !object.Member || object.Member.WasPlayer) continue;
@@ -203,12 +205,128 @@ class EBG_CacheCleanup
 			if (!id.IsNull()) object.PersistentId = id;
 			EBG_CleanupFullEntry entry = new EBG_CleanupFullEntry();
 			string reason;
-			if (CaptureOriginalMapping(object, entry, system, reason, false))
+			if (CaptureOriginalMappingCore(object, entry, system, reason, false))
 			{
 				entry.Object = null;
 				object.PersistentMap = entry;
 			}
+			// A rider, or anything inside one, needs no map of its own; only real save blockers are reported.
+			else if (!InsideRider(object.Entity, riders)) FullTransferFailure("provenance", reason, object.Entity);
 		}
+	}
+	// 1.8 persistence gives a UUID only to prefabs under a PrefabPersistenceConfigRule base
+	// (Vest_Base, Attachment_Base, Item_Base, ...). Content built on other roots never has one,
+	// such as RHS preset vests (Vest_TV115_preset_base) and RHS_WeaponPart_Base or
+	// WeaponPart_Base parts. A held item like that which rides inside its own member's body or
+	// own ground root needs no saved provenance: it is never a deletion target itself, the
+	// root's one native delete takes it, and native load rebuilds it with that root.
+	// Corpses, ground roots, released or transferred rows and player members never qualify.
+	protected bool IsIdentitylessRider(EBG_CleanupObject object, PersistenceSystem system)
+	{
+		if (!object || !object.Entity || object.Corpse || !object.Held || object.FullDetached || object.PermanentlyReleased || !object.Member || !object.Group || !system) return false;
+		if (!object.PersistentId.IsNull() || !system.GetId(object.Entity).IsNull()) return false;
+		return RidesOwnRoot(object);
+	}
+	// The row's holder is its member's own held body, or a held ground root of that member.
+	protected bool RidesOwnRoot(EBG_CleanupObject object)
+	{
+		IEntity holder = Holder(object.Entity);
+		if (!holder || holder == object.Entity) return false;
+		EBG_CleanupObject root = Find(holder);
+		if (!root || root.Group != object.Group || root.Member != object.Member || !root.Held || root.FullDetached) return false;
+		if (root.Corpse) return holder == object.Member.Entity;
+		return Holder(holder) == holder;
+	}
+	// A part its own weapon's SlotManager EntitySlotInfo generates, such as the
+	// Mount_Dovetail_74N that RHS: Status Quo's Rifle_AK74N_base override puts on every vanilla
+	// AK-74N. It may carry a UUID (Attachment_Base), yet no inventory slot holds it: it cannot
+	// leave the weapon on its own, the weapon's root delete takes it, and native load regenerates
+	// it from that slot. When its exact slot provenance cannot be captured it rides like an
+	// identity-less part. The parent must be a weapon, never the body (a character's
+	// CharacterWeaponSlotComponent is a BaseWeaponComponent too), and that weapon must be
+	// this member's own held row on its own root.
+	protected bool IsWeaponSlotRider(EBG_CleanupObject object)
+	{
+		if (!object || !object.Entity || object.Corpse || !object.Held || object.FullDetached || object.PermanentlyReleased || !object.Member || !object.Group) return false;
+		IEntity weapon = object.Entity.GetParent();
+		if (!weapon || SCR_ChimeraCharacter.Cast(weapon) || !weapon.FindComponent(BaseWeaponComponent)) return false;
+		InventoryItemComponent inventory = InventoryItemComponent.Cast(object.Entity.FindComponent(InventoryItemComponent));
+		if (inventory && inventory.GetParentSlot()) return false;
+		EntitySlotInfo slot = EntitySlotInfo.GetSlotInfo(object.Entity);
+		if (!slot || InventoryStorageSlot.Cast(slot) || slot.GetAttachedEntity() != object.Entity || slot.GetOwner() != weapon || slot.GetSlotTemplate() != SCR_ResourceNameUtils.GetPrefabName(object.Entity)) return false;
+		EBG_CleanupObject weaponRow = Find(weapon);
+		if (!weaponRow || weaponRow.Group != object.Group || weaponRow.Member != object.Member || !weaponRow.Held || weaponRow.FullDetached || weaponRow.PermanentlyReleased) return false;
+		return RidesOwnRoot(object);
+	}
+	protected static bool InsideRider(IEntity entity, array<IEntity> riders)
+	{
+		if (!entity || riders.IsEmpty()) return false;
+		IEntity physical = entity;
+		for (int depth = 0; physical && depth < 32; depth++)
+		{
+			if (riders.Contains(physical)) return true;
+			physical = physical.GetParent();
+		}
+		foreach (IEntity rider : riders)
+			if (EBG_FullCacheGroup.InventoryBelongsTo(entity, rider)) return true;
+		return false;
+	}
+	// Identity-less and weapon-slot riders whose provenance capture fails. Rows stored or
+	// parented inside them ride with the same root and are left out of the save with them.
+	protected void CollectProvenanceRiders(EBG_CacheGroup record, PersistenceSystem system, array<IEntity> riders)
+	{
+		foreach (EBG_CleanupObject object : m_Objects)
+		{
+			if (riders.Count() >= 2048) return;
+			if (object.Group != record || !object.Member || object.Member.WasPlayer || (object.Member.Entity && object.Member.Entity.EBG_WasPlayerControlled())) continue;
+			if ((!IsIdentitylessRider(object, system) && !IsWeaponSlotRider(object)) || CanExportInertBelongings(object, system) || CanExportInertCorpseHead(object, system)) continue;
+			EBG_CleanupFullEntry probe = new EBG_CleanupFullEntry();
+			string reason;
+			if (!CaptureOriginalMappingCore(object, probe, system, reason, false)) riders.Insert(object.Entity);
+		}
+	}
+	// Save decision for one present, held row: 1 provenance captured, 0 left out (an
+	// identity-less rider or inside one), -1 unavailable (the caller marks the save's Issue).
+	protected int ProvenanceDecision(EBG_CleanupObject object, EBG_CleanupFullEntry entry, PersistenceSystem system, array<IEntity> riders, out string reason)
+	{
+		if (InsideRider(object.Entity, riders)) return 0;
+		if (CaptureOriginalMappingCore(object, entry, system, reason, false))
+		{
+			// A cloth-slot accessory is parented to the wearer but captured against its garment.
+			// When that garment is left out, the row would name a parent no load can resolve.
+			if (entry.ParentOriginal && InsideRider(entry.ParentOriginal, riders)) return 0;
+			return 1;
+		}
+		FullTransferFailure("provenance", reason, object.Entity);
+		return -1;
+	}
+	// Read-only test hook with ExportPersistentGroup's decision: rows a native save leaves
+	// out as identity-less riders, and rows whose provenance would still mark its Issue.
+	int CountSaveProvenance(EBG_CacheGroup record, out int blocking)
+	{
+		blocking = 0;
+		PersistenceSystem system = PersistenceSystem.GetInstance();
+		if (!system || !record) return 0;
+		array<IEntity> riders = {};
+		CollectProvenanceRiders(record, system, riders);
+		int skipped;
+		foreach (EBG_CleanupObject object : m_Objects)
+		{
+			if (object.Group != record || !object.Member || !object.Entity || !object.Held || CanExportInertBelongings(object, system) || CanExportInertCorpseHead(object, system)) continue;
+			if (object.Member.WasPlayer || (object.Member.Entity && object.Member.Entity.EBG_WasPlayerControlled())) continue;
+			EBG_CleanupFullEntry probe = new EBG_CleanupFullEntry();
+			string reason;
+			int decision = ProvenanceDecision(object, probe, system, riders, reason);
+			if (decision == 0) skipped++;
+			else if (decision < 0) blocking++;
+		}
+		return skipped;
+	}
+	// Read-only test hook: UUID-less release lineage recorded for this member. It blocks the
+	// member's whole group on the next load ("retained UUID-less transfer lineage").
+	bool HasReleasedLineage(EBG_CacheMember member)
+	{
+		return member && !member.PersistentId.IsNull() && m_ReleasedLineageMembers.Contains(member.PersistentId);
 	}
 	protected bool IsInertDeathLeafProof(EBG_CleanupObject object)
 	{
@@ -266,6 +384,8 @@ class EBG_CacheCleanup
 		if (!system) return false;
 		saved.LedgerInitialized = m_RegisteredGroups.Contains(record);
 		array<IEntity> originals = {};
+		array<IEntity> riders = {};
+		CollectProvenanceRiders(record, system, riders);
 		foreach (EBG_CleanupObject object : m_Objects)
 		{
 			if (object.Group != record || !object.Member) continue;
@@ -308,7 +428,11 @@ class EBG_CacheCleanup
 			}
 			else if (object.Entity && object.Held && !saved.Members[row.MemberIndex].WasPlayer)
 			{
-				if (!CaptureOriginalMapping(object, row.Map, system, reason, false)) saved.Issue = "Original provenance unavailable: " + reason;
+				// An identity-less rider is not saved: the native load rebuilds it with its
+				// body or ground root, and it never blocks that casualty's cleanup or caching.
+				int decision = ProvenanceDecision(object, row.Map, system, riders, reason);
+				if (decision == 0) continue;
+				if (decision < 0) saved.Issue = "Original provenance unavailable: " + reason;
 				SCR_WeaponAttachmentsStorageComponent rails = SCR_WeaponAttachmentsStorageComponent.Cast(object.Entity.FindComponent(SCR_WeaponAttachmentsStorageComponent));
 				if (rails)
 				{
@@ -768,6 +892,18 @@ class EBG_CacheCleanup
 		if (slot.GetOwner() != vest || vest.GetParent() != wearer || slot.GetParentContainer() != vest.FindComponent(BaseLoadoutClothComponent)) { return null; }
 		return wearer;
 	}
+	// Any other storage-less loadout slot hangs its item on the cloth that authored it: the
+	// RHS USMC boonie's Comtacs headset (Hat_USMC_Boonie_Comtac/_wd_Comtac, worn by 18 USAF
+	// scout, RTO and sniper prefabs) or a pouch of an unlisted vest. Names that cloth only for
+	// the item's own slot on the cloth's BaseLoadoutClothComponent; the walk then follows the
+	// cloth's own slot to its wearer. Ownership only: deletion and provenance keep their checks.
+	protected IEntity LoadoutClothOwner(IEntity item, InventoryStorageSlot slot)
+	{
+		if (!item || !slot || !LoadoutSlotInfo.Cast(slot) || slot.GetStorage() || slot.GetAttachedEntity() != item) { return null; }
+		IEntity cloth = slot.GetOwner();
+		if (!cloth || cloth == item || !cloth.FindComponent(BaseLoadoutClothComponent) || slot.GetParentContainer() != cloth.FindComponent(BaseLoadoutClothComponent)) { return null; }
+		return cloth;
+	}
 	// An inventory hierarchy is followed through slot/storage ownership, not only
 	// IEntity parentage. The depth limit treats pathological hierarchies as unknown.
 	protected IEntity Holder(IEntity item)
@@ -786,7 +922,11 @@ class EBG_CacheCleanup
 			BaseInventoryStorageComponent storage = component.GetParentSlot().GetStorage();
 			if (!storage)
 			{
-				return NativeVestAccessoryOwner(current, component.GetParentSlot());
+				IEntity wearer = NativeVestAccessoryOwner(current, component.GetParentSlot());
+				if (wearer) { return wearer; }
+				// Otherwise the owning cloth; a null owner ends the walk unresolved.
+				current = LoadoutClothOwner(current, component.GetParentSlot());
+				continue;
 			}
 			if (!storage.GetOwner() || storage.GetOwner() == current) { return null; }
 			current = storage.GetOwner();
@@ -809,7 +949,11 @@ class EBG_CacheCleanup
 				BaseInventoryStorageComponent storage = inventory.GetParentSlot().GetStorage();
 				if (!storage)
 				{
-					current = NativeVestAccessoryOwner(current, inventory.GetParentSlot());
+					// The verified vest's wearer, else the owning cloth, whose keep component
+					// and own slot are checked next. Only an unresolvable owner stays protected.
+					IEntity slotOwner = NativeVestAccessoryOwner(current, inventory.GetParentSlot());
+					if (!slotOwner) slotOwner = LoadoutClothOwner(current, inventory.GetParentSlot());
+					current = slotOwner;
 					if (!current)
 					{
 						return true;
@@ -1642,6 +1786,10 @@ class EBG_CacheCleanup
 		}
 	}
 	// Retire provenance, not world objects. Detached/looted items remain untouched.
+	// An identity-less rider still on this member's own body or ground root (RHS gear, a
+	// WeaponPart_Base part) is not loot: it is retired without UUID-less lineage, which
+	// would refuse every later group holding this soldier (MayEnroll, regroup, load).
+	// Anything a player or anyone else took is no rider and keeps its lineage.
 	void ReleaseRemovedMember(EBG_CacheGroup record, EBG_CacheMember member)
 	{
 		for (int pendingIndex = m_PendingBirths.Count() - 1; pendingIndex >= 0; pendingIndex--)
@@ -1651,11 +1799,20 @@ class EBG_CacheCleanup
 			if (owner && owner.Group == record && owner.Member == member)
 			{ birth.Clear(); m_PendingBirths.Remove(pendingIndex); }
 		}
+		// Decided before any release: a rider needs its root row still held.
+		array<EBG_CleanupObject> riders = {};
+		PersistenceSystem system = PersistenceSystem.GetInstance();
+		bool playerMember = !member || member.WasPlayer || (member.Entity && member.Entity.EBG_WasPlayerControlled());
+		if (!playerMember)
+		{
+			foreach (EBG_CleanupObject candidate : m_Objects)
+				if (candidate.Group == record && candidate.Member == member && IsIdentitylessRider(candidate, system)) riders.Insert(candidate);
+		}
 		for (int i = m_Objects.Count() - 1; i >= 0; i--)
 		{
 			EBG_CleanupObject object = m_Objects[i];
 			if (object.Group != record || object.Member != member) continue;
-			ReleaseObject(object, true);
+			ReleaseObject(object, true, !riders.Contains(object));
 			RemoveObject(i);
 		}
 	}
@@ -1732,13 +1889,15 @@ class EBG_CacheCleanup
 		}
 		return true;
 	}
-	protected void ReleaseObject(EBG_CleanupObject object, bool permanently)
+	// lineage false: a permanent release that records no UUID-less lineage (an identity-less
+	// rider retired with its member, never loot). Everything else is unchanged.
+	protected void ReleaseObject(EBG_CleanupObject object, bool permanently, bool lineage = true)
 	{
 		if (!object || !object.Held) return;
 		if (permanently)
 		{
 			object.PermanentlyReleased = true;
-			RememberReleasedLineage(object);
+			if (lineage) RememberReleasedLineage(object);
 		}
 		object.Held = false;
 		if (object.Inventory) object.Inventory.m_OnParentSlotChangedInvoker.Remove(object.OnSlotChanged);
@@ -2621,6 +2780,8 @@ class EBG_CacheCleanup
 		// RHS AK74N authors this non-inventory mount in EntitySlotInfo Dovetail.
 		// Native restore regenerates its UUID; capture the existing exact slot even
 		// when it starts tracked. This records provenance, never cleanup ownership.
+		// The shape is the Pegasus Scripts modset's. Elsewhere this fails and the save leaves
+		// the mount out as a weapon-slot rider (IsWeaponSlotRider) instead of marking its Issue.
 		if (entry.Prefab == "{D87211B7CE9D89F8}Prefabs/Weapons/Attachments/Mounts/Mount_Dovetail_74N.et")
 		{
 			if (!loadedParent || !loadedParent.FindComponent(BaseWeaponComponent) || object.Entity.GetChildren() ||
@@ -3472,10 +3633,15 @@ class EBG_CacheCleanup
 	// Order-independent park test: SafeTree reports only the first blocker it meets,
 	// so a foreign magazine can hide intel or a keep component in the same tree.
 	// A missing or over-deep node proves nothing either way and never parks.
+	// Only positive protection parks: a keep component on the root or on whatever holds
+	// it, a keep component on any node inside it, or valuable intel. Below the root an
+	// ownership chain the walk cannot resolve (worn modded gear in a storage-less loadout
+	// slot of an unlisted vest) is unknown, not protected; its own node is still checked.
 	protected bool TreeHoldsProtected(IEntity entity, int depth = 0)
 	{
 		if (!entity || depth > 32) return false;
-		if (ProtectedOwnerChain(entity)) return true;
+		if (depth == 0 && ProtectedOwnerChain(entity)) return true;
+		if (IsProtected(entity)) return true;
 		SCR_IdentityInventoryItemComponent identity = SCR_IdentityInventoryItemComponent.Cast(entity.FindComponent(SCR_IdentityInventoryItemComponent));
 		if (identity && identity.GetValuableIntelFactionID() >= 0) return true;
 		array<Managed> storages = {};
@@ -3518,8 +3684,9 @@ class EBG_CacheCleanup
 		IEntity reportEntity;
 		if (report) reportEntity = report.Entity;
 		bool keep = KeepProtected(reason);
+		// Roots only (the body and own ground roots); their walk covers everything inside.
 		foreach (EBG_CleanupObject row : rows)
-			if (!keep && row.Entity && TreeHoldsProtected(row.Entity)) keep = true;
+			if (!keep && row.Entity && Holder(row.Entity) == row.Entity && TreeHoldsProtected(row.Entity)) keep = true;
 		if (keep)
 		{
 			// Mission protection keeps the 0.1.31 rule: held, never deleted and never
@@ -3567,8 +3734,16 @@ class EBG_CacheCleanup
 		array<IEntity> targets = {};
 		IEntity body = CollectCasualtyTargets(record, member, rows, targets);
 		// Items taken by players or stored elsewhere stop being tracked and are never deleted.
+		// Contents of the body or of its own dropped weapon are not elsewhere: their root's
+		// delete takes them. Releasing them would record an identity-less part (an RHS weapon
+		// part, a static WeaponPart_Base part) as UUID-less player-loot lineage, which blocks
+		// the whole group on the next load.
 		foreach (EBG_CleanupObject row : rows)
-			if (row && row.Entity && !targets.Contains(row.Entity) && Holder(row.Entity) != body) ReleaseObject(row, true);
+		{
+			if (!row || !row.Entity || targets.Contains(row.Entity)) continue;
+			IEntity holder = Holder(row.Entity);
+			if (holder != body && !targets.Contains(holder)) ReleaseObject(row, true);
+		}
 		if (targets.IsEmpty())
 		{
 			member.CleanupBlocks = 0;

@@ -89,6 +89,10 @@ class ESR_Prisoner
  int RevealBearing;
  int MarkerId = -1;
  int PoseTries;
+ bool AceMode; // held in ACE Captives' surrender state (ACE loaded)
+ bool AceFailed; // ACE did not take him: the vanilla sit from then on
+ int AceTries;
+ int AceIdle; // upkeep ticks with every ACE state cleared
  float NextQuestion;
 }
 
@@ -109,6 +113,11 @@ class ESR_SurrenderManager
  static const int UPKEEP_MS = 5000;
  static const int MAX_POSE_TRIES = 6;
  static const float CHEST_HEIGHT = 0.75;
+ // ACE's surrender pose stands: the point sits in front of the chest, below raised
+ // hands and clear of hands tied behind the back (ACE's own wrist actions).
+ static const float CHEST_HEIGHT_ACE = 1.2;
+ static const float CHEST_FORWARD_ACE = 0.3;
+ static const int ACE_RELEASE_TICKS = 2;
  static const float INTERROGATE_RANGE = 4;
  static const float QUESTION_COOLDOWN = 2;
  static const ResourceName POINT_PREFAB = "{B412A163F3014DFE}Prefabs/EXPSR/ESR_InterrogationPoint.et";
@@ -166,6 +175,8 @@ class ESR_SurrenderManager
   for (int k = s_aPrisoners.Count() - 1; k >= 0; k--) { if (!s_aPrisoners[k] || !s_aPrisoners[k].Character) ReleaseAt(k, "stale"); }
   if (!s_aQueue.IsEmpty()) ScheduleQueue();
   StartUpkeep();
+  // Logs once per world whether ACE Captives' surrender or the vanilla sit is used.
+  ESR_AceCaptives.Available();
  }
 
  static SCR_AIGroup GroupOf(IEntity entity)
@@ -318,6 +329,9 @@ class ESR_SurrenderManager
   if (!record) return;
   if (total > record.Peak) record.Peak = total;
   if (record.Peak <= 0) return;
+  // A squad whose cached or transitional state is still held (Unit Caching,
+  // Garrison) is asleep: its casualties are rolled once it is plainly awake.
+  if (EBG_CacheManager.IsCacheHeld(group)) return;
   int casualties = record.Peak - able;
   // Rolls happen once per new casualty, never twice for the same loss.
   if (casualties <= record.LastCasualties) return;
@@ -348,6 +362,9 @@ class ESR_SurrenderManager
   SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
   AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
   if (!controller || !control || controller.GetLifeState() != ECharacterLifeState.ALIVE || character.IsInVehicle() || IsPlayerCharacter(character)) return false;
+  // An AI frozen by a cache holds a permanent LOD pin (vanilla never sets one): asleep.
+  AIAgent pinned = control.GetControlAIAgent();
+  if (pinned && pinned.GetPermanentLOD() >= 0) return false;
   IEntity leader;
   if (group) leader = group.GetLeaderEntity();
   ESR_Prisoner prisoner = new ESR_Prisoner();
@@ -357,9 +374,14 @@ class ESR_SurrenderManager
   prisoner.Dossier = ESR_Dossier.Capture(character, leader);
   Faction faction = character.GetFaction();
   if (faction) prisoner.SideKey = faction.GetFactionKey();
-  int dropped = DropWeapons(character);
   AIAgent agent = control.GetControlAIAgent();
+  // Before his weapons, squad and AI go: he stops suppressing (see RetireSuppression).
+  int retired = RetireSuppression(agent);
+  int dropped = DropWeapons(character);
   if (group && agent && agent.GetParentGroup() == group) group.RemoveAgent(agent);
+  // He left his squad for good: Unit Caching and Garrison forget him as a member
+  // (never cached, respawned or deleted) and his squad caches and wakes as before.
+  character.EBG_MarkLeftSquad();
   control.DeactivateAI();
   bool civilian = SetCivilian(character);
   controller.SetStanceChange(ECharacterStanceChange.STANCECHANGE_TOERECTED);
@@ -369,8 +391,44 @@ class ESR_SurrenderManager
   GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.ApplyPose, POSE_DELAY_MS, false, character);
   StartUpkeep();
   ESR_SurrenderModule.PublishPrisoners(s_aPrisoners.Count());
-  PrintFormat("[EXPBG SURRENDER] %1 surrendered at %2 faction=%3 weaponsDropped=%4 civilian=%5 prisoners=%6", character, character.GetOrigin(), prisoner.SideKey, dropped, civilian, s_aPrisoners.Count());
+  PrintFormat("[EXPBG SURRENDER] %1 surrendered at %2 faction=%3 weaponsDropped=%4 civilian=%5 prisoners=%6 suppressRetired=%7", character, character.GetOrigin(), prisoner.SideKey, dropped, civilian, s_aPrisoners.Count(), retired);
   return true;
+ }
+
+ // A soldier taken mid-fight is usually suppressing: vanilla's group cluster behaviour
+ // or EXPBG's warning shots. Leaving his squad fails only behaviours tied to a group
+ // activity, and the cluster behaviour has none, so it would stay selected for a
+ // disarmed civilian with no squad. Its suppress tree reads the volume through a
+ // behaviour-tree variable that the behaviour alone keeps alive, and two vanilla nodes
+ // raise a script exception when it is missing ("No suppression volume provided!").
+ // Every suppress behaviour is failed through the native utility before his AI goes
+ // off, and again whenever upkeep finds his AI back on, so it is never resumed.
+ static int RetireSuppression(AIAgent agent)
+ {
+  if (!agent) return 0;
+  SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+  if (!utility) return 0;
+  array<ref AIActionBase> actions = {};
+  utility.FindActionsOfInheritedType(SCR_AISuppressBehavior, actions);
+  int retired;
+  foreach (AIActionBase action : actions)
+  {
+   if (!action) continue;
+   EAIActionState state = action.GetActionState();
+   if (state == EAIActionState.COMPLETED || state == EAIActionState.FAILED) continue;
+   action.Fail();
+   retired++;
+  }
+  return retired;
+ }
+
+ // Vanilla turns a casualty's AI back on when he wakes up: a prisoner found with his AI
+ // on loses any suppress behaviour first, then his AI goes off again.
+ protected static void KeepPassive(AIControlComponent control)
+ {
+  if (!control || !control.IsAIActivated()) return;
+  RetireSuppression(control.GetControlAIAgent());
+  control.DeactivateAI();
  }
 
  // Vanilla removal from weapon storage drops the item to the ground, as the AI drop node does.
@@ -425,13 +483,16 @@ class ESR_SurrenderManager
 
  // Vanilla 1.8 has no hands-up animation; the prisoner uses the vanilla sit-on-ground
  // loiter (the "Sit on ground" emote). Loiter state is part of the character's native
- // replication, so late joiners see the pose too.
+ // replication, so late joiners see the pose too. With ACE Captives loaded he takes
+ // ACE's own surrender state and hands-up pose instead (ESR_AceCaptives), never both.
  protected static void ApplyPose(SCR_ChimeraCharacter character)
  {
   ESR_Prisoner prisoner = FindPrisoner(character);
   if (!prisoner || !character) return;
   SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
-  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsLoitering()) return;
+  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE) return;
+  if (ApplyAcePose(prisoner, controller)) return;
+  if (controller.IsLoitering()) return;
   if (!controller.CanPlayLoiterAnimation(ELoiteringType.SIT)) return;
   prisoner.PoseTries++;
   vector anchor[4];
@@ -440,13 +501,140 @@ class ESR_SurrenderManager
   Trace(string.Format("%1 pose requested try=%2", character, prisoner.PoseTries));
  }
 
+ // ACE Captives loaded: ACE's surrender state and pose. True while ACE holds the pose
+ // or is taking it; false leaves the prisoner to the vanilla sit.
+ protected static bool ApplyAcePose(ESR_Prisoner prisoner, SCR_CharacterControllerComponent controller)
+ {
+  SCR_ChimeraCharacter character = prisoner.Character;
+  if (prisoner.AceFailed || !ESR_AceCaptives.Available()) return false;
+  // Possessed by a Game Master: neither ACE's pose nor the vanilla sit; upkeep resumes later.
+  if (IsPlayerCharacter(character)) return true;
+  bool surrendered, captive, carried;
+  if (!ESR_AceCaptives.ReadState(character, surrendered, captive, carried)) return AceFallback(prisoner, "state unreadable");
+  if (captive || carried || (surrendered && ESR_AceCaptives.InHelper(character)))
+  {
+   // Surrendered in ACE's helper, or tied or carried by a player: ACE owns the pose.
+   SetAceMode(prisoner, true);
+   prisoner.AceTries = 0;
+   return true;
+  }
+  // Put into a vehicle by a Game Master, or leaving one: wait, upkeep tries again.
+  if (character.IsInVehicle() || ESR_AceCaptives.IsGettingOut(character)) return true;
+  if (prisoner.AceTries >= MAX_POSE_TRIES) return AceFallback(prisoner, "no helper");
+  prisoner.AceTries++;
+  // ACE's helper request is pending: one helper at a time.
+  if (ESR_AceCaptives.IsGettingIn(character)) return true;
+  if (controller.IsLoitering())
+  {
+   // A loiter ends first; ACE takes over on the next try.
+   controller.StopLoitering(false);
+   return true;
+  }
+  // Also repairs ACE's flag without its helper (no helper was spawned): no helper is
+  // pending here, so ACE spawns exactly one.
+  if (!ESR_AceCaptives.SetSurrender(character, true)) return AceFallback(prisoner, "surrender refused");
+  SetAceMode(prisoner, true);
+  // ACE's helper sets faction key "CIV"; re-apply ours (missions without "CIV").
+  SetCivilian(character);
+  Trace(string.Format("%1 ACE surrender requested try=%2 repair=%3", character, prisoner.AceTries, surrendered));
+  return true;
+ }
+
+ // ACE did not take him: clear a half-set ACE flag and keep the vanilla sit for good.
+ protected static bool AceFallback(ESR_Prisoner prisoner, string reason)
+ {
+  SCR_ChimeraCharacter character = prisoner.Character;
+  bool surrendered, captive, carried;
+  if (ESR_AceCaptives.ReadState(character, surrendered, captive, carried) && surrendered && !ESR_AceCaptives.InHelper(character)) ESR_AceCaptives.SetSurrender(character, false);
+  prisoner.AceFailed = true;
+  SetAceMode(prisoner, false);
+  Print(string.Format("[EXPBG SURRENDER] %1 ACE surrender unavailable (%2): vanilla sit", character, reason), LogLevel.WARNING);
+  return false;
+ }
+
+ protected static void SetAceMode(ESR_Prisoner prisoner, bool ace)
+ {
+  if (prisoner.AceMode == ace) return;
+  prisoner.AceMode = ace;
+  prisoner.AceIdle = 0;
+  // The seated and the standing pose need the point at a different height.
+  DeletePoint(prisoner);
+  SpawnPoint(prisoner);
+ }
+
+ // ACE-held prisoner, alive and awake. ACE owns the pose while he is surrendered in its
+ // helper, tied or carried. A prisoner standing free with every ACE state cleared was
+ // released through ACE (a Game Master's "Toggle surrender", a player's "Release
+ // prisoner"); two ticks in a row, so a wake-up being re-asserted is not misread.
+ // False: release him.
+ protected static bool AceUpkeep(ESR_Prisoner prisoner)
+ {
+  SCR_ChimeraCharacter character = prisoner.Character;
+  bool surrendered, captive, carried;
+  if (!ESR_AceCaptives.ReadState(character, surrendered, captive, carried))
+  {
+   AceFallback(prisoner, "state unreadable");
+   return true;
+  }
+  if (captive || carried || (surrendered && ESR_AceCaptives.InHelper(character)))
+  {
+   prisoner.AceIdle = 0;
+   prisoner.AceTries = 0;
+   return true;
+  }
+  if (ESR_AceCaptives.IsGettingOut(character))
+  {
+   // Leaving ACE's helper: judge the outcome on the next tick.
+   prisoner.AceIdle = 0;
+   return true;
+  }
+  if (surrendered || character.IsInVehicle() || ESR_AceCaptives.IsGettingIn(character))
+  {
+   // Moving in, ACE's flag without its helper, or in a vehicle: not a release. Leaving
+   // ACE's helper (a Game Master moving him into a vehicle) restored his military faction.
+   prisoner.AceIdle = 0;
+   KeepCivilian(character);
+   ApplyPose(character);
+   return true;
+  }
+  prisoner.AceIdle++;
+  return prisoner.AceIdle < ACE_RELEASE_TICKS;
+ }
+
+ // ACE restores the default (military) faction whenever its helper ends; an ACE-held
+ // prisoner who went down or was moved into a vehicle stays civilian.
+ protected static void KeepCivilian(SCR_ChimeraCharacter character)
+ {
+  SCR_Faction faction = SCR_Faction.Cast(character.GetFaction());
+  if (faction && faction.IsMilitary()) SetCivilian(character);
+ }
+
  protected static void Reassert(IEntity entity)
  {
   ESR_Prisoner prisoner = FindPrisoner(entity);
   if (!prisoner || !prisoner.Character || IsPlayerCharacter(prisoner.Character)) return;
   AIControlComponent control = AIControlComponent.Cast(prisoner.Character.FindComponent(AIControlComponent));
-  if (control && control.IsAIActivated()) control.DeactivateAI();
+  KeepPassive(control);
+  // ACE ends its helper on every life-state change: surrender him again (a tied
+  // captive is re-tied by ACE itself).
+  if (prisoner.AceMode)
+  {
+   prisoner.AceIdle = 0;
+   SetCivilian(prisoner.Character);
+  }
   ApplyPose(prisoner.Character);
+ }
+
+ // Where the interaction point belongs: the chest of the seated prisoner, or in front
+ // of the chest of ACE's standing pose.
+ static vector PointPosition(ESR_Prisoner prisoner)
+ {
+  vector origin = prisoner.Character.GetOrigin();
+  if (!prisoner.AceMode) return origin + vector.Up * CHEST_HEIGHT;
+  vector forward = prisoner.Character.GetWorldTransformAxis(2);
+  forward[1] = 0;
+  forward.Normalize();
+  return origin + vector.Up * CHEST_HEIGHT_ACE + forward * CHEST_FORWARD_ACE;
  }
 
  protected static bool SpawnPoint(ESR_Prisoner prisoner)
@@ -460,7 +648,7 @@ class ESR_SurrenderManager
   EntitySpawnParams spawn = new EntitySpawnParams();
   spawn.TransformMode = ETransformMode.WORLD;
   Math3D.MatrixIdentity4(spawn.Transform);
-  spawn.Transform[3] = prisoner.Character.GetOrigin() + vector.Up * CHEST_HEIGHT;
+  spawn.Transform[3] = PointPosition(prisoner);
   IEntity spawned = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawn);
   ESR_InterrogationPoint point = ESR_InterrogationPoint.Cast(spawned);
   if (!point)
@@ -515,13 +703,22 @@ class ESR_SurrenderManager
    CharacterControllerComponent controller = prisoner.Character.GetCharacterController();
    if (!controller || controller.GetLifeState() == ECharacterLifeState.DEAD) { ReleaseAt(i, "died"); continue; }
    // Unconscious, or possessed by a Game Master: leave him alone until he is back.
-   if (controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious() || IsPlayerCharacter(prisoner.Character)) continue;
+   if (controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious() || IsPlayerCharacter(prisoner.Character))
+   {
+    if (prisoner.AceMode && !IsPlayerCharacter(prisoner.Character)) KeepCivilian(prisoner.Character);
+    continue;
+   }
    AIControlComponent control = AIControlComponent.Cast(prisoner.Character.FindComponent(AIControlComponent));
-   if (control && control.IsAIActivated()) control.DeactivateAI();
+   KeepPassive(control);
    SCR_CharacterControllerComponent scripted = SCR_CharacterControllerComponent.Cast(controller);
-   if (scripted && !scripted.IsLoitering() && prisoner.PoseTries < MAX_POSE_TRIES) ApplyPose(prisoner.Character);
+   if (prisoner.AceMode)
+   {
+    // Released through ACE: he is no longer our prisoner (AI stays off).
+    if (!AceUpkeep(prisoner)) { ReleaseAt(i, "ace-release"); continue; }
+   }
+   else if (scripted && !scripted.IsLoitering() && prisoner.PoseTries < MAX_POSE_TRIES) ApplyPose(prisoner.Character);
    // A Game Master may move the prisoner; the interaction point follows.
-   vector chest = prisoner.Character.GetOrigin() + vector.Up * CHEST_HEIGHT;
+   vector chest = PointPosition(prisoner);
    if (!prisoner.Point) SpawnPoint(prisoner);
    else if (vector.DistanceSq(prisoner.Point.GetOrigin(), chest) > 1)
    {

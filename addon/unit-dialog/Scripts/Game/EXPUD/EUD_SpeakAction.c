@@ -1,7 +1,8 @@
 // "Speak to <Name>" on a character whose Game Master gave it dialog lines.
 // Listed in the Character_Base ActionsManagerComponent (Head and Chest contexts).
 // The speaking player's machine opens the conversation window locally; the
-// server plays the optional talking gesture. Nothing else is replicated.
+// server plays the optional talking gesture, once per conversation: only here,
+// never on Continue or Restart. Nothing else is replicated.
 class EUD_SpeakAction : ScriptedUserAction
 {
  // Zero-duration actions re-perform while the key is held, and the broadcast

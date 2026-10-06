@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{7396026AD692D203}EIIArt/ServerRack/serverrack2/serverbox2.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

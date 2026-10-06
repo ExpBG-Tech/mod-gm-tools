@@ -1,4 +1,4 @@
-[EntityEditorProps(category: "EXPBG/Ambient", description: "EXPBG Civil Protest Zone: a static crowd of unarmed protesting civilians with angry crowd audio")]
+[EntityEditorProps(category: "EXPBG/Ambient", description: "EXPBG Civil Protest Zone: a static crowd of unarmed protesting civilians with angry and rioting crowd audio")]
 class EAU_ProtestZoneClass : GenericEntityClass {}
 
 // One protester of the current run. The actor pointer is weak: a deleted body reads null.
@@ -7,17 +7,37 @@ class EAU_Protester
  SCR_ChimeraCharacter Actor;
  ResourceName Prefab;
  vector Spot;
+ // Spawn facing (entity yaw, 0-360); the protester turns back to it when no player is in sight.
+ float HomeYaw;
  float SettleAt;
  float NextGesture;
  int LastGesture = -1;
  bool Settled;
  bool Dead;
+ // Facing a player: the chosen player (weak), kept until FaceUntil while still in sight.
+ IEntity FaceTarget;
+ bool Facing;
+ float FaceUntil;
+ float NextFace;
+ // Last heading request, verified at the next facing check.
+ float WantedYaw;
+ bool TurnPending;
+}
+
+// A protester of a sleeping zone: who stood where, facing which way.
+class EAU_CachedProtester
+{
+ ResourceName Prefab;
+ vector Spot;
+ float Yaw;
 }
 
 // Server-authoritative GM zone. Everything it creates (one civilian group, its
 // members and one Ambient Sounds crowd emitter) is plain replicated entities, so
 // join-in-progress clients receive them natively. The zone only replicates its
-// settings for the GM dialog and the GM-only radius mesh.
+// settings and a short status for the GM dialog and the GM-only radius mesh.
+// While no player character is near, the zone sleeps: crowd, group and sound are
+// removed and the survivors are remembered; they return when a player comes back.
 class EAU_ProtestZone : GenericEntity
 {
  static const int KEY_ENABLED = 0;
@@ -25,7 +45,39 @@ class EAU_ProtestZone : GenericEntity
  static const int KEY_CROWD_MIN = 2;
  static const int KEY_CROWD_MAX = 3;
  static const int KEY_DEBUG = 4;
- static const int SETTING_COUNT = 5;
+ static const int KEY_SOUND = 5;
+ static const int KEY_WAKE = 6;
+ static const int SETTING_COUNT = 7;
+ // Saves made before the Crowd sound setting hold only keys 0-4.
+ static const int LEGACY_SETTING_COUNT = 5;
+ // Saves made before the Wake distance setting hold keys 0-5.
+ static const int SOUND_SETTING_COUNT = 6;
+ static const int WAKE_MIN = 50;
+ static const int WAKE_MAX = 3000;
+ static const int WAKE_DEFAULT = 300;
+ // A gathered crowd stays until every player is this much farther than the wake distance...
+ static const int SLEEP_MARGIN = 50;
+ // ...for this long (s). Player distances are checked at most every PRESENCE_SECONDS.
+ static const float SLEEP_DELAY_SECONDS = 10;
+ static const float PRESENCE_SECONDS = 2;
+ // Replicated status for the GM dialog (not saved).
+ static const int STATE_OFF = 0;
+ static const int STATE_GATHERING = 1;
+ static const int STATE_PROTESTING = 2;
+ static const int STATE_SLEEPING = 3;
+ // Facing players: each protester looks for a player every 3-5 s and keeps a
+ // chosen one 8-15 s while still in sight; small corrections are skipped.
+ static const float FACE_MIN_SECONDS = 3;
+ static const float FACE_MAX_SECONDS = 5;
+ static const float FACE_HOLD_MIN = 8;
+ static const float FACE_HOLD_MAX = 15;
+ static const float TURN_TOLERANCE = 12;
+ // A body still this far from its last requested heading at the next check is placed facing it.
+ static const float TURN_MISS_DEGREES = 35;
+ // Crowd sound values (saved; permanent).
+ static const int SOUND_ANGRY = 0;
+ static const int SOUND_RIOTING = 1;
+ static const int SOUND_ALTERNATE = 2;
  static const int RADIUS_MIN = 3;
  static const int RADIUS_MAX = 30;
  static const int CROWD_MIN = 1;
@@ -33,8 +85,11 @@ class EAU_ProtestZone : GenericEntity
  static const string CIV_FACTION = "CIV";
  static const ResourceName GROUP_PREFAB = "{000CD338713F2B5A}Prefabs/AI/Groups/Group_Base.et";
  static const ResourceName SOUND_PREFAB = "{E1BA8A82AB3C485B}Prefabs/EXPAU/EAU_ProtestCrowdSound.et";
- // Ambient Sounds crowd recording 0 is "Angry crowd"; the emitter loops it.
- static const int SOUND_RECORDING = 0;
+ // Ambient Sounds crowd selections (permanent IDs): recording 0 "Angry crowd",
+ // recording 4 "Rioting crowd"; group 101 plays them in turn, switching every loop.
+ static const int RECORDING_ANGRY = 0;
+ static const int RECORDING_RIOTING = 4;
+ static const int SELECTION_ALTERNATE = 101;
  static const int SOUND_VOLUME = 55;
  // A moved module regathers its crowd at the new centre.
  static const float ANCHOR_TOLERANCE = 2;
@@ -62,14 +117,38 @@ class EAU_ProtestZone : GenericEntity
  int CrowdMax;
  [Attribute("0", UIWidgets.CheckBox, "Debug: server diagnostics and the crowd sound's GM rings", category: "EXPBG Civil Protest Zone"), RplProp()]
  int DebugEnabled;
+ [Attribute("2", UIWidgets.EditBox, "Crowd sound: 0 angry crowd, 1 rioting crowd, 2 alternate (switches every loop). New zones use 2.", "0 2 1", category: "EXPBG Civil Protest Zone"), RplProp()]
+ int CrowdSound;
+ [Attribute("300", UIWidgets.EditBox, "Wake distance (m): the crowd and its sound exist only while a player character is this close", "50 3000 25", category: "EXPBG Civil Protest Zone"), RplProp()]
+ int WakeDistance;
+ [RplProp()]
+ protected int m_RunState;
+ [RplProp()]
+ protected int m_RunCount;
 
  protected ref array<ref EAU_Protester> m_Members = {};
+ // Sleeping zone: the survivors to bring back, the size target, the casualties
+ // that stay missing and where the crowd stood. While awake it holds the cached
+ // protesters not yet returned.
+ protected ref array<ref EAU_CachedProtester> m_Cached = {};
+ protected bool m_HasCache;
+ protected int m_CacheTarget;
+ protected int m_CacheLost;
+ protected vector m_CacheAnchor;
+ protected bool m_Asleep;
+ protected float m_AbsentSince = -1;
+ protected float m_NextPresence;
+ protected ref EAU_WorldSight m_Sight;
+ // Players near the crowd this tick, with their eye positions (facing).
+ protected ref array<IEntity> m_FaceTargets = {};
+ protected ref array<vector> m_FaceEyes = {};
  // Entities waiting for bounded removal, in order: crowd sound, members, group.
  protected ref array<IEntity> m_Retire = {};
  protected SCR_AIGroup m_Group;
  protected EAS_CrowdModule m_Sound;
  protected int m_SoundRange = -1;
  protected int m_SoundDebug = -1;
+ protected int m_SoundSelection = -1;
  protected bool m_Registered;
  protected bool m_Running;
  protected bool m_SizeDirty;
@@ -90,6 +169,7 @@ class EAU_ProtestZone : GenericEntity
  protected float m_NextSound;
  // Bounded counters for Debug and the native fixture.
  protected int m_Spawned, m_Deleted, m_SpawnFailures, m_GesturesStarted, m_GesturesRefused, m_Released;
+ protected int m_Sleeps, m_Wakes, m_FacePicks, m_TurnsRequested, m_TurnsSnapped;
 
  void EAU_ProtestZone(IEntitySource src, IEntity parent)
  {
@@ -124,7 +204,7 @@ class EAU_ProtestZone : GenericEntity
  // Settings
  int GetSetting(int key)
  {
-  // Literal cases: keys 0-4 match the KEY_ constants and the Edit.conf m_Key values.
+  // Literal cases: keys 0-6 match the KEY_ constants and the Edit.conf m_Key values.
   switch (key)
   {
    case 0: return Enabled;
@@ -132,6 +212,8 @@ class EAU_ProtestZone : GenericEntity
    case 2: return CrowdMin;
    case 3: return CrowdMax;
    case 4: return DebugEnabled;
+   case 5: return CrowdSound;
+   case 6: return WakeDistance;
   }
   return 0;
  }
@@ -141,6 +223,8 @@ class EAU_ProtestZone : GenericEntity
   if (key == KEY_ENABLED || key == KEY_DEBUG) return value == 0 || value == 1;
   if (key == KEY_RADIUS) return value >= RADIUS_MIN && value <= RADIUS_MAX;
   if (key == KEY_CROWD_MIN || key == KEY_CROWD_MAX) return value >= CROWD_MIN && value <= CROWD_MAX;
+  if (key == KEY_SOUND) return value >= SOUND_ANGRY && value <= SOUND_ALTERNATE;
+  if (key == KEY_WAKE) return value >= WAKE_MIN && value <= WAKE_MAX;
   return false;
  }
 
@@ -149,6 +233,8 @@ class EAU_ProtestZone : GenericEntity
  {
   Enabled = Math.Clamp(Enabled, 0, 1);
   DebugEnabled = Math.Clamp(DebugEnabled, 0, 1);
+  CrowdSound = Math.Clamp(CrowdSound, SOUND_ANGRY, SOUND_ALTERNATE);
+  WakeDistance = Math.Clamp(WakeDistance, WAKE_MIN, WAKE_MAX);
   RadiusMeters = Math.Clamp(RadiusMeters, RADIUS_MIN, RADIUS_MAX);
   CrowdMin = Math.Clamp(CrowdMin, CROWD_MIN, CROWD_MAX);
   CrowdMax = Math.Clamp(CrowdMax, CROWD_MIN, CROWD_MAX);
@@ -170,32 +256,46 @@ class EAU_ProtestZone : GenericEntity
    case 2: CrowdMin = value; break;
    case 3: CrowdMax = value; break;
    case 4: DebugEnabled = value; break;
+   case 5: CrowdSound = value; break;
+   case 6: WakeDistance = value; break;
   }
   Normalize(key);
   if (GetSetting(key) == previous && CrowdMin == previousMin && CrowdMax == previousMax) return;
   Replication.BumpMe();
   if (key == KEY_RADIUS) { m_RadiusDirty = true; OnRadiusReplicated(); }
   if (CrowdMin != previousMin || CrowdMax != previousMax) m_SizeDirty = true;
+  // A new wake distance is judged on the next tick, not after the 2 s interval.
+  if (key == KEY_WAKE) m_NextPresence = 0;
   Trace("settings");
   EAU_Director.Wake();
  }
 
  // Complete validated batch from native persistence; never a partial apply.
+ // A batch saved before the Crowd sound setting existed restores with Alternate,
+ // one saved before the Wake distance setting with the 300 m default.
  bool RestoreSettings(array<int> values)
  {
-  if (!Replication.IsServer() || !values || values.Count() != SETTING_COUNT) return false;
+  if (!Replication.IsServer() || !values) return false;
+  array<int> batch = {};
+  batch.Copy(values);
+  if (batch.Count() == LEGACY_SETTING_COUNT) batch.Insert(SOUND_ALTERNATE);
+  if (batch.Count() == SOUND_SETTING_COUNT) batch.Insert(WAKE_DEFAULT);
+  if (batch.Count() != SETTING_COUNT) return false;
   for (int key = 0; key < SETTING_COUNT; key++)
   {
-   if (!ValidSetting(key, values[key])) return false;
+   if (!ValidSetting(key, batch[key])) return false;
   }
-  if (values[KEY_CROWD_MAX] < values[KEY_CROWD_MIN]) return false;
-  Enabled = values[KEY_ENABLED];
-  RadiusMeters = values[KEY_RADIUS];
-  CrowdMin = values[KEY_CROWD_MIN];
-  CrowdMax = values[KEY_CROWD_MAX];
-  DebugEnabled = values[KEY_DEBUG];
+  if (batch[KEY_CROWD_MAX] < batch[KEY_CROWD_MIN]) return false;
+  Enabled = batch[KEY_ENABLED];
+  RadiusMeters = batch[KEY_RADIUS];
+  CrowdMin = batch[KEY_CROWD_MIN];
+  CrowdMax = batch[KEY_CROWD_MAX];
+  DebugEnabled = batch[KEY_DEBUG];
+  CrowdSound = batch[KEY_SOUND];
+  WakeDistance = batch[KEY_WAKE];
   m_SizeDirty = true;
   m_RadiusDirty = true;
+  m_NextPresence = 0;
   Replication.BumpMe();
   OnRadiusReplicated();
   Trace("settings-restored");
@@ -218,23 +318,30 @@ class EAU_ProtestZone : GenericEntity
   if (!Replication.IsServer()) return false;
   Observe(now);
   bool wanted = Enabled == 1 && !EAU_Director.HasEnded();
-  if (m_Running && (!wanted || vector.DistanceXZ(GetOrigin(), m_Anchor) > ANCHOR_TOLERANCE))
+  if (wanted) Presence(now);
+  else Forget();
+  bool active = wanted && !m_Asleep;
+  if (m_Running && (!active || vector.DistanceXZ(GetOrigin(), m_Anchor) > ANCHOR_TOLERANCE))
   {
-   if (wanted) Trace("moved");
+   if (active) Trace("moved");
    else Trace("stopped");
+   // A moved or stopped crowd starts over: nothing cached comes back.
+   Forget();
    RetireAll();
   }
   Drain(budget);
-  if (!wanted)
+  if (!active)
   {
+   Publish();
    Diagnostics(now);
-   return !m_Retire.IsEmpty();
+   // A sleeping zone keeps its presence check; an Off zone only finishes removal.
+   return wanted || !m_Retire.IsEmpty();
   }
   // A new or resized crowd waits until its previous members are gone.
-  if (!m_Retire.IsEmpty()) return true;
+  if (!m_Retire.IsEmpty()) { Publish(); return true; }
   if (!m_Running) StartRun(now);
   if (m_SizeDirty || m_RadiusDirty) Relayout();
-  if (!m_Retire.IsEmpty()) return true;
+  if (!m_Retire.IsEmpty()) { Publish(); return true; }
   SpawnStep(now, budget);
   SoundStep(now, budget);
   if (m_SavesRecheckAt > 0 && now >= m_SavesRecheckAt)
@@ -244,8 +351,96 @@ class EAU_ProtestZone : GenericEntity
    EAU_Director.KeepOutOfSaves(m_Sound);
   }
   GestureStep(now, budget);
+  FaceStep(now, budget);
+  Publish();
   Diagnostics(now);
   return true;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Proximity caching, Full-cache style: no player character near means no crowd,
+ // no group and no sound. Survivors are remembered and come back to their spots
+ // when a player returns; casualties are never replaced.
+ // Wake within the wake distance; a gathered crowd stays until every player is
+ // SLEEP_MARGIN farther away. nearest < 0: no player character at all.
+ static bool PlayerNear(bool awake, float nearest, int wake)
+ {
+  if (nearest < 0) return false;
+  float reach = wake;
+  if (awake) reach += SLEEP_MARGIN;
+  return nearest <= reach;
+ }
+
+ protected void Presence(float now)
+ {
+  if (now < m_NextPresence) return;
+  m_NextPresence = now + PRESENCE_SECONDS;
+  bool awake = m_Running && !m_Asleep;
+  float nearest = EAU_Director.NearestPlayerDistance(GetOrigin(), now);
+  if (PlayerNear(awake, nearest, WakeDistance))
+  {
+   m_AbsentSince = -1;
+   if (!m_Asleep) return;
+   m_Asleep = false;
+   m_Wakes++;
+   Trace("wake");
+   return;
+  }
+  if (m_Asleep) return;
+  if (!awake)
+  {
+   // Nothing gathered yet: wait asleep instead of gathering for nobody.
+   m_Asleep = true;
+   m_AbsentSince = -1;
+   m_Sleeps++;
+   Trace("sleep-idle");
+   return;
+  }
+  if (m_AbsentSince < 0) m_AbsentSince = now;
+  if (now - m_AbsentSince < SLEEP_DELAY_SECONDS) return;
+  EnterSleep();
+ }
+
+ // Remember who still stands, then remove crowd, group and sound through the same
+ // bounded path as Off. A civilian a player controls stays and counts as lost.
+ protected void EnterSleep()
+ {
+  int pending = m_Cached.Count();
+  int kept;
+  foreach (EAU_Protester member : m_Members)
+  {
+   if (!member.Actor || member.Dead || EAU_Director.IsPlayerCharacter(member.Actor)) continue;
+   EAU_CachedProtester cached = new EAU_CachedProtester();
+   cached.Prefab = member.Prefab;
+   cached.Spot = member.Spot;
+   cached.Yaw = member.HomeYaw;
+   m_Cached.Insert(cached);
+   kept++;
+  }
+  m_CacheLost = m_Placed - kept;
+  if (m_CacheLost < 0) m_CacheLost = 0;
+  m_CacheTarget = m_Target;
+  // A crowd that ran out of ground keeps its size; nobody is added on waking.
+  if (m_Exhausted) m_CacheTarget = m_Placed + pending;
+  m_CacheAnchor = m_Anchor;
+  m_HasCache = true;
+  RetireAll();
+  m_Asleep = true;
+  m_AbsentSince = -1;
+  m_Sleeps++;
+  Trace("sleep");
+ }
+
+ // Off, moved or game end: a sleeping zone forgets its crowd.
+ protected void Forget()
+ {
+  if (m_Asleep || m_HasCache || !m_Cached.IsEmpty()) Trace("cache-cleared");
+  m_Asleep = false;
+  m_HasCache = false;
+  m_Cached.Clear();
+  m_AbsentSince = -1;
+  // Re-enabled: judge player distance on the first tick.
+  m_NextPresence = 0;
  }
 
  protected void StartRun(float now)
@@ -255,11 +450,25 @@ class EAU_ProtestZone : GenericEntity
   m_Anchor = GetOrigin();
   vector angles = GetYawPitchRoll();
   m_Yaw = angles[0];
-  m_Target = Math.RandomIntInclusive(CrowdMin, CrowdMax);
-  m_Placed = 0; m_Rejects = 0; m_ProbeFailures = 0; m_Warned = 0;
-  m_Exhausted = false; m_SizeDirty = false; m_RadiusDirty = false;
+  m_Rejects = 0; m_ProbeFailures = 0; m_Warned = 0;
+  m_Exhausted = false;
   m_NextSpawn = now;
   m_NextSound = now;
+  if (m_HasCache && vector.DistanceXZ(m_Anchor, m_CacheAnchor) <= ANCHOR_TOLERANCE)
+  {
+   // Waking: the cached civilians return first; casualties stay counted as placed.
+   // Settings changed while asleep still apply through Relayout.
+   m_HasCache = false;
+   m_Target = m_CacheTarget;
+   m_Placed = m_CacheLost;
+   Trace("run-restore");
+   return;
+  }
+  m_HasCache = false;
+  m_Cached.Clear();
+  m_Target = Math.RandomIntInclusive(CrowdMin, CrowdMax);
+  m_Placed = 0;
+  m_SizeDirty = false; m_RadiusDirty = false;
   Trace("run-start");
  }
 
@@ -280,7 +489,24 @@ class EAU_ProtestZone : GenericEntity
     EAU_Protester member = m_Members[i];
     if (!member.Dead && vector.DistanceXZ(member.Spot, m_Anchor) > limit) RetireMember(i);
    }
+   // Cached civilians outside the new edge are replaced inside it, like the living.
+   for (int c = m_Cached.Count() - 1; c >= 0; c--)
+   {
+    if (vector.DistanceXZ(m_Cached[c].Spot, m_Anchor) > limit) m_Cached.RemoveOrdered(c);
+   }
    m_RadiusDirty = false;
+  }
+  // Cached civilians not yet back make room first, outermost first.
+  while (!m_Cached.IsEmpty() && m_Placed + m_Cached.Count() > m_Target)
+  {
+   int outerCached = 0;
+   float outerReach = -1;
+   foreach (int slot, EAU_CachedProtester waiting : m_Cached)
+   {
+    float reach = vector.DistanceXZ(waiting.Spot, m_Anchor);
+    if (reach > outerReach) { outerReach = reach; outerCached = slot; }
+   }
+   m_Cached.RemoveOrdered(outerCached);
   }
   while (m_Placed > m_Target)
   {
@@ -312,7 +538,7 @@ class EAU_ProtestZone : GenericEntity
  protected void RetireAll()
  {
   if (m_Sound) m_Retire.Insert(m_Sound);
-  m_Sound = null; m_SoundRange = -1; m_SoundDebug = -1;
+  m_Sound = null; m_SoundRange = -1; m_SoundDebug = -1; m_SoundSelection = -1;
   foreach (EAU_Protester member : m_Members)
   {
    if (member.Actor) m_Retire.Insert(member.Actor);
@@ -340,6 +566,7 @@ class EAU_ProtestZone : GenericEntity
  // Game end: the session is over, remove the whole crowd at once.
  void EndSession()
  {
+  Forget();
   RetireAll();
   foreach (IEntity entity : m_Retire) EAU_Director.Delete(entity);
   m_Retire.Clear();
@@ -441,14 +668,32 @@ class EAU_ProtestZone : GenericEntity
    return;
   }
   vector spot;
-  if (!FindSpot(budget, spot))
+  ResourceName prefab;
+  float yaw = m_Yaw + Math.RandomFloat(-30, 30);
+  bool found;
+  if (!m_Cached.IsEmpty())
+  {
+   // A cached civilian returns to its own spot while that is still clear ground,
+   // otherwise to a fresh one; prefab and facing are kept either way.
+   EAU_CachedProtester cached = m_Cached[m_Cached.Count() - 1];
+   prefab = cached.Prefab;
+   yaw = cached.Yaw;
+   found = !Crowded(cached.Spot) && EAU_CrowdCast.GroundSpot(GetWorld(), cached.Spot, m_Anchor[1], spot);
+   if (!found) found = FindSpot(budget, spot);
+   if (found) m_Cached.Remove(m_Cached.Count() - 1);
+  }
+  else
+  {
+   found = FindSpot(budget, spot);
+   if (found) prefab = EAU_CrowdCast.Pick();
+  }
+  if (!found)
   {
    if (m_ProbeFailures < MAX_PROBE_FAILURES) return;
    m_Exhausted = true;
    Warn(WARN_GROUND, "not enough clear ground inside the radius; the crowd stays smaller");
    return;
   }
-  ResourceName prefab = EAU_CrowdCast.Pick();
   if (prefab.IsEmpty())
   {
    m_Rejects++;
@@ -456,7 +701,7 @@ class EAU_ProtestZone : GenericEntity
    return;
   }
   budget.Spawns--;
-  SpawnProtester(now, spot, prefab);
+  SpawnProtester(now, spot, prefab, yaw);
  }
 
  protected bool FindSpot(EAU_Budget budget, out vector spot)
@@ -516,14 +761,14 @@ class EAU_ProtestZone : GenericEntity
   Trace("group");
  }
 
- protected void SpawnProtester(float now, vector spot, ResourceName prefab)
+ // yaw: the module's forward direction give or take 30 degrees (rotate the module
+ // to aim the protest), or a returning civilian's own facing.
+ protected void SpawnProtester(float now, vector spot, ResourceName prefab, float yaw)
  {
   Resource resource = Resource.Load(prefab);
   if (!resource || !resource.IsValid()) { m_Rejects++; m_NextSpawn = now + 1; return; }
   EntitySpawnParams params = new EntitySpawnParams();
   params.TransformMode = ETransformMode.WORLD;
-  // Facing the module's forward direction: rotate the module to aim the protest.
-  float yaw = m_Yaw + Math.RandomFloat(-30, 30);
   Math3D.AnglesToMatrix(Vector(yaw, 0, 0), params.Transform);
   params.Transform[3] = spot;
   IEntity created = GetGame().SpawnEntityPrefab(resource, GetWorld(), params);
@@ -540,8 +785,10 @@ class EAU_ProtestZone : GenericEntity
   member.Actor = actor;
   member.Prefab = prefab;
   member.Spot = spot;
+  member.HomeYaw = Math.Repeat(yaw, 360);
   member.SettleAt = now + 1;
   member.NextGesture = now + Math.RandomFloat(0.5, 3);
+  member.NextFace = now + Math.RandomFloat(1, 3);
   m_Members.Insert(member);
   m_Placed++;
   m_Spawned++;
@@ -577,7 +824,8 @@ class EAU_ProtestZone : GenericEntity
  }
 
  //------------------------------------------------------------------------------------------------
- // Angry crowd audio: one Ambient Sounds crowd emitter while anyone is protesting.
+ // Crowd audio (angry, rioting or both in turn): one Ambient Sounds crowd emitter
+ // while anyone is protesting.
  int AudibleRange()
  {
   // Twice the crowd radius plus a street, in the 10 m steps the crowd bank ships.
@@ -585,6 +833,14 @@ class EAU_ProtestZone : GenericEntity
   int range = Math.Ceil(metres / 10) * 10;
   range = Math.Clamp(range, 60, 150);
   return range;
+ }
+
+ // The Crowd sound setting as an Ambient Sounds crowd selection.
+ static int SoundSelection(int choice)
+ {
+  if (choice == SOUND_ANGRY) return RECORDING_ANGRY;
+  if (choice == SOUND_RIOTING) return RECORDING_RIOTING;
+  return SELECTION_ALTERNATE;
  }
 
  protected void SoundStep(float now, EAU_Budget budget)
@@ -596,7 +852,7 @@ class EAU_ProtestZone : GenericEntity
    if (!spawning && m_Sound)
    {
     m_Retire.Insert(m_Sound);
-    m_Sound = null; m_SoundRange = -1; m_SoundDebug = -1;
+    m_Sound = null; m_SoundRange = -1; m_SoundDebug = -1; m_SoundSelection = -1;
     Trace("sound-silenced");
    }
    return;
@@ -611,17 +867,20 @@ class EAU_ProtestZone : GenericEntity
    m_SavesRecheckAt = now + 1;
   }
   int range = AudibleRange();
-  if (m_SoundRange == range && m_SoundDebug == DebugEnabled) return;
-  array<int> settings = {SOUND_RECORDING, SOUND_VOLUME, 1, 1, 1, range, DebugEnabled};
+  int selection = SoundSelection(CrowdSound);
+  if (m_SoundRange == range && m_SoundDebug == DebugEnabled && m_SoundSelection == selection) return;
+  // New settings restart the emitter, so a changed Crowd sound is heard at once.
+  array<int> settings = {selection, SOUND_VOLUME, 1, 1, 1, range, DebugEnabled};
   if (m_Sound.RestoreSettings(settings))
   {
    m_SoundRange = range;
    m_SoundDebug = DebugEnabled;
+   m_SoundSelection = selection;
    return;
   }
   Warn(WARN_SOUND, "the Ambient Sounds crowd emitter refused its settings");
   m_Retire.Insert(m_Sound);
-  m_Sound = null; m_SoundRange = -1; m_SoundDebug = -1;
+  m_Sound = null; m_SoundRange = -1; m_SoundDebug = -1; m_SoundSelection = -1;
   m_NextSound = now + 10;
  }
 
@@ -645,7 +904,7 @@ class EAU_ProtestZone : GenericEntity
   }
   // The emitter belongs to this zone; Ambient Sounds' own saves must not keep it.
   EAU_Director.KeepOutOfSaves(m_Sound);
-  m_SoundRange = -1; m_SoundDebug = -1;
+  m_SoundRange = -1; m_SoundDebug = -1; m_SoundSelection = -1;
   m_Spawned++;
   Trace("sound");
  }
@@ -689,6 +948,174 @@ class EAU_ProtestZone : GenericEntity
  }
 
  //------------------------------------------------------------------------------------------------
+ // Facing players. Each protester looks for a player every 3-5 s: one in sight
+ // within EAU_Facing.RANGE, picked at random among those it sees, is kept 8-15 s
+ // while still in sight. Nobody in sight turns it back to its protest direction.
+ // The turn is a vanilla character heading request on the server-simulated AI
+ // body (AI stays deactivated), replicated to clients like any AI turn.
+ protected void FaceStep(float now, EAU_Budget budget)
+ {
+  bool gathered;
+  foreach (EAU_Protester member : m_Members)
+  {
+   if (member.Dead || !member.Actor || now < member.NextFace) continue;
+   if (!gathered)
+   {
+    GatherFaceTargets(now);
+    gathered = true;
+   }
+   member.NextFace = now + Math.RandomFloat(FACE_MIN_SECONDS, FACE_MAX_SECONDS);
+   // Nothing to look at, check or undo: costs no allowance.
+   if (m_FaceTargets.IsEmpty() && !member.Facing && !member.TurnPending) continue;
+   if (budget.Faces <= 0)
+   {
+    member.NextFace = now + 0.5;
+    return;
+   }
+   budget.Faces--;
+   Face(member, now);
+  }
+ }
+
+ protected void GatherFaceTargets(float now)
+ {
+  m_FaceTargets.Clear();
+  m_FaceEyes.Clear();
+  float reach = RadiusMeters + EAU_Facing.RANGE;
+  array<IEntity> players = EAU_Director.Players(now);
+  foreach (IEntity player : players)
+  {
+   if (!player || vector.DistanceXZ(player.GetOrigin(), m_Anchor) > reach) continue;
+   m_FaceTargets.Insert(player);
+   m_FaceEyes.Insert(EAU_Facing.Eye(player));
+  }
+ }
+
+ protected void Face(EAU_Protester member, float now)
+ {
+  SCR_ChimeraCharacter actor = member.Actor;
+  if (EAU_Director.IsPlayerCharacter(actor)) return;
+  VerifyTurn(member);
+  if (!m_Sight) m_Sight = new EAU_WorldSight(GetWorld());
+  vector eye = actor.EyePosition();
+  int chosen = -1;
+  if (member.Facing && member.FaceTarget && now < member.FaceUntil)
+  {
+   int kept = m_FaceTargets.Find(member.FaceTarget);
+   if (kept >= 0 && vector.Distance(eye, m_FaceEyes[kept]) <= EAU_Facing.RANGE && m_Sight.Sees(kept, eye, m_FaceEyes[kept])) chosen = kept;
+  }
+  if (chosen < 0 && !m_FaceTargets.IsEmpty())
+  {
+   chosen = EAU_Facing.Pick(eye, m_FaceEyes, EAU_Facing.RANGE, m_Sight);
+   if (chosen >= 0)
+   {
+    member.FaceUntil = now + Math.RandomFloat(FACE_HOLD_MIN, FACE_HOLD_MAX);
+    m_FacePicks++;
+   }
+  }
+  if (chosen >= 0)
+  {
+   member.FaceTarget = m_FaceTargets[chosen];
+   member.Facing = true;
+   Turn(member, EAU_Facing.YawTo(actor.GetOrigin(), m_FaceEyes[chosen]));
+   return;
+  }
+  if (!member.Facing) return;
+  member.Facing = false;
+  member.FaceTarget = null;
+  Turn(member, member.HomeYaw);
+ }
+
+ protected void Turn(EAU_Protester member, float yaw)
+ {
+  if (yaw < 0) return;
+  SCR_ChimeraCharacter actor = member.Actor;
+  CharacterControllerComponent controller = actor.GetCharacterController();
+  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE) return;
+  vector angles = actor.GetYawPitchRoll();
+  if (EAU_Facing.Gap(angles[0], yaw) < TURN_TOLERANCE) return;
+  // Heading in radians around world Y, in the -180..180 range GetYawPitchRoll
+  // reports, so the controller never sees a full-turn offset. The aim turns with the body.
+  float heading = yaw;
+  if (heading > 180) heading -= 360;
+  controller.SetHeadingAngle(heading * Math.DEG2RAD, true);
+  member.WantedYaw = yaw;
+  member.TurnPending = true;
+  m_TurnsRequested++;
+ }
+
+ // A heading the body never took is applied as a Game Master rotation does: a
+ // server teleport in place, replicated natively.
+ protected void VerifyTurn(EAU_Protester member)
+ {
+  if (!member.TurnPending) return;
+  member.TurnPending = false;
+  SCR_ChimeraCharacter actor = member.Actor;
+  // An unconscious or dying body is never placed.
+  CharacterControllerComponent controller = actor.GetCharacterController();
+  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE) return;
+  vector angles = actor.GetYawPitchRoll();
+  if (EAU_Facing.Gap(angles[0], member.WantedYaw) <= TURN_MISS_DEGREES) return;
+  vector transform[4];
+  Math3D.AnglesToMatrix(Vector(member.WantedYaw, 0, 0), transform);
+  transform[3] = actor.GetOrigin();
+  actor.Teleport(transform);
+  Physics body = actor.GetPhysics();
+  if (body)
+  {
+   body.SetVelocity(vector.Zero);
+   body.SetAngularVelocity(vector.Zero);
+  }
+  m_TurnsSnapped++;
+  if (DebugEnabled == 1) PrintFormat("[EAU] zone=%1 heading refused by %2; placed facing %3", GetID(), actor, member.WantedYaw);
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // GM status (replicated; read by EAU_StatusAttribute on the Game Master's machine)
+ protected void Publish()
+ {
+  int state = STATE_OFF;
+  int count = GetLivingCount();
+  if (Enabled == 1 && !EAU_Director.HasEnded())
+  {
+   if (m_Asleep)
+   {
+    state = STATE_SLEEPING;
+    count = m_Cached.Count();
+   }
+   else if (IsSpawnFinished()) state = STATE_PROTESTING;
+   else state = STATE_GATHERING;
+  }
+  if (state == m_RunState && count == m_RunCount) return;
+  m_RunState = state;
+  m_RunCount = count;
+  Replication.BumpMe();
+ }
+
+ int GetRunState() { return m_RunState; }
+
+ string DescribeState()
+ {
+  if (m_RunState == STATE_SLEEPING)
+  {
+   string text = string.Format("Sleeping: no player within %1 m", WakeDistance);
+   if (m_RunCount > 0) text += string.Format(", %1 protesters cached", m_RunCount);
+   return text;
+  }
+  if (m_RunState == STATE_GATHERING) return string.Format("Gathering: %1 protesters", m_RunCount);
+  if (m_RunState == STATE_PROTESTING) return string.Format("Protesting: %1 protesters", m_RunCount);
+  return "Off";
+ }
+
+ static string StateName(int state)
+ {
+  if (state == STATE_SLEEPING) return "sleeping";
+  if (state == STATE_GATHERING) return "gathering";
+  if (state == STATE_PROTESTING) return "protesting";
+  return "off";
+ }
+
+ //------------------------------------------------------------------------------------------------
  // Unit Caching and fixture seams
  bool OwnsGroup(SCR_AIGroup group)
  {
@@ -706,6 +1133,13 @@ class EAU_ProtestZone : GenericEntity
  bool IsRunning() { return m_Running; }
  bool IsSpawnFinished() { return m_Running && (m_Exhausted || m_Placed >= m_Target); }
  vector GetAnchor() { return m_Anchor; }
+ bool IsAsleep() { return m_Asleep; }
+ int GetCachedCount() { return m_Cached.Count(); }
+ int GetSleeps() { return m_Sleeps; }
+ int GetWakes() { return m_Wakes; }
+ int GetFacePicks() { return m_FacePicks; }
+ int GetTurnsRequested() { return m_TurnsRequested; }
+ int GetTurnsSnapped() { return m_TurnsSnapped; }
 
  void GetActors(notnull array<IEntity> actors)
  {
@@ -716,13 +1150,28 @@ class EAU_ProtestZone : GenericEntity
   }
  }
 
+ // Everything this zone answers for, none of which may enter a save. Appends.
+ void GetCrowdEntities(notnull array<IEntity> entities)
+ {
+  if (m_Sound) entities.Insert(m_Sound);
+  foreach (EAU_Protester member : m_Members)
+  {
+   if (member.Actor) entities.Insert(member.Actor);
+  }
+  if (m_Group) entities.Insert(m_Group);
+  foreach (IEntity retiring : m_Retire)
+  {
+   if (retiring) entities.Insert(retiring);
+  }
+ }
+
  //------------------------------------------------------------------------------------------------
  // Diagnostics
  protected void Trace(string reason)
  {
   if (DebugEnabled != 1) return;
   string line = string.Format("[EAU] zone=%1 %2 enabled=%3 run=%4 target=%5 placed=%6 living=%7 retiring=%8", GetID(), reason, Enabled, m_Run, m_Target, m_Placed, GetLivingCount(), m_Retire.Count());
-  line += string.Format(" radius=%1 size=%2-%3 sound=%4", RadiusMeters, CrowdMin, CrowdMax, m_Sound != null);
+  line += string.Format(" radius=%1 size=%2-%3 sound=%4 crowdSound=%5 wake=%6 asleep=%7 cached=%8", RadiusMeters, CrowdMin, CrowdMax, m_Sound != null, CrowdSound, WakeDistance, m_Asleep, m_Cached.Count());
   Print(line);
  }
 
@@ -740,7 +1189,8 @@ class EAU_ProtestZone : GenericEntity
   m_NextDiagnostics = now + DIAGNOSTIC_SECONDS;
   string line = string.Format("[EAU STATUS] zone=%1 run=%2 target=%3 placed=%4 living=%5 tracked=%6 retiring=%7 exhausted=%8", GetID(), m_Run, m_Target, m_Placed, GetLivingCount(), m_Members.Count(), m_Retire.Count(), m_Exhausted);
   line += string.Format(" spawned=%1 deleted=%2 failures=%3 rejects=%4 released=%5", m_Spawned, m_Deleted, m_SpawnFailures, m_Rejects, m_Released);
-  line += string.Format(" gestures=%1 refused=%2 sound=%3 range=%4", m_GesturesStarted, m_GesturesRefused, m_Sound != null, m_SoundRange);
+  line += string.Format(" gestures=%1 refused=%2 sound=%3 range=%4 selection=%5", m_GesturesStarted, m_GesturesRefused, m_Sound != null, m_SoundRange, m_SoundSelection);
+  line += string.Format(" state=%1 wake=%2 cached=%3 sleeps=%4 wakes=%5 facePicks=%6 turns=%7 snapped=%8", StateName(m_RunState), WakeDistance, m_Cached.Count(), m_Sleeps, m_Wakes, m_FacePicks, m_TurnsRequested, m_TurnsSnapped);
   Print(line);
  }
 }

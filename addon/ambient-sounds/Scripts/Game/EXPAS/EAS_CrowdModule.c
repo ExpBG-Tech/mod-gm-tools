@@ -11,7 +11,8 @@ class EAS_CrowdModule : EAS_RadioModule
  override bool ValidSetting(int key, float value)
  {
   if (!EAS_RadioState.ValidValue(key, value)) return false;
-  if (key == 0) return value <= 3 || value == 100;
+  // Recordings 0-4, Random crowd 100 and the angry/rioting alternation 101.
+  if (key == 0) return EAS_CrowdBank.ValidSelection(value);
   if (key == 4) return value == 1;
   if (key == 5) return value >= 10 && value <= 150 && Math.Floor(value / 10) * 10 == value;
   return (key >= 1 && key <= 3) || key == 6;

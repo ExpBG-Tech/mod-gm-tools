@@ -106,14 +106,28 @@ class EAC_PedestrianSpawner
   return true;
  }
 
- // Stable per logical home slot; an indoor slot cannot silently fall back to
- // outdoor admission at the larger outdoor wake distance.
+ // Stable per logical home slot; an indoor slot does not fall back to outdoor
+ // admission merely because no player is inside its smaller wake radius.
+ // Two exceptions, both so that a slot is never permanently empty: a zero
+ // IndoorSpawnDistance makes every slot outdoor (it used to leave 60% of the
+ // town unspawnable), and a slot that lost INDOOR_FALLBACK_FAILURES placements
+ // in a row to geometry is admitted outdoors under the ordinary outdoor gates.
+ static const int INDOOR_FALLBACK_FAILURES = 6;
  static bool PrefersIndoor(EAC_AmbientModule module, EAC_ResidentRecord resident)
  {
-  if (!module || !resident || module.IndoorSpawnShare <= 0) return false;
+  if (!module || !resident || module.IndoorSpawnShare <= 0 || module.IndoorSpawnDistance <= 0) return false;
+  if (resident.IndoorFailures >= INDOOR_FALLBACK_FAILURES) return false;
   if (module.IndoorSpawnShare >= 100) return true;
   int share = (resident.Id * 37) % 100;
   return share < module.IndoorSpawnShare;
+ }
+
+ // One more indoor placement this slot lost to geometry or navmesh.
+ static void NoteIndoorFailure(EAC_ResidentRecord resident)
+ {
+  if (!resident || resident.IndoorFailures >= INDOOR_FALLBACK_FAILURES) return;
+  resident.IndoorFailures++;
+  if (resident.IndoorFailures == INDOOR_FALLBACK_FAILURES) EAC_RoutineStats.RecordIndoorToOutdoor();
  }
 
  // Bounded interior candidate sampled from the house footprint. The assigned
@@ -129,9 +143,43 @@ class EAC_PedestrianSpawner
   local[0] = mins[0] + (maxs[0] - mins[0]) * (0.25 + column * 0.25);
   local[2] = mins[2] + (maxs[2] - mins[2]) * (0.25 + Math.Floor(index / 3.0) * 0.25);
   local[1] = mins[1] + 1;
-  candidate = local.Multiply4(transform);
-  candidate[1] = world.GetSurfaceY(candidate[0], candidate[2]) + 0.1;
+  // A plain local for the inout floor probe; the out parameter is written once.
+  vector floorPoint = local.Multiply4(transform);
+  if (!FindIndoorFloor(world, floorPoint)) return false;
+  candidate = floorPoint;
   return InsideHouse(world, house, candidate, null);
+ }
+
+ // The ground-storey floor under a footprint sample. Houses stand on raised
+ // slabs and foundations, so the terrain under the footprint is commonly
+ // 0.3-1.5 m below the floor. The old candidate sat at terrain + 0.1 m and the
+ // 0.15-1.9 m body box in GetClearReason went through the floor slab or a
+ // footing every time (retail-1: indoor candidates 2887/3248 passed the roof
+ // test, blocked_geometry 3256, emerged 0 in 45 minutes - no indoor resident was
+ // ever placed). One ray from just under a ground-storey ceiling down to below
+ // the terrain; the first surface it meets is the floor (or furniture, which the
+ // body box then refuses like any other obstruction).
+ static const float INDOOR_FLOOR_PROBE = 2.2;
+ static const float INDOOR_FLOOR_MAX_RISE = 2;
+ // Floor height above the terrain heightmap accepted for an indoor placement:
+ // the probe's own ceiling plus the navmesh projection's vertical reach.
+ static const float INDOOR_HEIGHT_TOLERANCE = 2.5;
+ static bool FindIndoorFloor(BaseWorld world, inout vector point)
+ {
+  if (!world) return false;
+  float ground = world.GetSurfaceY(point[0], point[2]);
+  float top = ground + INDOOR_FLOOR_PROBE;
+  float bottom = ground - 0.5;
+  TraceParam probe = new TraceParam();
+  probe.Start = Vector(point[0], top, point[2]);
+  probe.End = Vector(point[0], bottom, point[2]);
+  probe.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  float fraction = world.TraceMove(probe, null);
+  if (fraction >= 1) return false;
+  float floorY = top + (bottom - top) * fraction;
+  if (floorY - ground > INDOOR_FLOOR_MAX_RISE) return false;
+  point[1] = floorY + 0.05;
+  return true;
  }
 
  // The assigned roof must be directly overhead and the footprint must contain
@@ -192,11 +240,15 @@ class EAC_PedestrianSpawner
   return GetClearReason(world, position, exclude, true);
  }
 
- static int GetClearReason(BaseWorld world, vector position, IEntity exclude = null, bool navmeshProjected = false)
+ // indoors: a ground-storey floor point inside the assigned house. Its height
+ // above the heightmap is the house's floor, not a float, so it gets
+ // INDOOR_HEIGHT_TOLERANCE; the body box, water and every later gate are the same.
+ static int GetClearReason(BaseWorld world, vector position, IEntity exclude = null, bool navmeshProjected = false, bool indoors = false)
  {
   if (!world) return EAC_ESpawnReason.GEOMETRY;
   float tolerance = SURFACE_HEIGHT_TOLERANCE;
   if (navmeshProjected) tolerance = NAVMESH_HEIGHT_TOLERANCE;
+  if (indoors) tolerance = Math.Max(tolerance, INDOOR_HEIGHT_TOLERANCE);
   float rise = Math.AbsFloat(position[1] - world.GetSurfaceY(position[0], position[2]));
   if (rise > tolerance) return EAC_ESpawnReason.GEOMETRY;
   if (ChimeraWorldUtils.TryGetWaterSurfaceSimple(world, position - "0 0.1 0")) return EAC_ESpawnReason.WATER;
@@ -207,7 +259,7 @@ class EAC_PedestrianSpawner
   // Only reachable when navmeshProjected is true: a position the old rule would
   // have refused outright and that passed every other gate. This is the number
   // that says whether the tolerance did anything.
-  if (rise > SURFACE_HEIGHT_TOLERANCE) EAC_SchedulerStats.RecordSurfaceRecovered();
+  if (rise > SURFACE_HEIGHT_TOLERANCE && !indoors) EAC_SchedulerStats.RecordSurfaceRecovered();
   return EAC_ESpawnReason.NONE;
  }
 
@@ -278,7 +330,10 @@ class EAC_PedestrianSpawner
   if (reason != EAC_ESpawnReason.NONE) return Reject(reason, position);
   if (!IsRelevant(module, home.BuildingEntity.GetOrigin(), observers, indoors)) return Reject(EAC_ESpawnReason.OUTSIDE_DISTANCE, position);
   if (!EAC_ExclusionZone.IsPopulationAllowed(home.BuildingEntity.GetOrigin()) || !EAC_ExclusionZone.IsPopulationAllowed(position)) return Reject(EAC_ESpawnReason.EXCLUSION, position);
-  reason = GetClearReason(m_World, position, exclude);
+  // Indoor positions are validated against the floor they stand on, at every
+  // call site: Begin, the pending re-check, the navmesh projection and the
+  // settled body. Outdoor positions keep the heightmap tolerance.
+  reason = GetClearReason(m_World, position, exclude, false, indoors);
   if (reason == EAC_ESpawnReason.NONE) reason = GetHiddenReason(m_World, position, observers, exclude, minimumDistance);
   if (reason != EAC_ESpawnReason.NONE) return Reject(reason, position);
   return true;
@@ -1251,7 +1306,8 @@ class EAC_PedestrianSpawner
    if (!IndoorPlacementAllowed(module, m_Pending.Claim.Home, observers)) { m_Pending.Fail("indoor wake range or observer safety changed"); return; }
    pendingMinimum = INDOOR_MINIMUM_DISTANCE;
   }
-  if (!m_Pending.Claim.Group || !m_Pending.Claim.Resident.Wanted || m_Pending.Claim.Resident.Dead || !ValidPosition(module, m_Pending.Claim.Home, m_Pending.Position, observers, m_Pending.Claim.Character, pendingMinimum, m_Pending.SpawnedIndoors)) { m_Pending.Fail("eligibility or placement changed"); return; }
+  if (!m_Pending.Claim.Group || !m_Pending.Claim.Resident.Wanted || m_Pending.Claim.Resident.Dead) { m_Pending.Fail("eligibility or placement changed"); return; }
+  if (!ValidPosition(module, m_Pending.Claim.Home, m_Pending.Position, observers, m_Pending.Claim.Character, pendingMinimum, m_Pending.SpawnedIndoors)) { NotePendingGeometry(); m_Pending.Fail("eligibility or placement changed"); return; }
   if (!m_Pending.Claim.Character)
   {
    AIPathfindingComponent path = AIPathfindingComponent.Cast(m_Pending.Claim.Group.FindComponent(AIPathfindingComponent));
@@ -1259,12 +1315,12 @@ class EAC_PedestrianSpawner
    NavmeshWorldComponent mesh = path.GetNavmeshComponent();
    if (!mesh.IsTileLoaded(m_Pending.Position)) { m_Diagnostics.Record(EAC_ESpawnReason.NAVMESH_PENDING); if (!mesh.IsTileRequested(m_Pending.Position)) mesh.LoadTileIn(m_Pending.Position); return; }
    vector projected;
-   if (!mesh.IsTileValid(m_Pending.Position) || !path.GetClosestPositionOnNavmesh(m_Pending.Position, "2 2 2", projected)) { m_Diagnostics.Record(EAC_ESpawnReason.NAVMESH_REJECTED); m_Pending.Fail("navmesh projection failed"); return; }
-   if (vector.Distance(projected, m_Pending.Position) > 2 || !mesh.IsTileLoaded(projected) || !mesh.IsTileValid(projected)) { m_Diagnostics.Record(EAC_ESpawnReason.NAVMESH_REJECTED); m_Pending.Fail("projected navmesh tile rejected"); return; }
-   if (!ValidPosition(module, m_Pending.Claim.Home, projected, observers, null, pendingMinimum, m_Pending.SpawnedIndoors)) { m_Pending.Fail("projected position: " + EAC_Diagnostics.ReasonName(m_Diagnostics.GetLastReason())); return; }
+   if (!mesh.IsTileValid(m_Pending.Position) || !path.GetClosestPositionOnNavmesh(m_Pending.Position, "2 2 2", projected)) { m_Diagnostics.Record(EAC_ESpawnReason.NAVMESH_REJECTED); NotePendingNavmesh(); m_Pending.Fail("navmesh projection failed"); return; }
+   if (vector.Distance(projected, m_Pending.Position) > 2 || !mesh.IsTileLoaded(projected) || !mesh.IsTileValid(projected)) { m_Diagnostics.Record(EAC_ESpawnReason.NAVMESH_REJECTED); NotePendingNavmesh(); m_Pending.Fail("projected navmesh tile rejected"); return; }
+   if (!ValidPosition(module, m_Pending.Claim.Home, projected, observers, null, pendingMinimum, m_Pending.SpawnedIndoors)) { NotePendingGeometry(); m_Pending.Fail("projected position: " + EAC_Diagnostics.ReasonName(m_Diagnostics.GetLastReason())); return; }
    // Navmesh projection can leave the building; an indoor placement that is no
    // longer indoors loses the only thing that was hiding it.
-   if (m_Pending.SpawnedIndoors && !InsideHouse(m_World, m_Pending.Claim.Home.BuildingEntity, projected, m_Pending.Claim.Group)) { m_Pending.Fail("projected indoor position left the house"); return; }
+   if (m_Pending.SpawnedIndoors && !InsideHouse(m_World, m_Pending.Claim.Home.BuildingEntity, projected, m_Pending.Claim.Group)) { NotePendingNavmesh(); m_Pending.Fail("projected indoor position left the house"); return; }
    m_Pending.Position = projected;
    IEntity actor = Spawn(QualifiedResource(m_Pending.Claim.Resident.CharacterPrefab), projected);
    if (!actor) { m_Pending.Fail("qualified character prefab spawn failed"); return; }
@@ -1284,13 +1340,18 @@ class EAC_PedestrianSpawner
   }
   if (now < m_Pending.SettleUntil) return;
   if (!IsCivilian(m_Pending.Claim.Character, m_Pending.Claim.Group)) { m_Diagnostics.Record(EAC_ESpawnReason.LIVE_QUALIFICATION); m_Pending.Fail("live civilian control, faction or unarmed qualification failed"); return; }
-  if (!ValidPosition(module, m_Pending.Claim.Home, m_Pending.Claim.Character.GetOrigin(), observers, m_Pending.Claim.Character, pendingMinimum, m_Pending.SpawnedIndoors)) { m_Pending.Fail("settled position: " + EAC_Diagnostics.ReasonName(m_Diagnostics.GetLastReason())); return; }
+  if (!ValidPosition(module, m_Pending.Claim.Home, m_Pending.Claim.Character.GetOrigin(), observers, m_Pending.Claim.Character, pendingMinimum, m_Pending.SpawnedIndoors)) { NotePendingGeometry(); m_Pending.Fail("settled position: " + EAC_Diagnostics.ReasonName(m_Diagnostics.GetLastReason())); return; }
   if (!module.CommitResidentActivation(m_Pending.Claim)) { m_Pending.Fail("activation commit ownership rejected"); return; }
   // A civilian may have no valid first walking leg or routine slot yet. Start
   // its native thinking at admission so threat evaluation does not depend on
   // eventually receiving an order (a nearby idle actor otherwise stays inert).
   EAC_ResidentClaim committed = m_Pending.Claim;
-  if (m_Pending.SpawnedIndoors) m_Pending.Emerge.Require();
+  committed.Resident.IndoorFailures = 0;
+  if (m_Pending.SpawnedIndoors)
+  {
+   m_Pending.Emerge.Require();
+   EAC_RoutineStats.RecordIndoorLive();
+  }
   if (CanStartPendingAI(module, committed))
   {
    committed.Group.ActivateAI();
@@ -1302,6 +1363,21 @@ class EAC_PedestrianSpawner
   }
   m_Diagnostics.Record(EAC_ESpawnReason.ACTIVATED);
   m_Pending = null;
+ }
+
+ // An indoor pending placement refused by the body box (the reason Reject just
+ // recorded) counts toward that slot's outdoor fallback. Observer reasons -
+ // visible, too near, out of range - do not: they say nothing about the house.
+ protected void NotePendingGeometry()
+ {
+  if (!m_Pending || !m_Pending.SpawnedIndoors || !m_Pending.Claim) return;
+  if (m_Diagnostics.GetLastReason() == EAC_ESpawnReason.GEOMETRY) NoteIndoorFailure(m_Pending.Claim.Resident);
+ }
+
+ // No usable interior navmesh under an indoor placement.
+ protected void NotePendingNavmesh()
+ {
+  if (m_Pending && m_Pending.SpawnedIndoors && m_Pending.Claim) NoteIndoorFailure(m_Pending.Claim.Resident);
  }
 
  protected bool CanStartPendingAI(EAC_AmbientModule module, EAC_ResidentClaim claim)
@@ -1342,6 +1418,8 @@ class EAC_PedestrianSpawner
    if (!IsRelevant(module, home.BuildingEntity.GetOrigin(), observers))
    { m_SlotCursor = 0; m_HomeCursor++; m_Diagnostics.Record(EAC_ESpawnReason.OUTSIDE_DISTANCE); continue; }
    int reason = module.GetAdmissionReason(home, resident, home.BuildingEntity.GetOrigin());
+   // A ruin refuses every slot; step past the whole household at once.
+   if (reason == EAC_ESpawnReason.RUINED_HOME) { m_Diagnostics.Record(reason); m_SlotCursor = 0; m_HomeCursor++; continue; }
    if (reason != EAC_ESpawnReason.NONE) { m_Diagnostics.Record(reason); continue; }
    // One count per candidate, shared by the ceiling and the floor.
    vector neighbourhood = home.BuildingEntity.GetOrigin();
@@ -1366,8 +1444,10 @@ class EAC_PedestrianSpawner
     int catchUpBudget = Math.Clamp(module.CatchUpAdmissionsPerTick, 1, 8);
     if (catchUpBudget > budget) budget = catchUpBudget;
    }
-   // An indoor-designated slot waits for its own smaller radius. Failed indoor
-   // candidates remain unspawned; they never fall back to the outdoor distance.
+   // An indoor-designated slot waits for its own smaller radius. A slot whose
+   // indoor placements keep failing on geometry is handed to the outdoor branch
+   // below by PrefersIndoor, under the outdoor wake distance, the 50 m minimum
+   // and the line-of-sight test; it never appears near a player indoors-style.
    vector candidate; bool indoors;
    if (PrefersIndoor(module, resident))
    {
@@ -1375,7 +1455,7 @@ class EAC_PedestrianSpawner
     int interior = (m_IndoorProbe++ + resident.Id) % 9;
     indoors = IndoorCandidate(m_World, home.BuildingEntity, interior, candidate);
     EAC_RoutineStats.RecordIndoorSpawn(indoors);
-    if (!indoors) { m_Diagnostics.Record(EAC_ESpawnReason.GEOMETRY); admissions++; if (admissions >= budget) return; continue; }
+    if (!indoors) { NoteIndoorFailure(resident); m_Diagnostics.Record(EAC_ESpawnReason.GEOMETRY); admissions++; if (admissions >= budget) return; continue; }
    }
    if (!indoors)
    {
@@ -1383,7 +1463,8 @@ class EAC_PedestrianSpawner
     candidate = home.BuildingEntity.GetOrigin() + Vector(Math.Cos(angle) * radius, 0, Math.Sin(angle) * radius);
     candidate[1] = m_World.GetSurfaceY(candidate[0], candidate[2]) + 0.1;
    }
-   Begin(module, home, resident, candidate, observers, indoors);
+   bool begun = Begin(module, home, resident, candidate, observers, indoors);
+   if (indoors && !begun && m_Diagnostics.GetLastReason() == EAC_ESpawnReason.GEOMETRY) NoteIndoorFailure(resident);
    admissions++;
    // The pending single-slot ladder and its ten-second deadline are untouched:
    // once an activation is in flight nothing else can start this tick whatever

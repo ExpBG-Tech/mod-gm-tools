@@ -27,6 +27,10 @@ class EGS_Manager
 	static const float WARNING_WINDOW_S = 4.0;
 	static const float WARNING_FIRE_RATE = 2.0;
 	static const float WARNING_PAUSE_S = 5.0;
+	// Aim sphere of a warning burst, and the clearance kept between the target and the
+	// furthest line end the vanilla suppress tree can draw from it.
+	static const float WARNING_RADIUS = 1.0;
+	static const float WARNING_CLEARANCE = 2.0;
 	static const float REARM_DELAY_S = 60.0;
 	static const float REARM_RETRY_S = 30.0;
 	static const float PENDING_BIND_S = 120.0;
@@ -190,14 +194,17 @@ class EGS_Manager
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Server: Game Master per-group override (context action or group attribute).
+	//! Server: per-group override (EXPBG ROE group attribute, mission save or session load).
+	//! Logged once per group and change; repeating the current value logs nothing.
 	static void SetGroupRoe(SCR_AIGroup group, int value)
 	{
 		if (!group || !Replication.IsServer() || !Ensure() || !group.EGS_IsManaged())
 			return;
 
+		int previous = group.EGS_GetRoeOverride();
 		group.EGS_SetRoeOverride(value);
-		if (group.EGS_GetRoeOverride() != EGS_Settings.GROUP_ROE_DEFAULT)
+		int current = group.EGS_GetRoeOverride();
+		if (current != EGS_Settings.GROUP_ROE_DEFAULT)
 		{
 			if (!s_aOverrideGroups.Contains(group))
 				s_aOverrideGroups.Insert(group);
@@ -207,7 +214,9 @@ class EGS_Manager
 			s_aOverrideGroups.RemoveItem(group);
 		}
 
-		PrintFormat("[EXPBG AI SKILLS] group=%1 roeOverride=%2", group, group.EGS_GetRoeOverride());
+		if (current != previous)
+			PrintFormat("[EXPBG AI SKILLS] group=%1 roeOverride=%2", group, current);
+
 		ApplyGroup(group, true);
 	}
 
@@ -248,7 +257,7 @@ class EGS_Manager
 
 	//------------------------------------------------------------------------------------------------
 	//! Point for warning rounds: beside and slightly short of the target, on the ground,
-	//! never closer than 3 m to it (further at long range).
+	//! never closer than 3 m to it (further at long range, see WarningOffset).
 	static vector WarningPoint(vector shooter, vector target)
 	{
 		vector point = WarningOffset(shooter, target, Math.RandomFloat01() < 0.5);
@@ -277,7 +286,12 @@ class EGS_Manager
 		if (leftSide)
 			side = side * -1;
 
-		float lateral = Math.Clamp(distance * 0.06, 3.0, 8.0);
+		// Vanilla GetRandomPosition sweeps every suppression line at least 2 degrees sideways
+		// (SCR_AISuppressionVolume.c), so a line end can lie up to the sphere radius plus
+		// tan(2 deg) x distance from the aim point, and rounds aimed above the ground fly on
+		// past it. Keep the target clear of that reach.
+		float reach = WARNING_RADIUS + Math.Tan(2 * Math.DEG2RAD) * distance + WARNING_CLEARANCE;
+		float lateral = Math.Max(Math.Clamp(distance * 0.06, 3.0, 8.0), reach);
 		float shortfall = Math.Clamp(distance * 0.05, 2.0, 6.0);
 		return target + side * lateral - direction * shortfall;
 	}

@@ -83,6 +83,18 @@ class EBG_CacheDebug
     if (hold.Length() > 76) hold = hold.Substring(0, 73) + "...";
     text += "\n  Hold: " + hold;
    }
+   // Why an enabled zone enrolls or caches nothing (full text in the zone status).
+   string why;
+   if (zone.Enabled && !zone.Editing)
+   {
+    if (zone.PlayerAwakeCount > 0 && zone.ManagedCount > 0) why = EBG_CacheManager.PlayerAwakeNote(zone);
+    else why = zone.EnrollmentNote;
+   }
+   if (why != "")
+   {
+    if (why.Length() > 76) why = why.Substring(0, 73) + "...";
+    text += "\n  Why: " + why;
+   }
   }
   return text;
  }

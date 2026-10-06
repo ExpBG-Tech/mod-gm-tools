@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{E91A23AAF3B83E4A}EIIArt/ServerRack/Data/ServerMaterial.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

@@ -1,5 +1,137 @@
 # EXPBG GM Tools changelog
 
+## 0.1.6
+
+- Compatibility: GM Tools now warns when the old standalone EXPBG mods are
+  loaded next to it (GM Optimizer, Intel Items, Ambient Civilians, Ambient
+  Sounds, Ambient Destruction, Persistent Battlefield and their CDF companions).
+  One check of the loaded addon list at mission start; the server and every
+  client log `[EXPBG GM TOOLS] Conflicting standalone mods loaded: <names>` as
+  an error, and each Game Master gets a persistent hint plus a chat line the
+  first time the full editor opens. GM Tools already contains those mods;
+  disable them (EXPBG CDF Compat replaces the old CDF companions). If their
+  duplicate scripts stop the game from compiling, only the engine's script
+  error appears.
+- AI Surrender / AI Global Skills: fixed the script error "No suppression
+  volume provided!" (vanilla SuppressBehavior.bt), seen in a GM session seconds
+  after AI Surrender took a soldier. Any vanilla suppress tree running without
+  its suppression volume now ends quietly with a log warning naming the
+  soldier's current action (at most ten per game run) instead of a script
+  exception. A surrendering soldier also drops every suppress behaviour before
+  his AI is switched off, and again whenever upkeep finds his AI back on.
+- AI Global Skills: warning shots could make the vanilla suppress code compute
+  an invalid aim height (NaN) at or beyond the edge of their 1 m aim sphere,
+  which asserts on diagnostic servers. Vanilla sweeps every suppression line at
+  least 2 degrees sideways, often past the sphere's edge, so this happened at
+  any range and on every burst fired from more than about 30 m; fixed. Aim
+  points inside the sphere are unchanged. The burst is also aimed further to
+  the side of the target at range (at least 1 m + 2 degrees of the distance
+  + 2 m, so about 4.7 m at 50 m and 13.5 m at 300 m), so that sweep never
+  carries a warning round onto the target.
+- AI Global Skills: the four "EXPBG ROE" right-click entries are removed; with
+  ACE, GME and loadout-editor entries the soldier context menu grew taller than
+  the screen. A group's rules of engagement are now set with "EXPBG ROE" in the
+  group's Group tab, next to Set combat mode (Module default, Return Fire Only,
+  Fire on Sight, Warning Shots First, Exempt), shown while an AI Global Skills
+  module exists. Saved overrides are unchanged; the server logs each group's
+  override once per change.
+- Unit Scripts: EXPBG Hold Position and EXPBG Freeze are no longer listed for a
+  soldier who already runs that script.
+- Unit Scripts: the EXPBG Light Discipline and EXPBG Terror Tactics right-click
+  entries are removed to shorten the context menu. Night discipline is now set
+  with "EXPBG Night discipline" in the group's Group tab (None, Light
+  discipline, Terror tactics), replacing the former entry in the EXPBG Unit
+  Scripts tab, which keeps the unit scripts and animations. Hold Position,
+  Freeze and Release stay on right-click; Release on a group still ends night
+  discipline. The server logs each change once; still mission-only.
+- Unit Scripts: a squad that a Unit Caching zone already manages now stays awake
+  while any member runs Hold Position, Freeze or an animation, or while the squad
+  has night discipline (zone status "Held awake by EXPBG Unit Scripts"). Before,
+  Full caching could delete those soldiers and silently drop their scripts.
+  Normal caching resumes after Release.
+- Ambient Sounds: debug rings and the sound legend also hide while a GM context
+  menu (right-click actions or waypoint commands) is open and return after it
+  closes.
+- Ambient Sounds / Ambient Unrest: new "Rioting crowd" recording (Mixkit,
+  prepared as a seamless mono loop) in the EXPBG Ambient Crowd Sound recording
+  list and in Random crowd. The EXPBG Civil Protest Zone has a new "Crowd sound"
+  setting: Angry crowd, Rioting crowd or Alternate (switches between the two on
+  every loop). New zones and zones from older saves use Alternate.
+- Ambient Unrest: the EXPBG Civil Protest Zone caches itself like Full caching.
+  New "Wake distance (m)" setting (50-3000, default 300): while no player
+  character is within it (Game Masters count by their character only), an On
+  zone sleeps; once every player is 50 m beyond it for 10 seconds, the crowd,
+  its group and its sound are removed a few entities at a time. A returning
+  player brings the same civilians back to their spots; casualties are not
+  replaced. The zone stays On; the new read-only "Status" line and the debug
+  log show Sleeping. Protesters also turn to face a player they can see within
+  40 m (random among several, kept 8-15 seconds) and turn back to the protest
+  direction when nobody is in sight. Older saves load with 300 m.
+- Unit Dialog: the talking gesture now plays once, when a player starts the
+  conversation; Continue and Restart no longer repeat it. Ending the
+  conversation and speaking to the unit again plays it again.
+- Garrison: EXPBG Add Garrison works again on a building that already has a
+  garrison, as often as you like (0.1.5 refused with "This building already has
+  a garrison"). Every added squad deploys in full as its own garrison: first on
+  building posts no other garrison holds, then on other verified positions in
+  the building, then on standing places around it, facing outward. Existing
+  garrisons are untouched; each garrison keeps its own cache settings and
+  sleeps, wakes and is released by Force Move on its own. The server logs one
+  `[EXPG Garrison] group=... added to building ...: placed N of N soldiers`
+  line per add, with the count per kind of position. An added squad spawns on
+  open ground beside the building, so it never pushes the existing guards.
+- Unit Caching: a cache zone now says why it enrolls or caches nothing. Its
+  status (selected module on the GM map, debug panel, `[EBG DEBUG ZONE]` log)
+  names each refusal of a group inside the affected radius (held by Unit
+  Scripts, Garrison or ambient crowds, marked Exclude, civilian faction with
+  Soldiers only, containing a player, still spawning, managed by another zone),
+  counts AI Surrender prisoners and other soldiers who left their squad (never
+  cached), reports how many groups a player character keeps awake inside the
+  sleep radius (a Game Master's own character counts, the free GM camera does
+  not; the notice and debug panel also give its distance), why Full cache
+  cannot run in this session (for example no GameMasterSystems systems config
+  in Workbench play), and old
+  standalone EXPBG mods loaded next to GM Tools. A zone with no AI nearby says
+  so. The Game Master who saves a zone or uses a global zone switch gets the
+  same explanation once as a hint and chat line (`[EBG ZONE NOTICE]` in the
+  server log). Locally hosted and single-player GM missions cache exactly like
+  a server; caching itself is unchanged.
+- Intel Items: the EXPBG server racks and the EXPBG USB Drive use real models
+  (Heine's server rack and hard drive, APL-SA, credited in the Licenses folder)
+  instead of a vanilla electrical cabinet and debris. Server Rack A/B, the USB
+  Drive and the new modules (AI Global Skills, Briefing Board, Civil Protest
+  Zone, AI Surrender) now show up when searching the Game Master entity browser.
+- Intel Items / AI Surrender: while the intel reader or the interrogation window
+  is open, the interaction prompt is hidden and no action behind it can be used;
+  both return when the window closes.
+- AI Surrender: with ACE loaded (optional, never a dependency), prisoners take
+  ACE Captives' own surrender state (hands up), so ACE's Take prisoner, Escort
+  and Release work on them. Without ACE they sit down as before.
+- AI Surrender / Unit Caching: a prisoner leaves his squad's cache record at
+  once; he is never cached, respawned or deleted by Unit Caching.
+- Unit Dialog: a unit's speaker name and dialog lines survive Full caching
+  (Unit Caching and Garrison), so the restored soldier still offers Speak to.
+  Session memory only; CDF Full snapshots do not hold it.
+- Ambient Civilians: indoor residents are placed again. The spawner now finds
+  the ground-storey floor (houses stand on raised slabs) instead of testing
+  0.1 m above the terrain, which never fit in 0.1.5. A home that keeps failing
+  indoors is filled outdoors, and an Indoor spawn distance of 0 makes every home
+  outdoor. Ruined houses are skipped. Civilians and their groups are kept out of
+  native saves (0.1.5 restored five leftover civilians at every server start).
+- Unit Caching: casualty cleanup no longer stalls on RHS: Status Quo gear. RHS
+  preset vests, weapon parts and the Dovetail mount RHS adds to the vanilla
+  AK-74N are left out of the save with the body instead of raising a save Issue
+  and holding the group; headgear accessories in clothing slots (Comtac on a
+  boonie hat) are removed with their wearer.
+- AI Global Skills: AI ammunition refill works for weapons without a magazine
+  template (RHS M40A5); they are refilled with the magazine they carry.
+- Unit Scripts: Light Discipline switches on worn RHS helmet night vision and
+  switches it off again on release or Terror Tactics; gear the soldier already
+  had on stays untouched.
+- Tooling: `tools/Invoke-ReleaseHousekeeping.ps1` (run by `release.ps1`) moves
+  superseded build, gameplay and release folders to the configured archive;
+  it deletes only with an explicit `-Purge`.
+
 ## 0.1.5
 
 New modules:

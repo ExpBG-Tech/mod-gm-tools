@@ -65,5 +65,33 @@ StringTable {
    Id "EII-IntelItems_Name"
    Target_en_us "EXPBG Intel Items"
   }
+  CustomStringTableItem "{27B6BD56575EFB9C}" {
+   Id "EII-ServerRack_Name"
+   Target_en_us "EXPBG Intel - Server Rack"
+  }
+  CustomStringTableItem "{D7AE59916319EB08}" {
+   Id "EII-ServerRack_Description"
+   Target_en_us "Static server rack. Game Master sets the intel title, text and download time. Players with a USB drive download it; the download stops beyond 3 m."
+  }
+  CustomStringTableItem "{8DD98C8B5EE9CC0C}" {
+   Id "EII-ServerRackA_Name"
+   Target_en_us "EXPBG Intel - Server Rack A"
+  }
+  CustomStringTableItem "{0EF937B75F33EA5B}" {
+   Id "EII-ServerRackB_Name"
+   Target_en_us "EXPBG Intel - Server Rack B"
+  }
+  CustomStringTableItem "{E366F1A20C61DB8B}" {
+   Id "EII-USBDrive_Name"
+   Target_en_us "EXPBG USB Drive"
+  }
+  CustomStringTableItem "{E739CBE6F5963FF6}" {
+   Id "EII-USBDrive_Description"
+   Target_en_us "Portable drive for server rack intel. Players download rack intel onto it, hand it over, and hover it in the inventory to read it."
+  }
+  CustomStringTableItem "{8A4FCC1F0C80B35F}" {
+   Id "EII-USBDrive_InventoryName"
+   Target_en_us "USB Drive"
+  }
  }
 }

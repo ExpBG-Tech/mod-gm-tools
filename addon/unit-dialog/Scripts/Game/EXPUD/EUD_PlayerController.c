@@ -1,28 +1,29 @@
-// Talk requests from the conversation window. A client may only send server RPCs
-// through an item it owns; its own player controller is that item. The server
-// re-validates the speaker, the distance and the dialog before any gesture, and
-// rate limits each controller. A request only plays or stops a short gesture.
+// Conversation-end requests from the conversation window. A client may only send
+// server RPCs through an item it owns; its own player controller is that item. The
+// server re-validates the speaker, the distance and the dialog, and rate limits
+// each controller. A request can only stop the talking gesture; the gesture starts
+// once per conversation, on the server, from EUD_SpeakAction.
 modded class SCR_PlayerController
 {
  protected float m_fEUD_NextTalk;
 
- void EUD_RequestTalk(RplId speaker, bool ended)
+ void EUD_RequestEnd(RplId speaker)
  {
   if (Replication.IsServer())
   {
-   EUD_HandleTalk(speaker, ended);
+   EUD_HandleEnd(speaker);
    return;
   }
-  Rpc(RPC_EUD_Talk, speaker, ended);
+  Rpc(RPC_EUD_End, speaker);
  }
 
  [RplRpc(RplChannel.Reliable, RplRcver.Server)]
- protected void RPC_EUD_Talk(RplId speaker, bool ended)
+ protected void RPC_EUD_End(RplId speaker)
  {
-  EUD_HandleTalk(speaker, ended);
+  EUD_HandleEnd(speaker);
  }
 
- protected void EUD_HandleTalk(RplId speaker, bool ended)
+ protected void EUD_HandleEnd(RplId speaker)
  {
   if (!Replication.IsServer() || !GetGame() || !GetGame().GetWorld()) return;
   float now = GetGame().GetWorld().GetWorldTime() * 0.001;
@@ -32,7 +33,6 @@ modded class SCR_PlayerController
   if (!rpl) return;
   SCR_EditableCharacterComponent unit = EUD_Dialog.Find(rpl.GetEntity());
   if (!unit || !unit.EUD_CanTalkWith(GetControlledEntity(), EUD_Dialog.KEEP_RANGE)) return;
-  if (ended) unit.EUD_StopGesture();
-  else unit.EUD_PlayGesture();
+  unit.EUD_StopGesture();
  }
 }

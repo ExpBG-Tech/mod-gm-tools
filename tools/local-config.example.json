@@ -4,5 +4,6 @@
   "WorkbenchRoot": "C:/Program Files (x86)/Steam/steamapps/common/Arma Reforger Tools/Workbench",
   "InstalledAddonsRoot": "C:/replace-with-your-game-profile/addons",
   "IncidentLog": "C:/replace-with-your-private-input/console.log",
-  "BuildAddonsDirectory": ""
+  "BuildAddonsDirectory": "",
+  "ArchiveRoot": "D:/replace-with-your-archive-drive/EXPBG-archive"
 }

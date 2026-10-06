@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{20CA6EBEC84C6A26}EIIArt/ServerRack/serverrack2/Data/mat1_Base_Color.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

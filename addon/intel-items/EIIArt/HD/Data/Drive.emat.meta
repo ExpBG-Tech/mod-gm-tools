@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{EFC18FC9EA096CBA}EIIArt/HD/Data/Drive.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

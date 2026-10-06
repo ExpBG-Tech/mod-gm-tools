@@ -17,6 +17,16 @@
 // does not read the flag, so the same entities also leave its tracking, and are
 // handed back when they stop being transient - only if it had tracked them.
 //
+// 0.1.5 live evidence: the native save restored five leftover civilians and
+// their "Non-Combatants" groups at every server start (server-logs-015c and
+// -m3, identical prefabs and positions). StopTracking at creation is not enough:
+// tracking can begin after it (lazy registration, another system, a regroup),
+// and an entity carrying someone else's NON_SERIALIZABLE was never untracked at
+// all, because vanilla persistence does not read that flag. Like the Ambient
+// Unrest crowd, every entity the ledgers answer for is now taken out of native
+// tracking again right before each save reads its data (OnPersistenceBeforeSave).
+// The module itself and its settings are not ledger entities and stay saved.
+//
 // Define EAC_LEGACY_SERIALIZE_HOOK to restore the old override as a fallback.
 class EAC_SessionLifecycle
 {
@@ -30,9 +40,16 @@ class EAC_SessionLifecycle
  protected static ref array<SCR_EditableEntityComponent> s_Marked = {};
  protected static ref array<bool> s_Untracked = {};
  protected static ref array<int> s_Confirmed = {};
+ // Whether this file set the NON_SERIALIZABLE flag. False for an entity that
+ // already carried someone else's flag: it is still taken out of native
+ // tracking (and handed back), but its flag is never cleared here.
+ protected static ref array<bool> s_Flagged = {};
  protected static BaseWorld s_World;
  protected static float s_NextSync;
  protected static int s_SyncStamp;
+ protected static bool s_SaveHooked;
+ // Native StopTracking calls this file made that took an entity out of a save.
+ protected static int s_Stopped;
 
  // Never veto a foreign parent: Serialize=false skips its entire subtree in
  // CDF, which would silently lose manually authored siblings from the save.
@@ -62,8 +79,67 @@ class EAC_SessionLifecycle
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
   s_World = world;
-  s_Marked.Clear(); s_Untracked.Clear(); s_Confirmed.Clear();
-  s_NextSync = 0; s_SyncStamp = 0;
+  s_Marked.Clear(); s_Untracked.Clear(); s_Confirmed.Clear(); s_Flagged.Clear();
+  s_NextSync = 0; s_SyncStamp = 0; s_SaveHooked = false; s_Stopped = 0;
+ }
+
+ // The persistence system can come up after the first owned entity; Keep and
+ // Sync retry until the hook is in. One hook per world.
+ protected static void HookSaves()
+ {
+  if (s_SaveHooked || !s_World) return;
+  SCR_PersistenceSystem persistence = SCR_PersistenceSystem.GetByCurrentWorld();
+  if (!persistence) return;
+  persistence.GetOnBeforeSave().Insert(OnPersistenceBeforeSave);
+  s_SaveHooked = true;
+ }
+
+ // Vanilla 1.8 saves what IsTracked reports. StopTracking is called even when
+ // IsTracked says no, as 0.1.5 did at creation: the editable's PLACEABLE
+ // registration is lazy (SCR_EditableEntityComponent StartTracking(owner)) and
+ // may not be reported yet, and stopping it then keeps it from completing.
+ // True when this call took the entity out of native tracking (Release hands
+ // it back); s_Stopped counts only entities IsTracked had reported.
+ protected static bool StopNativeTracking(IEntity entity)
+ {
+  if (!entity) return false;
+  SCR_PersistenceSystem persistence = SCR_PersistenceSystem.GetByEntityWorld(entity);
+  if (!persistence) return false;
+  bool tracked = persistence.IsTracked(entity);
+  bool stopped = persistence.StopTracking(entity);
+  if (persistence.IsTracked(entity)) return false;
+  if (tracked && s_Stopped < 1000000000) s_Stopped++;
+  return tracked || stopped;
+ }
+
+ // Right before each native save reads its data: refresh the ledgers' answer,
+ // then nothing this file holds stays tracked, however late tracking began.
+ // Bounded by MAX_MARKED; no world scan.
+ protected static void OnPersistenceBeforeSave(ESaveGameType saveType)
+ {
+  if (!Replication.IsServer() || !GetGame()) return;
+  CheckWorld();
+  int before = s_Stopped;
+  EAC_ResidentClaims claims = EAC_AmbientModule.GetMissionClaims();
+  if (claims) claims.EAC_KeepSessionEntities();
+  EAC_PedestrianSpawner spawner = EAC_AmbientModule.EAC_GetSessionSpawner();
+  if (spawner) spawner.EAC_KeepSessionHelpers();
+  EAC_TrafficDirector traffic = EAC_TrafficDirector.Get();
+  if (traffic) traffic.EAC_KeepSessionEntities();
+  int refused;
+  for (int index = 0; index < s_Marked.Count(); index++)
+  {
+   SCR_EditableEntityComponent editable = s_Marked[index];
+   if (!editable) continue;
+   IEntity markedOwner = editable.GetOwner();
+   if (!markedOwner) continue;
+   if (StopNativeTracking(markedOwner)) s_Untracked[index] = true;
+   SCR_PersistenceSystem persistence = SCR_PersistenceSystem.GetByEntityWorld(markedOwner);
+   if (persistence && persistence.IsTracked(markedOwner)) refused++;
+  }
+  string type = typename.EnumToString(ESaveGameType, saveType);
+  if (refused > 0) PrintFormat("[EAC] Save %1: %2 ambient entities refused to stop tracking", type, refused, level: LogLevel.WARNING);
+  if (s_Stopped > before) PrintFormat("[EAC] Save %1: %2 late-tracked ambient entities kept out", type, s_Stopped - before);
  }
 
  // Exclude one owned transient entity from GM saves now. Called where owned
@@ -73,18 +149,20 @@ class EAC_SessionLifecycle
  {
   if (!entity || !Replication.IsServer()) return;
   CheckWorld();
+  HookSaves();
   SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.GetEditableEntity(entity);
-  if (!editable) return;
+  // No editable: invisible to GM saves, but not to native persistence. Nothing
+  // to remember it by, so it is untracked on every pass and never handed back.
+  if (!editable) { StopNativeTracking(entity); return; }
   int index = s_Marked.Find(editable);
   if (index >= 0) { s_Confirmed[index] = s_SyncStamp; return; }
-  // Someone else's flag: already excluded, and never ours to clear.
-  if (editable.HasEntityFlag(EEditableEntityFlag.NON_SERIALIZABLE)) return;
-  if (s_Marked.Count() >= MAX_MARKED) return;
-  editable.SetEntityFlag(EEditableEntityFlag.NON_SERIALIZABLE, true);
-  bool untracked;
-  SCR_PersistenceSystem persistence = SCR_PersistenceSystem.GetByEntityWorld(entity);
-  if (persistence) untracked = persistence.StopTracking(entity);
-  s_Marked.Insert(editable); s_Untracked.Insert(untracked); s_Confirmed.Insert(s_SyncStamp);
+  if (s_Marked.Count() >= MAX_MARKED) { StopNativeTracking(entity); return; }
+  // Someone else's flag already excludes it from GM saves and is never ours to
+  // clear; native persistence still has to let it go.
+  bool flagged = !editable.HasEntityFlag(EEditableEntityFlag.NON_SERIALIZABLE);
+  if (flagged) editable.SetEntityFlag(EEditableEntityFlag.NON_SERIALIZABLE, true);
+  bool untracked = StopNativeTracking(entity);
+  s_Marked.Insert(editable); s_Untracked.Insert(untracked); s_Confirmed.Insert(s_SyncStamp); s_Flagged.Insert(flagged);
  }
 
  // One pass over the ledgers (bounded by them: <= 200 claims, 64 parties and
@@ -95,6 +173,7 @@ class EAC_SessionLifecycle
  {
   if (!Replication.IsServer() || !GetGame()) return;
   CheckWorld();
+  HookSaves();
   if (now < s_NextSync) return;
   s_NextSync = now + SYNC_SECONDS;
   if (s_SyncStamp >= 1000000000) s_SyncStamp = 0;
@@ -118,7 +197,7 @@ class EAC_SessionLifecycle
   SCR_EditableEntityComponent editable = s_Marked[index];
   if (editable)
   {
-   editable.SetEntityFlag(EEditableEntityFlag.NON_SERIALIZABLE, false);
+   if (s_Flagged[index]) editable.SetEntityFlag(EEditableEntityFlag.NON_SERIALIZABLE, false);
    IEntity owner = editable.GetOwner();
    if (owner && s_Untracked[index])
    {
@@ -126,10 +205,12 @@ class EAC_SessionLifecycle
     if (persistence) persistence.StartTracking(owner);
    }
   }
-  s_Marked.Remove(index); s_Untracked.Remove(index); s_Confirmed.Remove(index);
+  s_Marked.Remove(index); s_Untracked.Remove(index); s_Confirmed.Remove(index); s_Flagged.Remove(index);
  }
 
  static int GetMarkedCount() { CheckWorld(); return s_Marked.Count(); }
+ static int GetStoppedCount() { CheckWorld(); return s_Stopped; }
+ static bool IsSaveHooked() { CheckWorld(); HookSaves(); return s_SaveHooked; }
 }
 
 modded class SCR_EditableEntityComponent

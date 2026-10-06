@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{3F5B6C27A1FFD0D2}EIIArt/ServerRack/Data/ServerMaterial_albedo.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}
