@@ -103,6 +103,8 @@ Decisions 2026-10-06: PB corpse protection 80 m (#19); native saves allowed when
 
 ## M6: New features (new addons in the GM Tools pack)
 
+Status 2026-10-06: all seven built and released in 0.1.5; each compiles in the pack and passes its native fixture (Unit Scripts 41/0, Unit Dialog 40/0, Ambient Unrest 40/0, AI Surrender 31/0; Briefing Map and server racks compile, no fixture yet; AI Global Skills has a contract test). Client acceptance pending. Notes: Briefing Map shows the world map image with the briefer's view, markers and drawings live (the game's own map renderer cannot be mirrored); surrender uses sitting (no vanilla hands-up); intel racks use vanilla cabinet models (Heine rack swap possible); rack/drive text not yet in CDF.
+
 Every new addon: own folder `addon/<name>/`, EXPBG label 157026, EXPBG prefix in UI text, preview images in the existing black/antique-gold style (generated from the existing artwork with new text), GM attributes in an **EXPBG** tab where possible, server-authoritative, JIP-safe, CDF-aware where state matters, native fixture + client test.
 
 ### F1 `unit-scripts` (AI unit behaviour)

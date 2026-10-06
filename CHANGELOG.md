@@ -1,6 +1,6 @@
 # EXPBG GM Tools changelog
 
-## 0.1.5 (unreleased)
+## 0.1.5
 
 New modules:
 - Unit Scripts: right-click AI soldiers or squads for EXPBG Hold Position,
