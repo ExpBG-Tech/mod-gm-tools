@@ -1,6 +1,10 @@
 # EXPBG GM Tools changelog
 
-## 0.1.6
+## 0.1.7
+
+0.1.6 was prepared but never uploaded: the Workshop refused its 231-character
+summary (limit 200). 0.1.7 ships the same code with a shorter summary and a
+portable check for the limit.
 
 - Compatibility: GM Tools now warns when the old standalone EXPBG mods are
   loaded next to it (GM Optimizer, Intel Items, Ambient Civilians, Ambient
