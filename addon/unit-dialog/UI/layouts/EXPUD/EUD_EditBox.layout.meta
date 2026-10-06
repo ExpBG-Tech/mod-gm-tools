@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{EF8E8C3E62587EED}UI/layouts/EXPUD/EUD_EditBox.layout"
+ Configurations {
+  LayoutResourceClass PC {
+  }
+  LayoutResourceClass HEADLESS : PC {
+  }
+ }
+}

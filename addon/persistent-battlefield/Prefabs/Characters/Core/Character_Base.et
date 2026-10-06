@@ -3,5 +3,18 @@ SCR_ChimeraCharacter {
  components {
   EXPBG_CharacterWeaponSafetyComponent "{6A32DB878B264D06}" {
   }
+  ActionsManagerComponent "{520EA1D2F659CE02}" {
+   additionalActions {
+    EUD_SpeakAction "{A241C47665D3F62C}" {
+     ParentContextList {
+      "Head" "Chest"
+     }
+     UIInfo SCR_ActionUIInfo "{56CDDECB42B420D4}" {
+      Name "Speak"
+     }
+     VisibilityRange 3
+    }
+   }
+  }
  }
 }

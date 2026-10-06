@@ -1,0 +1,29 @@
+ESR_InterrogationPoint {
+ ID "D77A75D4971B79DA"
+ components {
+  ActionsManagerComponent "{C3B505F5A2AD05F6}" {
+   ActionContexts {
+    UserActionContext "{AE721347DCC33991}" {
+     ContextName "default"
+     Position PointInfo "{4786999EF005AE26}" {
+     }
+     Radius 0.5
+    }
+   }
+   additionalActions {
+    ESR_InterrogateAction "{9B6BBB3578BB083B}" {
+     ParentContextList {
+      "default"
+     }
+     UIInfo SCR_ActionUIInfo "{852064A840A9B032}" {
+      Name "Interrogate"
+     }
+     VisibilityRange 2.5
+     Duration 2
+    }
+   }
+  }
+  RplComponent "{72B03EC54E9230A7}" {
+  }
+ }
+}

@@ -1,6 +1,6 @@
 # EXPBG GM Tools
 
-One Arma Reforger Game Master modpack by M.Pac and K.Edgar. It bundles eight
+One Arma Reforger Game Master modpack by M.Pac and K.Edgar. It bundles its
 modules into a single Workshop item and engine project
 (`FC1402F65B2F4A45`, Unlisted). Each module keeps its own source folder under
 [`addon/`](addon) so it can be maintained on its own.
@@ -15,6 +15,12 @@ modules into a single Workshop item and engine project
 | Ambient Sounds | `addon/ambient-sounds` | `mod-ambient-sounds` 0.2.9 |
 | Persistent Battlefield | `addon/persistent-battlefield` | `mod-persistent-battlefield` 1.0.5 |
 | No Game Master Budget | `addon/no-gm-budget` | Rebuilt here; same behaviour as Disable Game Master Budgets by ceo_of_bacon (no code reused) |
+| Unit Scripts | `addon/unit-scripts` | Developed here |
+| Unit Dialog | `addon/unit-dialog` | Developed here |
+| Advanced Briefing Map | `addon/advanced-briefing-map` | Developed here |
+| AI Surrender | `addon/ai-surrender` | Developed here |
+| AI Global Skills | `addon/ai-global-skills` | Developed here |
+| Ambient Unrest | `addon/ambient-unrest` | Developed here |
 
 Exact source commits and former Workshop IDs are recorded in
 [`tools/pack.json`](tools/pack.json). Module folders keep the original class
@@ -51,7 +57,9 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   the wake radius of the zone, the squad or the remains for the clear delay, also
   while the rest of its squad is awake, Simulation-cached or Full-cached.
   Survivors are never deleted or refilled.
-- **Intel Items**: placeable intel with GM-authored title and text.
+- **Intel Items**: placeable intel with GM-authored title and text, plus server
+  racks whose intel players download onto an EXPBG USB Drive (timed, 3 m range,
+  readable by hovering the drive). Rack and drive text are not yet saved by CDF.
 - **Ambient Civilians**: civilian population module and exclusion zones.
 - **Ambient Destruction**: permanent building damage, rubble and road wrecks.
 - **Ambient Sounds**: war ambience, radios, crowds and emergency-alert TVs, plus
@@ -62,11 +70,31 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   and spawn weapon safety. It overrides the vanilla `Character_Base` prefab and
   systems config. Bodies owned by Unit Caching cleanup are removed by that
   cleanup; Persistent Battlefield lifetimes apply to other bodies and to remains
-  Unit Caching hands back when a native delete is refused.
+  Unit Caching hands back when a native delete is refused. Bodies stay while a
+  player is within 80 m. The `Character_Base` override also carries the Unit
+  Dialog "Speak" action.
 - **No Game Master Budget**: Game Settings switch "EXPBG Enable Game Master Budgets"
   (ON by default). OFF lifts the Game Master placement budgets for props, AI,
   vehicles, waypoints and systems and raises their displayed limits; switching
   back ON restores them at once. Campaign building budgets are unchanged.
+- **Unit Scripts**: right-click AI soldiers or squads for EXPBG Hold Position,
+  Freeze, Release Unit Scripts, Light Discipline or Terror Tactics; the EXPBG
+  Unit Scripts tab also offers ambient animations. Scripts end when the unit is
+  hurt or possessed; mission-only.
+- **Unit Dialog**: GM-authored speaker name and up to ten dialog lines on AI
+  units; players read them with "Speak to <Name>" (Continue, Restart, End).
+- **Advanced Briefing Map**: a briefing board that shows one player's map view,
+  markers and drawn lines live to everyone nearby while they brief.
+- **AI Surrender**: place "EXPBG AI Surrender" from Systems; broken AI squads
+  may surrender (weapons dropped, sitting), and players interrogate prisoners
+  for a nearby squad's position or identity intel.
+- **AI Global Skills**: place "EXPBG AI Global Skills" from Systems for per-faction
+  AI skill and aim with Rifleman, MG/LMG, Marksman and Leader overrides (modded
+  factions detected at runtime), rules of engagement (Return Fire Only, Fire on
+  Sight, Warning Shots First; right-click per group) and AI ammunition
+  (unlimited or N refills). Everything starts on vanilla.
+- **Ambient Unrest**: "EXPBG Civil Protest Zone", a static crowd of 10-15
+  unarmed protesting civilians with angry crowd audio from Ambient Sounds.
 
 ## CDF Game Master Save
 

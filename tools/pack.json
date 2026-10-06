@@ -107,6 +107,30 @@
         "repository": "ExpBG-Tech/mod-gm-tools",
         "note": "Developed in this repository."
       }
+    },
+    {
+      "name": "unit-dialog",
+      "title": "Unit Dialog",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
+    },
+    {
+      "name": "ai-surrender",
+      "title": "AI Surrender",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
+    },
+    {
+      "name": "ai-global-skills",
+      "title": "AI Global Skills",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
     }
   ],
   "merge": [

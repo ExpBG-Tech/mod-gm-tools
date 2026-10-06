@@ -1,0 +1,23 @@
+EGS_Module {
+ ID "DEBAC9EFA6C11A16"
+ components {
+  SCR_EditableEntityComponent "{3009FF153280CC78}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{987D40B1C84280C9}" {
+    Name "EXPBG AI Global Skills"
+    Description "Global AI settings while this module exists: per-faction skill and aim accuracy with Rifleman, MG/LMG, Marksman and Leader overrides, default rules of engagement (right-click groups for EXPBG ROE) and AI ammunition. Everything starts on vanilla. Place one; deleting the last module restores vanilla behaviour."
+    Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM
+     157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{724ED156B5DB6AD2}" {
+  }
+  Hierarchy "{64A58484632B8955}" {
+  }
+ }
+}

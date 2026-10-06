@@ -19,6 +19,23 @@ New modules:
   hand, pointing and arm-sweep gestures while an angry-crowd loop from Ambient
   Sounds plays. Off, delete and world end remove the crowd; saves keep only the
   zone settings.
+- Unit Dialog: Game Masters give an AI unit a speaker name and up to ten dialog
+  lines in its "EXPBG Unit Dialog" attributes; players get "Speak to <Name>",
+  which opens a conversation window (Continue, then Restart or End
+  conversation) with an optional short gesture. The name defaults to the unit's
+  own identity name; dialog reaches join-in-progress players and is kept in
+  native mission saves.
+- AI Surrender: "EXPBG AI Surrender" system module. AI squads that lose a set
+  share of their members may surrender: prisoners drop their weapons, leave their
+  squad, turn civilian and sit down (vanilla has no hands-up animation). Players
+  "Interrogate" them for one nearby squad's position (a removable map marker for
+  their faction) or the prisoner's name, bio and squad leader.
+- AI Global Skills: "EXPBG AI Global Skills" system module. Per-faction AI skill
+  and aim accuracy with Rifleman, MG/LMG, Marksman and Leader overrides (roles
+  from the actual weapons; modded factions detected at runtime), default rules
+  of engagement (Return Fire Only, Fire on Sight, Warning Shots First) with
+  right-click "EXPBG ROE" per group, and AI ammunition (unlimited magazines or N
+  refills, primary magazines only). Everything starts on vanilla.
 - Intel Items: EXPBG server racks (A/B) with GM-set intel title, text and
   download time (5-900 s), and a placeable EXPBG USB Drive. A player carrying a
   drive uses "Download intel"; a progress bar shows to that player only; moving

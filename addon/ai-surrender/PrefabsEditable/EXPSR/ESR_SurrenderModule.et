@@ -1,0 +1,24 @@
+ESR_SurrenderModule {
+ ID "17EF759E53BFA764"
+ components {
+  SCR_EditableEntityComponent "{A2BA2B13875860A9}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{E81D78F2004A6B9F}" {
+    Name "EXPBG AI Surrender"
+    Description "Global module: AI squads that take heavy casualties may surrender. Prisoners drop their weapons, sit down and can be interrogated by players for squad positions or identity intel. Place one; every copy edits the same global settings."
+    Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM 157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{C253FDDC13A5D8BF}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{E6003F77B0318067}" {
+  }
+ }
+}

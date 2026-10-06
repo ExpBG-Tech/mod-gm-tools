@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{521379DDE1B6181F}Configs/Systems/Persistence/Configuration/EXPSR/SurrenderModule.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

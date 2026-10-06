@@ -241,7 +241,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(sound.DebugEnabled == 1, "emitter follows zone debug");
   // Informational: StopTracking should leave no persistence identity behind.
   PersistenceSystem persistence = PersistenceSystem.GetInstance();
-  if (persistence) PrintFormat("[EXPG EAU PERSISTENCE] groupIdNull=%1 soundIdNull=%2 firstActorIdNull=%3", persistence.GetId(group).IsNull(), persistence.GetId(sound).IsNull(), actors.IsEmpty() || persistence.GetId(actors[0]).IsNull());
+  if (persistence) PrintFormat("[EXPG EAU PERSISTENCE] groupIdNull=%1 soundIdNull=%2 firstActorIdNull=%3", persistence.GetId(group).IsEmpty(), persistence.GetId(sound).IsEmpty(), actors.IsEmpty() || persistence.GetId(actors[0]).IsEmpty());
   Remember();
   Advance(2);
  }

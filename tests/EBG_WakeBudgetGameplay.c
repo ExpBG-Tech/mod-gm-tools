@@ -90,7 +90,9 @@ class EXPG_GarrisonGameplay : GenericEntity
  // True once the manager owns the whole squad.
  bool Enrolled(EBGWakeSquad squad)
  {
-  if (!squad.Group || !squad.Group.EBG_HasCompletedInitialSpawn()) return false;
+  // Full caching deletes the native group; keep the record found while it existed.
+  if (!squad.Group) return squad.Record != null;
+  if (!squad.Group.EBG_HasCompletedInitialSpawn()) return false;
   squad.Record = EBG_CacheManager.Get().FindGroup(squad.Group);
   if (!squad.Record || squad.Record.Members.Count() != 6) return false;
   squad.Members = squad.Record.Members.Count();

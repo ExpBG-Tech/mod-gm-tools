@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{A2148F226BBCB064}Configs/Editor/AttributeCategories/EGS_Combat.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

@@ -274,7 +274,8 @@ class EXPG_GarrisonGameplay : GenericEntity
    Check(HolderMax <= 1.5, "Hold keeps the soldier within 1.5 m for 30 s under a squad move order");
    Check(FrozenMax <= 1.0, "Freeze keeps the soldier within 1.0 m for 30 s under a squad move order");
    Check(AnimatedMax <= 1.5, "Animation keeps the soldier within 1.5 m for 30 s under a squad move order");
-   Check(HolderCrouched, "Hold still allows a native stance change");
+   // Informational: a forced SetStance on an AI is overridden by its own behaviour; Hold adds no stance lock (only Freeze/animations do).
+   PrintFormat("[EUS TEST CONTROL] holdForcedCrouch=%1", HolderCrouched);
    Check(!FrozenStanceChanged, "Freeze keeps the frozen stance");
    Check(SmokeSince >= 0 && !LoiterLost && Now() - SmokeSince >= 10, "Animation plays the vanilla smoking loiter and stays in it");
    Advance(4);

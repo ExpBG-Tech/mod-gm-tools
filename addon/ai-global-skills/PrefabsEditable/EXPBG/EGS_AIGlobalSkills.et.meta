@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{48F68574BBAED1D5}PrefabsEditable/EXPBG/EGS_AIGlobalSkills.et"
+ Configurations {
+  EntityTemplateResourceClass PC {
+  }
+  EntityTemplateResourceClass HEADLESS : PC {
+  }
+ }
+}

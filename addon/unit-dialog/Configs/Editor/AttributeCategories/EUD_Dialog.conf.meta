@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{EE63929606AD33E9}Configs/Editor/AttributeCategories/EUD_Dialog.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

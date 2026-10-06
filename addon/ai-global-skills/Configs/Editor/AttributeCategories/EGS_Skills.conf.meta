@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{24965C909BE5137E}Configs/Editor/AttributeCategories/EGS_Skills.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}
