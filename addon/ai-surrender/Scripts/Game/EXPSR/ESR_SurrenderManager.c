@@ -263,7 +263,7 @@ class ESR_SurrenderManager
   record.Group = group;
   record.Peak = group.GetNumberOfMembersToSpawn();
   float spread = ESR_Settings.Get(ESR_Settings.RANDOM);
-  record.Threshold = Math.Clamp(ESR_Settings.Get(ESR_Settings.THRESHOLD) + Math.RandomFloat(-spread, spread), 5, 100);
+  record.Threshold = Math.Clamp(ESR_Settings.Get(ESR_Settings.THRESHOLD) + ESR_Jitter(spread), 5, 100);
   s_aSquads.Insert(record);
   return record;
  }
@@ -331,7 +331,7 @@ class ESR_SurrenderManager
   foreach (SCR_ChimeraCharacter candidate : candidates)
   {
    if (s_aPrisoners.Count() >= MAX_PRISONERS) break;
-   float rolled = Math.Clamp(chance + Math.RandomFloat(-spread, spread), 0, 100);
+   float rolled = Math.Clamp(chance + ESR_Jitter(spread), 0, 100);
    if (Math.RandomFloat(0, 100) >= rolled) continue;
    if (Surrender(candidate, group)) surrendered++;
   }
@@ -741,4 +741,11 @@ class ESR_SquadQuery
   if (living > 0) center = sum * (1.0 / living);
   return living;
  }
+}
+
+// Math.RandomFloat rejects an empty range; a zero random factor means no jitter.
+float ESR_Jitter(float spread)
+{
+ if (spread <= 0) return 0;
+ return Math.RandomFloat(-spread, spread);
 }

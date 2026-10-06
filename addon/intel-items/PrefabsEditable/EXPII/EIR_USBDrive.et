@@ -23,7 +23,7 @@ GenericEntity : "{C95E11C60810F432}Prefabs/Items/Core/Item_Base.et" {
    m_UIInfo SCR_EditableEntityUIInfo "{53A0645334A46E3B}" {
     Name "EXPBG USB Drive"
     Description "Portable drive for server rack intel. Players download rack intel onto it, hand it over, and hover it in the inventory to read it."
-    m_Image "{38C2078B7B519EF1}UI/Textures/EXPII/EII_IntelItems.edds"
+    m_Image "{6A56D6B7C2F806CD}UI/Textures/EXPII/EIR_Download_Card.edds"
     m_aAuthoredLabels { 1 120 157026 }
    }
    m_bAutoRegister ALWAYS

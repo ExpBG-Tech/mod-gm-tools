@@ -60,6 +60,8 @@ foreach ($relative in $Images.Keys) {
 		# A meta without its resource makes Workbench stop at an error and hang headless.
 		# Any sibling .edds is a placeholder; the rebuild replaces it from the PNG (checked below).
 		$stageEdds = Join-Path $addon $edds
+		$moduleEdds = Join-Path $moduleRoot $edds
+		if (!(Test-Path -LiteralPath $stageEdds) -and (Test-Path -LiteralPath $moduleEdds)) { Copy-Item -LiteralPath $moduleEdds -Destination $stageEdds }
 		if (!(Test-Path -LiteralPath $stageEdds)) {
 			$sibling = Get-ChildItem -LiteralPath (Split-Path -Parent $stageEdds) -Filter '*.edds' -File | Select-Object -First 1
 			if (!$sibling) { throw "No placeholder texture beside $edds; let Workbench create the meta instead." }
