@@ -76,6 +76,7 @@ Native gates for the 0.1.4 source: build `local-20261005-183149-156` compiled wi
 - [ ] Update CHANGELOG, README, Workshop description, docs/TESTING.md, E2E runbook.
 
 ## M2: Release
+- [x] GM Tools 0.1.5 and CDF Compat 0.1.3 published 2026-10-06 (interactive, listings updated; GitHub releases v0.1.5 / v0.1.3).
 - [x] GM Tools 0.1.4 published 2026-10-06 (interactive, listing updated; receipt `artifacts/workshop-local-20261005-190453-993`, uploaded + packageVerified + listingMatchesPrepared). GitHub release v0.1.4 with source zip. Pre-release native gates: build, contracts, UnitCleanup (95 checks), audio sweep standard (all PASS, `build/audio-sweep-20261005-184731-046`).
 - [x] CDF Compat 0.1.2 published 2026-10-06 (GM-visible EAD refusal dialog, pin to GM Tools 0.1.4 `a73dace`, `localChanges.originBlob` provenance). GitHub release v0.1.2.
 
@@ -98,8 +99,8 @@ Native gates for the 0.1.4 source: build `local-20261005-183149-156` compiled wi
 
 ## M5: Issues to zero
 Decisions 2026-10-06: PB corpse protection 80 m (#19); native saves allowed when nothing is cached or pending (#23).
-- [ ] mod-gm-tools open: #1 #2 #4 (civilians), #9 #10 (sounds), #11 #12 #14 #15 (unit caching), #16 #17 (intel), #19 (PB), #20 #21 (civilians), #22 (sounds), #23 #24 (unit caching), #25 (intel manual check).
-- [ ] mod-cdf-compat open: #1 #2 #3.
+- [x] Released 2026-10-06 in GM Tools 0.1.5 / CDF Compat 0.1.3 and closed: mod-gm-tools #1 #11 #12 #14 #15 #19 #20 #21 #22 #23 #24, #2 (upstream), #17 (moved to F3/F4); mod-cdf-compat #1 #2 #3. Native fixtures on the release source: cleanup 95/0, cache recovery 57/0, wake budget 19/0.
+- [ ] Open verification tasks (need a client session): #25 intel read window (manual), #16 prefab-create comparison run, #10 sounds acceptance checklist, #9 audio hitch measurement, #4 civilians CDF fixture runner switch.
 
 ## M6: New features (new addons in the GM Tools pack)
 
