@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{0820F39B560EADFC}Configs/Systems/Persistence/Configuration/EXPTW/TimeSkip.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

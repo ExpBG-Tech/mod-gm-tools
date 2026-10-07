@@ -207,7 +207,7 @@ Mouse look by injected input: 20 px cursor steps rotate the view; large jumps ba
 | T8 | AI Surrender (ACE loaded) | place module, kill members until threshold; wound a prisoner so he bleeds (also once in the head) | ACE surrender animation/state; Interrogate prompt on his face (also while bleeding), ACE Medical actions on his torso and limbs, a head wound still treatable from the side or above; marker or identity window |
 | T9 | AI Global Skills | module; faction selector; ROE warning shots; ammo refill | `[EXPBG AI SKILLS]` lines; behaviour visible |
 | T10 | Civil Protest Zone | place, On | crowd gathers, gestures visible on client, crowd audio; Off removes |
-| T11 | Briefing board | user test | board shows map, markers/lines live |
+| T11 | Briefing projector screen | place "Briefing Projector Screen"; one player uses EXPBG: Brief on map, draws lines and markers; others watch; briefer closes the map; second screen nearby | roller-case side shows the map north up, title top-left reading left to right, nothing cut off; roads, buildings, names match the in-game map; lines and markers on their places; viewer's own map opens at its own view with no location hint from the screen; second screen shows the plain map image; GM can select and rotate it; action appears at the screen; no missing-resource log lines |
 | T12 | Native autosave with zones on | zone enabled, all awake, wait for AUTO save | `[PERSISTENCE] Save (AUTO)` succeeds; cached group: refused with reason |
 | T13 | Voted GM zone icon | non-admin voted GM | zone icons/rings visible, monitor admin-only |
 | T14 | Wake budget / escape action | several cached groups wake; controller "Release blocked groups" | groups spread; `[EBG RECOVERY RELEASE]` |

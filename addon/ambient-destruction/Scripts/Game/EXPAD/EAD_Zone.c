@@ -15,6 +15,8 @@ class EAD_Zone : GenericEntity
  [Attribute("0", UIWidgets.EditBox, "Server diagnostics: 0 off, 1 lifecycle, 2 periodic metrics", "0 2 1"), RplProp()] int DebugLevel;
  [Attribute("0", UIWidgets.EditBox, "GM debug radius rings", "0 1 1"), RplProp()] int DebugDraw;
  [Attribute("2", UIWidgets.EditBox, "Body type: 0 fallen, 1 burned, 2 random", "0 2 1"), RplProp()] int BodyMode;
+ // EAD_Catalog.CIVILIAN / MILITARY / BOTH; Both is the pre-setting mix of every wreck.
+ [Attribute("2", UIWidgets.EditBox, "Vehicle types: 0 civilian, 1 military, 2 both", "0 2 1"), RplProp()] int VehicleTypes;
  ref array<ref EAD_PropRecord> Records = {};
  ref array<IEntity> Live = {};
  protected ref EAD_Random m_Random;
@@ -84,6 +86,7 @@ class EAD_Zone : GenericEntity
   DebugLevel = Math.Clamp(DebugLevel, 0, 2);
   DebugDraw = Math.Clamp(DebugDraw, 0, 1);
   BodyMode = Math.Clamp(BodyMode, 0, 2);
+  VehicleTypes = Math.Clamp(VehicleTypes, 0, 2);
  }
  int GetSetting(int key)
  {
@@ -101,6 +104,7 @@ class EAD_Zone : GenericEntity
    case 9: return DebugLevel;
    case 10: return DebugDraw;
    case 11: return BodyMode;
+   case 12: return VehicleTypes;
   }
   return 0;
  }
@@ -122,12 +126,13 @@ class EAD_Zone : GenericEntity
    case 9: DebugLevel = value; break;
    case 10: DebugDraw = value; break;
    case 11: BodyMode = value; break;
+   case 12: VehicleTypes = value; break;
    default: return;
   }
   Normalize();
   if (GetSetting(key) == previous) return;
   Replication.BumpMe();
-  if (key <= 4 || key == 7 || key == 11) RequestRebuild();
+  if (key <= 4 || key == 7 || key == 11 || key == 12) RequestRebuild();
   // Enabled is operational state, never a reason to discard an existing layout.
   if (key == 8)
   {
@@ -206,7 +211,7 @@ class EAD_Zone : GenericEntity
    vector origin = GetOrigin();
    int positionSeed = Math.AbsInt(Math.Floor(origin[0]) * 31 + Math.Floor(origin[2]) * 17);
    m_Random = new EAD_Random(Seed + positionSeed);
-   m_WreckBag = new EAD_WreckBag(); m_BodyVariants.Clear(); m_DressingBody = null;
+   m_WreckBag = new EAD_WreckBag(VehicleTypes); m_BodyVariants.Clear(); m_DressingBody = null;
    m_WreckCount = EAD_Policy.Count(Wrecks, 50);
    m_BodyCount = 0; m_BodySites.Clear(); m_SitesReady = false;
    m_Slot = 0; m_Attempt = 0; m_GroupCount = 0;
@@ -518,13 +523,16 @@ class EAD_Zone : GenericEntity
  void Diagnostics(string reason)
  {
   if (!Replication.IsServer() || DebugLevel == 0) return;
-  int actual, suppressed, destroyed, placedWrecks, placedBodies;
+  int actual, suppressed, destroyed, placedWrecks, placedBodies, civilianWrecks, militaryWrecks;
   foreach (IEntity entity : Live) { if (entity) actual++; }
   foreach (EAD_PropRecord record : Records)
   {
    if (record.Suppressed) suppressed++;
    if (EAD_Catalog.IsWreck(record.Asset)) placedWrecks++;
    else if ((record.Asset >= 4 && record.Asset <= 7) || (record.Asset >= 31 && record.Asset <= 33)) placedBodies++;
+   int category = EAD_Catalog.Category(record.Asset);
+   if (category == EAD_Catalog.CIVILIAN) civilianWrecks++;
+   else if (category == EAD_Catalog.MILITARY) militaryWrecks++;
   }
   int wreckTarget = -1; int bodyTarget = -1; int sites = -1;
   if (m_GenerationMetrics)
@@ -536,10 +544,10 @@ class EAD_Zone : GenericEntity
   if (m_Buildings) destroyed = m_Buildings.GetDestroyedCount();
   PrintFormat("[EAD STATE] reason=%1 origin=%2 revision=%3 enabled=%4 ready=%5 wanted=%6", reason, GetOrigin(), m_Revision, Enabled, m_Ready, m_Wanted);
   PrintFormat("[EAD COUNTS] records=%1 live=%2 slots=%3 suppressed=%4 created=%5 deleted=%6 failures=%7", Records.Count(), actual, Live.Count(), suppressed, m_SpawnedTotal, m_DeletedTotal, m_SpawnFailures);
-  PrintFormat("[EAD CONFIG] radius=%1 wake=%2 sleep=%3 destruction=%4 wrecks=%5 bodies=%6 seed=%7", Radius, WakeMargin, SleepMargin, Destruction, Wrecks, Bodies, Seed);
+  PrintFormat("[EAD CONFIG] radius=%1 wake=%2 sleep=%3 destruction=%4 wrecks=%5 bodies=%6 seed=%7 vehicleTypes=%8", Radius, WakeMargin, SleepMargin, Destruction, Wrecks, Bodies, Seed, VehicleTypes);
   PrintFormat("[EAD WORK] attempts=%1 rejected=%2 destroyed=%3 globalSlots=%4 lastTickMs=%5 peakTickMs=%6", m_GenerationAttempts, m_PlacementRejected, destroyed, EAD_World.LiveCount(), EAD_World.TickLastMs(), EAD_World.TickPeakMs());
   PrintFormat("[EAD DENSITY] wreckTarget=%1 wreckPlaced=%2 bodyTarget=%3 bodyPlaced=%4 discoveredSites=%5 sitesReady=%6 bodyMode=%7 metricsKnown=%8", wreckTarget, placedWrecks, bodyTarget, placedBodies, sites, m_SitesReady && m_GenerationMetrics, BodyMode, m_GenerationMetrics);
-  PrintFormat("[EAD PLACEMENT] wreckRejectedAttempts=%1 bodyRejectedAttempts=%2 wreckSkippedSlots=%3 bodySkippedSlots=%4 attemptsPerSlot=12 wreckCap=50 bodyCap=60 siteCap=256", m_WreckRejected, m_BodyRejected, m_WreckSkipped, m_BodySkipped);
+  PrintFormat("[EAD PLACEMENT] wreckRejectedAttempts=%1 bodyRejectedAttempts=%2 wreckSkippedSlots=%3 bodySkippedSlots=%4 civilianWrecks=%5 militaryWrecks=%6 attemptsPerSlot=12 wreckCap=50 bodyCap=60 siteCap=256", m_WreckRejected, m_BodyRejected, m_WreckSkipped, m_BodySkipped, civilianWrecks, militaryWrecks);
  }
  void DiagnosticTick(float now)
  {

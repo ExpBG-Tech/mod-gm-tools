@@ -18,7 +18,8 @@ class EXPG_BuildingPlanTest
   return EXPG_BuildingPlan.ForwardColumn(8, 3, 9, 1) == -1 && EXPG_BuildingPlan.ForwardColumn(8, 3, 9, 3) == -1;
  }
  // Rejecting a nearby candidate must not discard later, well-spaced candidates.
- // The wide pass (2.5 m) takes 0 and 3 first; the 1.5 m pass then adds 2.
+ // The wide pass (2.5 m) takes 0 and 3 first; the 1.5 m pass then adds 2. Fixed
+ // slots only (stair watch here): score-0 nodes become patrol stops, not slots.
  static bool SlotSelection()
  {
   EXPG_SlotSelectionFixture plan = new EXPG_SlotSelectionFixture();
@@ -29,6 +30,7 @@ class EXPG_BuildingPlanTest
    node.Position = position;
    node.Reachable = true;
    node.Interior = true;
+   node.Score = EXPG_BuildingPlan.SCORE_STAIRS;
    plan.Nodes.Insert(node);
   }
   plan.Select();

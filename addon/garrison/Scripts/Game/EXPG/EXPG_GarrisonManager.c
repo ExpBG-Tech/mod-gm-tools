@@ -1,3 +1,27 @@
+// Alarm listener bound to native invokers: a guard's threat state reaching
+// ALERTED, or his squad detecting a new enemy. It only raises a flag (and keeps
+// the target's position); EXPG_GarrisonManager.ServiceAlert reads it. It holds no
+// pointer back to the garrison, so a late event never reaches a released record.
+class EXPG_AlertListener : Managed
+{
+ bool Raised;
+ bool Known;
+ vector Where;
+
+ void OnThreat(EAIThreatState previousState, EAIThreatState newState)
+ {
+  if (newState >= EAIThreatState.ALERTED) { Raised = true; }
+ }
+
+ void OnEnemyDetected(SCR_AIGroup group, SCR_AITargetInfo target, AIAgent reporter)
+ {
+  Raised = true;
+  if (!target) { return; }
+  Known = true;
+  Where = target.m_vWorldPos;
+ }
+}
+
 class EXPG_GarrisonMember
 {
  ref EBG_CacheMember CacheMember;
@@ -5,7 +29,8 @@ class EXPG_GarrisonMember
  int NodeIndex;
  bool Fixed;
  // The post. NodeIndex -1 marks a post outside the sampled plan (around the
- // building or the spawn point), used once a garrisoned building is full.
+ // building or the spawn point), used once a garrisoned building is full. A
+ // patroller's NodeIndex follows his current claim (copied every Tick).
  vector PostPosition;
  vector PostLook;
  int PostKind; // EXPG_Placement kind
@@ -13,17 +38,175 @@ class EXPG_GarrisonMember
  // Patrol controller is bound only after its native movement contract is checked.
  ref EXPG_PatrolControl Patrol;
  ref EXPG_PatrolState PatrolState;
+ // Alarm: the listener on this guard's native threat state and the utility
+ // component it was bound to (a component, so the weak pointer clears itself).
+ ref EXPG_AlertListener ThreatHook;
+ SCR_AIUtilityComponent ThreatUtility;
+ // Seconds since a patroller's control could not start (-1 while bound): after 10 s
+ // he becomes a fixed guard where he stands, never free AI (BindControls).
+ float UnboundSince = -1;
+ // The floor under his post gave way (logged once; caching held meanwhile).
+ bool FloorLost;
+ // Full restore accepted where its safety check kept failing (logged once).
+ bool Forced;
+ // The post he was given at placement: a displaced guard's resting spot becomes
+ // his post only within MAX_DRIFT of it (Plausible).
+ vector GivenPost;
+ // Placement: the editor's character transform lands a frame or more after it is
+ // sent. Until he stands on his post (or patrol stop) he is never bound and never
+ // anchored; the move is sent again every second, MOVE_TRIES times, then every 5 s.
+ bool Arrived = true;
+ int MoveTries;
+ float MoveSent = -1000;
+ // A bound guard who came to rest on an implausible spot is being sent back.
+ bool Returning;
+ float ReturnSent = -1000;
+ static const int MOVE_TRIES = 5;
+ static const float MAX_DRIFT = 6;
+
  void ReleaseControl()
  {
   if (Plan && CacheMember) { Plan.ReleaseReservation(CacheMember.Entity); }
   if (Post) { Post.Release(); Post = null; }
   if (Patrol) { Patrol.Release(); Patrol = null; }
+  Returning = false;
+  if (CacheMember && CacheMember.Entity) { CacheMember.Entity.SetSpeedLimit(this, 1); }
+  UnbindThreat();
+ }
+
+ // While he is moved onto his post and not bound yet, this member's own native
+ // speed cap keeps him from walking off (formation, regroup) once the move lands.
+ void HoldStill(SCR_ChimeraCharacter actor, bool hold)
+ {
+  if (!actor) { return; }
+  if (hold) { actor.SetSpeedLimit(this, 0, true); }
+  else { actor.SetSpeedLimit(this, 1); }
+ }
+
+ // A Game Master transform (the editor's owner teleport), facing look. The move
+ // lands later: callers confirm OnPost before binding.
+ static void Teleport(SCR_ChimeraCharacter actor, vector at, vector look)
+ {
+  if (!actor) { return; }
+  vector transform[4];
+  Math3D.AnglesToMatrix(Vector(look.ToYaw(), 0, 0), transform);
+  transform[3] = at;
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.GetEditableEntity(actor);
+  if (editable) { editable.SetTransform(transform); }
+  else { actor.SetWorldTransform(transform); }
+ }
+
+ // Conscious, on foot and still (below 0.2 m/s): he may be moved now.
+ static bool AtRest(SCR_ChimeraCharacter actor)
+ {
+  if (!actor || actor.IsInVehicle()) { return false; }
+  CharacterControllerComponent controller = actor.GetCharacterController();
+  if (!controller || controller.IsDead() || controller.IsUnconscious()) { return false; }
+  return vector.DistanceSq(controller.GetVelocity(), vector.Zero) < 0.04;
+ }
+
+ // Standing on his post or patrol stop: within 1 m across and 1 m up or down.
+ bool OnPost(vector at)
+ {
+  vector post = PostPoint();
+  if (vector.DistanceXZ(at, post) > 1.0) { return false; }
+  return Math.AbsFloat(at[1] - post[1]) <= 1.0;
+ }
+
+ // Where a displaced guard came to rest may become his post only when it is
+ // plausible: within MAX_DRIFT of the post he was given (a patroller: of his
+ // claimed stop) and, for a post in the building, on its indoor floor (inside the
+ // walls, never on the roof or out in the yard) with a floor under him; for a post
+ // outside, on walkable ground at about the post's height.
+ bool Plausible(vector at, IEntity actor)
+ {
+  if (!Plan) { return false; }
+  vector postRef = GivenPost;
+  if (!Fixed) { postRef = PostPoint(); }
+  if (vector.Distance(at, postRef) > MAX_DRIFT) { return false; }
+  if (PostKind == EXPG_Placement.AROUND || PostKind == EXPG_Placement.SPAWN)
+  {
+   if (Math.AbsFloat(at[1] - postRef[1]) > 2.0) { return false; }
+   return Plan.GroundSupported(at, 0.3, actor);
+  }
+  if (!Plan.Contained(at)) { return false; }
+  return Plan.Supported(at, 0.3, actor);
+ }
+
+ // Not on his post (just placed, or sent back): the move is sent again after a
+ // second, MOVE_TRIES times, then every 5 s (logged once).
+ void ResendMove(SCR_ChimeraCharacter actor, float now, SCR_AIGroup group)
+ {
+  float wait = 1;
+  if (MoveTries >= MOVE_TRIES) { wait = 5; }
+  if (now - MoveSent < wait) { return; }
+  if (MoveTries == MOVE_TRIES)
+  { PrintFormat("[EXPG Garrison] group=%1 guard %2 (%3) is not on his post at %4 after %5 moves; retrying every 5 s, never bound elsewhere", group, CacheMember.Id, actor, PostPoint(), MOVE_TRIES + 1); }
+  MoveTries++;
+  MoveSent = now;
+  HoldStill(actor, true);
+  Teleport(actor, PostPoint(), PostLook);
+ }
+
+ // Back to his post: he is bound again once he stands on it (BindControls).
+ void SendBack(SCR_ChimeraCharacter actor, float now)
+ {
+  Arrived = false;
+  MoveTries = 0;
+  MoveSent = now;
+  HoldStill(actor, true);
+  Teleport(actor, PostPoint(), PostLook);
+ }
+
+ // Idempotent. Posts are bound too: any guard's alarm alerts the building.
+ void BindThreat()
+ {
+  if (ThreatHook || !CacheMember) { return; }
+  SCR_AIUtilityComponent utility = FindUtility(CacheMember.Entity);
+  if (!utility || !utility.m_ThreatSystem) { return; }
+  ThreatHook = new EXPG_AlertListener();
+  ThreatUtility = utility;
+  utility.m_ThreatSystem.GetOnThreatStateChanged().Insert(ThreatHook.OnThreat);
+ }
+
+ // The threat system is not Managed: look it up again from the actor, never keep it.
+ void UnbindThreat()
+ {
+  if (ThreatHook && CacheMember)
+  {
+   SCR_AIUtilityComponent utility = FindUtility(CacheMember.Entity);
+   if (utility && utility.m_ThreatSystem) { utility.m_ThreatSystem.GetOnThreatStateChanged().Remove(ThreatHook.OnThreat); }
+  }
+  ThreatHook = null;
+  ThreatUtility = null;
+ }
+
+ static SCR_AIUtilityComponent FindUtility(IEntity entity)
+ {
+  SCR_ChimeraCharacter actor = SCR_ChimeraCharacter.Cast(entity);
+  if (!actor) { return null; }
+  AIControlComponent control = actor.GetAIControlComponent();
+  if (!control || !control.GetAIAgent()) { return null; }
+  return SCR_AIUtilityComponent.Cast(control.GetAIAgent().FindComponent(SCR_AIUtilityComponent));
  }
 
  vector PostPoint()
  {
   if (NodeIndex >= 0 && Plan && NodeIndex < Plan.Nodes.Count()) { return Plan.Nodes[NodeIndex].Position; }
   return PostPosition;
+ }
+
+ // His post becomes the spot he stands on: the nearest free standing node within
+ // 0.5 m keeps a plan reservation, otherwise an off-plan post (NodeIndex -1). He
+ // keeps watching the same way (PostLook) and is never moved.
+ void Anchor(vector at)
+ {
+  if (!Plan || !CacheMember || !CacheMember.Entity) { return; }
+  Plan.ReleaseReservation(CacheMember.Entity);
+  NodeIndex = -1;
+  PostPosition = at;
+  int node = Plan.NearestNode(at, 0.5, true);
+  if (node >= 0 && Plan.ReserveNode(CacheMember.Entity, node)) { NodeIndex = node; }
  }
 }
 
@@ -45,6 +228,22 @@ class EXPG_GarrisonRecord
  float ClearSince = -1;
  float RetryAt;
  string Status;
+ // Alarm (EXPG_GarrisonManager.ServiceAlert): patrollers hold windows or watch
+ // points; after calm one returns to patrol every 3-8 s.
+ bool AlertActive;
+ float NextRelease;
+ ref EXPG_AlertListener SquadHook;
+ // Cache sleep waits until every patroller dwells at a stop (PatrolsSettled).
+ float SettleSince = -1;
+ // Why the whole garrison is released (the first request wins).
+ string ReleaseReason;
+ // Caching due but held since (seconds, -1 while not held); the reason is shown
+ // after 30 s, a changed reason at most every 10 s (NoteHold).
+ float HoldSince = -1;
+ float HoldShownAt;
+ bool HoldShown;
+ // A Full restore whose safety check keeps failing waits at most 10 s (WakeFull).
+ float WakeHeldSince = -1;
 
  void Report(string message)
  {
@@ -54,11 +253,46 @@ class EXPG_GarrisonRecord
   PrintFormat("[EXPG Garrison] group=%1 %2", Group, message);
  }
 
+ // The only way to release a whole garrison: the reason is logged now and on the
+ // release line, and the Game Master's status keeps it ("Released: <reason>").
+ // One guard's problem never comes here; it is handled for that guard alone.
+ void RequestRelease(string reason)
+ {
+  if (!ReleaseRequested)
+  {
+   ReleaseReason = reason;
+   Report(reason);
+  }
+  ReleaseRequested = true;
+ }
+
+ // Caching is due but held: once it has been held for 30 s (when it would have
+ // slept), name why in the status and the server log. A changing reason (a
+ // firing guard's trigger state flickers) is shown at most every 10 s.
+ void NoteHold(string reason, float now)
+ {
+  if (HoldSince < 0) { HoldSince = now; }
+  if (reason.IsEmpty() || now - HoldSince < 30) { return; }
+  string message = "Cache held: " + reason;
+  if (Status == message || (HoldShown && now - HoldShownAt < 10)) { return; }
+  HoldShown = true;
+  HoldShownAt = now;
+  Report(message);
+ }
+
+ void ClearHold()
+ {
+  HoldSince = -1;
+  if (!HoldShown) { return; }
+  HoldShown = false;
+  if (Status.StartsWith("Cache held: ")) { Report("Garrison active"); }
+ }
+
  void OnWaypoint(AIWaypoint waypoint)
  {
   if (!waypoint) { return; }
   ResourceName prefab = SCR_ResourceNameUtils.GetPrefabName(waypoint);
-  if (prefab.Contains("AIWaypoint_ForcedMove.et")) { ReleaseRequested = true; Report("Force Move: releasing garrison"); }
+  if (prefab.Contains("AIWaypoint_ForcedMove.et")) { RequestRelease("Force Move waypoint given"); }
  }
 
  void ReleaseControls()
@@ -82,47 +316,138 @@ class EXPG_GarrisonRecord
   }
  }
 
+ // The squad's enemy detection, bound once; removed in FinishRelease.
+ void BindSquadHook()
+ {
+  if (SquadHook || !Group) { return; }
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(Group.FindComponent(SCR_AIGroupUtilityComponent));
+  if (!utility || !utility.m_Perception) { return; }
+  SquadHook = new EXPG_AlertListener();
+  utility.m_Perception.GetOnEnemyDetectedFiltered().Insert(SquadHook.OnEnemyDetected);
+ }
+
+ void UnbindSquadHook()
+ {
+  if (SquadHook && Group)
+  {
+   SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(Group.FindComponent(SCR_AIGroupUtilityComponent));
+   if (utility && utility.m_Perception) { utility.m_Perception.GetOnEnemyDetectedFiltered().Remove(SquadHook.OnEnemyDetected); }
+  }
+  SquadHook = null;
+ }
+
+ // Never stops at the first problem: every guard who can be bound is bound, and one
+ // who cannot (in another squad, a native control not ready, not on his post yet)
+ // only makes the result false, which holds caching; nobody is released here. A
+ // guard is bound only once he stands on the post he was moved to (Arrived); until
+ // then the move is sent again, and nobody is anchored on the way. A possessed
+ // guard is left to the player and bound again where he was left. A guard further
+ // than 1.5 m from his post, or whose post another guard now holds, takes the spot
+ // he stands on (Anchor) when it is plausible; otherwise, once conscious and
+ // still, he is sent back to his post. A patroller whose control cannot start for
+ // 10 s becomes a fixed guard where he stands (if plausible), never free AI.
  bool BindControls()
  {
+  BindSquadHook();
+  bool complete = true;
+  float now = GetGame().GetWorld().GetWorldTime() * 0.001;
   foreach (EXPG_GarrisonMember member : Members)
   {
    EBG_CacheMember cache = member.CacheMember;
-   if (cache.Dead || cache.WasPlayer) { continue; }
-   if (!cache.Entity || cache.Entity.GetCharacterGroup() != Group) { return false; }
-   if (member.Fixed)
+   if (cache.Dead) { continue; }
+   SCR_ChimeraCharacter actor = cache.Entity;
+   if (!actor) { complete = false; continue; }
+   CharacterControllerComponent controller = actor.GetCharacterController();
+   if (!controller) { complete = false; continue; }
+   if (controller.IsPlayerControlled()) { continue; }
+   if (actor.GetCharacterGroup() != Group) { complete = false; continue; }
+   member.BindThreat();
+   if (member.Post || member.Patrol) { continue; }
+   vector origin = actor.GetOrigin();
+   if (!member.Arrived)
    {
-    if (member.Post) { continue; }
-    vector postAt = member.PostPosition;
-    vector postLook = member.PostLook;
-    if (member.NodeIndex >= 0)
+    if (!member.OnPost(origin))
     {
-     if (!Plan.ReserveNode(cache.Entity, member.NodeIndex)) { return false; }
-     postAt = Plan.Nodes[member.NodeIndex].Position;
-     postLook = Plan.Nodes[member.NodeIndex].Look;
+     complete = false;
+     member.ResendMove(actor, now, Group);
+     continue;
     }
-    member.Post = new EXPG_PostControl();
-    if (!member.Post.Bind(cache.Entity, postAt, postLook)) { member.Post = null; return false; }
+    member.Arrived = true;
    }
-   else
+   if (!member.Fixed)
    {
-    if (member.Patrol) { continue; }
     member.Patrol = new EXPG_PatrolControl();
-    if (!member.Patrol.Start(cache.Entity, Plan, member.NodeIndex, member.PatrolState)) { member.Patrol = null; return false; }
+    if (member.Patrol.Start(actor, Plan, member.NodeIndex, member.PatrolState))
+    {
+     member.UnboundSince = -1;
+     member.HoldStill(actor, false);
+     continue;
+    }
+    member.Patrol = null;
+    if (member.UnboundSince < 0) { member.UnboundSince = now; }
+    if (now - member.UnboundSince < 10)
+    {
+     complete = false;
+     continue;
+    }
+    if (!cache.WasPlayer && !member.Plausible(origin, actor))
+    {
+     // Off the indoor floor or far from his stop: back to his stop first.
+     member.UnboundSince = -1;
+     complete = false;
+     if (EXPG_GarrisonMember.AtRest(actor)) { member.SendBack(actor, now); }
+     continue;
+    }
+    member.Fixed = true;
+    member.PatrolState = null;
+    member.Anchor(origin);
+    member.GivenPost = origin;
+    PrintFormat("[EXPG Garrison] group=%1 guard %2 (%3) could not patrol for 10 s; holds where he stands", Group, cache.Id, actor);
    }
+   if (vector.DistanceSq(origin, member.PostPoint()) > EXPG_PostControl.BIND_SQ)
+   {
+    // Left his post while unbound (a vehicle, another squad, a restore). Only a
+    // plausible spot becomes his post (a possessed guard holds where the player
+    // left him); otherwise he is sent back once he is conscious and still.
+    if (!cache.WasPlayer && !member.Plausible(origin, actor))
+    {
+     complete = false;
+     if (EXPG_GarrisonMember.AtRest(actor))
+     {
+      PrintFormat("[EXPG Garrison] group=%1 guard %2 (%3) is %4 m from his post at %5, not a plausible post; sent back to it", Group, cache.Id, actor, vector.Distance(origin, member.PostPoint()), member.PostPoint());
+      member.SendBack(actor, now);
+     }
+     continue;
+    }
+    member.Anchor(origin);
+   }
+   if (member.NodeIndex >= 0 && !Plan.ReserveNode(actor, member.NodeIndex)) { member.Anchor(origin); }
+   member.Post = new EXPG_PostControl();
+   if (!member.Post.Bind(actor, member.PostPoint(), member.PostLook))
+   {
+    member.Post = null;
+    complete = false;
+    continue;
+   }
+   member.HoldStill(actor, false);
   }
-  return true;
+  return complete;
  }
 
  void FinishRelease()
  {
   ReleaseControls();
+  UnbindSquadHook();
   Plan.Unpark(this);
+  string reason = ReleaseReason;
+  if (reason.IsEmpty()) { reason = Status; }
+  PrintFormat("[EXPG Garrison] group=%1 released (%2)", Group, reason);
   if (Group)
   {
    Group.EXPG_EndFreshRoster();
    Group.GetOnWaypointAdded().Remove(OnWaypoint);
    Group.EXPG_Active = false;
-   Group.EXPG_Status = "Released";
+   Group.EXPG_Status = "Released: " + reason;
    Group.EXPG_Changed();
   }
   Finished = true;
@@ -164,6 +489,7 @@ class EXPG_Placement
  static const int BUILDING = 1; // another verified position in the building
  static const int AROUND = 2; // a standing place around the building
  static const int SPAWN = 3; // where the engine spawned the soldier
+ static const int ROAM = 4; // an interior patroller starting on a roam stop (not fixed)
  int NodeIndex = -1;
  bool Fixed = true;
  vector Position;
@@ -309,7 +635,7 @@ class EXPG_GarrisonManager
    {
     if (member.CacheMember.Entity && member.CacheMember.Entity.GetCharacterGroup() == group) { touched = true; break; }
    }
-   if (touched) { record.ReleaseRequested = true; reserved = true; }
+   if (touched) { record.RequestRelease("Unit Caching regroup takes over the squad"); reserved = true; }
   }
   return reserved;
  }
@@ -319,7 +645,7 @@ class EXPG_GarrisonManager
   if (!HasActive()) { return; }
   foreach (EXPG_GarrisonRecord record : s_Instance.m_Records)
   {
-   if (!record.Finished) { record.ReleaseRequested = true; }
+   if (!record.Finished) { record.RequestRelease("Unit Caching Prepare for Save (garrisons are mission-only)"); }
   }
  }
 
@@ -571,7 +897,7 @@ class EXPG_GarrisonManager
  void Release(SCR_AIGroup group)
  {
   EXPG_GarrisonRecord record = Find(group);
-  if (record) { record.ReleaseRequested = true; }
+  if (record) { record.RequestRelease("Released by the Game Master"); }
  }
 
  protected void Players()
@@ -609,7 +935,7 @@ class EXPG_GarrisonManager
   array<AIAgent> agents = {};
   group.GetAgents(agents);
   if (record.FreshRequested > 0 && !group.EXPG_FreshRosterMatches(record.FreshRequested))
-  { record.Report("Fresh squad membership changed; retained as normal AI"); record.ReleaseRequested = true; return false; }
+  { record.RequestRelease("Fresh squad membership changed; retained as normal AI"); return false; }
   // A squad added to a building that already has a garrison deploys in full
   // (free posts first, then extra positions). Only a building's sole garrison
   // is limited to, and a fresh one trimmed to, the verified safe posts.
@@ -618,15 +944,15 @@ class EXPG_GarrisonManager
   if (reinforce) { capacity = agents.Count(); }
   int fitting = PlacementCount(agents.Count(), capacity);
   if (fitting == 0 || (agents.Count() > fitting && record.FreshRequested == 0) || (record.FreshRequested > 0 && agents.Count() != record.FreshRequested))
-  { record.Report("Squad cannot fit safely; retained as a normal squad"); record.ReleaseRequested = true; return false; }
+  { record.RequestRelease("Squad cannot fit safely; retained as a normal squad"); return false; }
   array<IEntity> originals = {};
   foreach (AIAgent agent : agents)
   {
    SCR_ChimeraCharacter actor = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
    if (!EligiblePlacement(actor, group))
-   { record.Report("Squad contains unsupported occupants; retained as a normal squad"); record.ReleaseRequested = true; return false; }
+   { record.RequestRelease("Squad contains unsupported occupants; retained as a normal squad"); return false; }
    if (EBG_CacheManager.Instance && EBG_CacheManager.Instance.FindMember(actor))
-   { record.Report("Squad member already has Unit Caching ownership; garrison assignment refused"); record.ReleaseRequested = true; return false; }
+   { record.RequestRelease("Squad member already has Unit Caching ownership; garrison assignment refused"); return false; }
    originals.Insert(actor);
   }
   // Preserve the native leader when reducing a freshly spawned roster.
@@ -645,22 +971,30 @@ class EXPG_GarrisonManager
    // Analysis ran while the picker was open. Validate all selected places again
    // before moving anyone; ignore only this squad's original spawn positions.
    if (!record.Plan.ValidateSlots(fitting, originals))
-   { record.Report("Structure positions changed or are obstructed; retained as a normal squad"); record.ReleaseRequested = true; return false; }
+   { record.RequestRelease("Structure positions changed or are obstructed; retained as a normal squad"); return false; }
    for (int slotIndex = 0; slotIndex < fitting; slotIndex++)
    {
     EXPG_BuildingNode slotNode = record.Plan.Nodes[record.Plan.Slots[slotIndex]];
-    AddPlacement(placements, null, record.Plan.Slots[slotIndex], slotNode.Position, slotNode.Look, record.Plan.FixedSlots[slotIndex], EXPG_Placement.PLANNED);
+    bool slotFixed = record.Plan.FixedSlots[slotIndex];
+    int slotKind = EXPG_Placement.PLANNED;
+    vector slotLook = slotNode.Look;
+    if (!slotFixed)
+    {
+     slotKind = EXPG_Placement.ROAM;
+     slotLook = slotNode.WatchLook;
+    }
+    AddPlacement(placements, null, record.Plan.Slots[slotIndex], slotNode.Position, slotLook, slotFixed, slotKind);
    }
   }
   if (placements.Count() < fitting)
-  { record.Report("Garrison positions unavailable; retained as a normal squad"); record.ReleaseRequested = true; return false; }
+  { record.RequestRelease("Garrison positions unavailable; retained as a normal squad"); return false; }
   // Complete deletion preflight before the first mutation. A refused/late
   // ownership change never retries trimming or refills a casualty.
   for (int surplus = fitting; surplus < originals.Count(); surplus++)
   {
    SCR_EditableEntityComponent extra = SCR_EditableEntityComponent.GetEditableEntity(originals[surplus]);
    if (!extra || extra.HasEntityFlag(EEditableEntityFlag.NON_DELETABLE))
-   { record.Report("Fresh squad surplus cannot be deleted safely; retained as normal AI"); record.ReleaseRequested = true; return false; }
+   { record.RequestRelease("Fresh squad surplus cannot be deleted safely; retained as normal AI"); return false; }
   }
   bool fresh = record.FreshRequested > 0;
   record.FreshRequested = 0;
@@ -668,28 +1002,28 @@ class EXPG_GarrisonManager
   for (int surplus = originals.Count() - 1; surplus >= fitting; surplus--)
   {
    if (!group.EXPG_FreshRosterMatches(originals.Count()))
-   { record.Report("Fresh squad provenance changed; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+   { record.RequestRelease("Fresh squad provenance changed; retained survivors as normal AI"); return false; }
    foreach (IEntity candidate : originals)
    {
     if (!EligiblePlacement(SCR_ChimeraCharacter.Cast(candidate), group))
-    { record.Report("Fresh squad ownership changed during trimming; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+    { record.RequestRelease("Fresh squad ownership changed during trimming; retained survivors as normal AI"); return false; }
    }
    SCR_EditableEntityComponent extra = SCR_EditableEntityComponent.GetEditableEntity(originals[surplus]);
    if (!extra || extra.HasEntityFlag(EEditableEntityFlag.NON_DELETABLE) || !group.EXPG_ExpectFreshRemoval(originals[surplus]) || !extra.Delete(false, false) || originals[surplus])
-   { record.Report("Native surplus deletion was not acknowledged; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+   { record.RequestRelease("Native surplus deletion was not acknowledged; retained survivors as normal AI"); return false; }
    originals.RemoveOrdered(surplus);
   }
   // Deletion callbacks may modify the roster. Check the remaining identities
   // before positioning anyone, then retire this one-shot deletion authority.
   if (fresh && !group.EXPG_FreshRosterMatches(originals.Count()))
-  { record.Report("Fresh squad changed after trimming; retained survivors as normal AI"); record.ReleaseRequested = true; return false; }
+  { record.RequestRelease("Fresh squad changed after trimming; retained survivors as normal AI"); return false; }
   group.EXPG_EndFreshRoster();
   int index;
-  array<int> kinds = {0, 0, 0, 0};
+  array<int> kinds = {0, 0, 0, 0, 0};
   foreach (IEntity original : originals)
   {
    SCR_ChimeraCharacter actor = SCR_ChimeraCharacter.Cast(original);
-   if (!EligiblePlacement(actor, group) || index >= placements.Count()) { record.ReleaseRequested = true; return false; }
+   if (!EligiblePlacement(actor, group) || index >= placements.Count()) { record.RequestRelease("Squad membership changed while taking posts; retained survivors as normal AI"); return false; }
    EXPG_Placement place = placements[index];
    EXPG_GarrisonMember member = new EXPG_GarrisonMember();
    member.Plan = record.Plan;
@@ -701,12 +1035,13 @@ class EXPG_GarrisonManager
    member.PostPosition = place.Position;
    member.PostLook = place.Look;
    member.PostKind = place.Kind;
-   vector transform[4];
-   Math3D.AnglesToMatrix(Vector(place.Look.ToYaw(), 0, 0), transform);
-   transform[3] = place.Position;
-   SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.GetEditableEntity(actor);
-   if (editable) { editable.SetTransform(transform); }
-   else { actor.SetWorldTransform(transform); }
+   member.GivenPost = place.Position;
+   // The move lands a frame or more later: BindControls binds him only once he
+   // stands on this post, and sends the move again until he does.
+   member.Arrived = false;
+   member.MoveSent = Now();
+   member.HoldStill(actor, true);
+   EXPG_GarrisonMember.Teleport(actor, place.Position, place.Look);
    member.CacheMember.Position = place.Position;
    record.Members.Insert(member);
    kinds[place.Kind] = kinds[place.Kind] + 1;
@@ -795,8 +1130,9 @@ class EXPG_GarrisonManager
  {
   EXPG_BuildingNode node = plan.Nodes[nodeIndex];
   vector point = node.Position;
-  // Indoor floor only: porches, entrance steps and stair flights never hold a post.
-  if (!node.Reachable || !node.Interior || node.Stair) { return 0; }
+  // Indoor floor only: porches, entrance steps and stair flights never hold a post,
+  // nor does a door's swing or doorway.
+  if (!node.Reachable || !node.Interior || node.Stair || node.DoorBlock) { return 0; }
   // Full wake re-checks Inside with a 0.25 m margin at the restored position.
   if (!plan.Inside(point, 0.35) || !Spaced(point, occupied) || plan.ReservationConflict(point)) { return 0; }
   if (!plan.Supported(point, 0.2, null, originals) || !plan.ClearBody(point, point + "0 0.01 0", null, originals)) { return 1; }
@@ -804,11 +1140,12 @@ class EXPG_GarrisonManager
   return 2;
  }
 
- // A standing place on open ground beside the building, facing away from it.
+ // A standing place on open ground beside the building, facing away from it, never
+ // on the step in front of a door (door zone).
  protected int TryAroundPost(EXPG_BuildingPlan plan, vector point, array<IEntity> originals, array<vector> occupied, array<ref EXPG_Placement> placements)
  {
   point[1] = m_World.GetSurfaceY(point[0], point[2]);
-  if (!Spaced(point, occupied)) { return 0; }
+  if (!Spaced(point, occupied) || plan.InAnyDoorZone(point)) { return 0; }
   TraceParam foot = new TraceParam();
   foot.Start = point + "0 1.2 0";
   foot.End = point - "0 0.5 0";
@@ -818,7 +1155,7 @@ class EXPG_GarrisonManager
   float hit = m_World.TraceMove(foot, null);
   if (hit >= 0.999 || foot.TraceNorm[1] <= 0.65) { return 1; }
   vector stand = vector.Lerp(foot.Start, foot.End, hit) + "0 0.05 0";
-  if (!Spaced(stand, occupied) || !plan.GroundSupported(stand, 0.2, null, originals) || !plan.ClearBody(stand, stand + "0 0.01 0", null, originals)) { return 1; }
+  if (!Spaced(stand, occupied) || plan.InAnyDoorZone(stand) || !plan.GroundSupported(stand, 0.2, null, originals) || !plan.ClearBody(stand, stand + "0 0.01 0", null, originals)) { return 1; }
   vector outward = stand - plan.Origin;
   outward[1] = 0;
   if (outward.Length() < 0.1) { outward = vector.FromYaw(plan.Angles[1]); }
@@ -827,43 +1164,83 @@ class EXPG_GarrisonManager
   return 2;
  }
 
- // An added squad is never refused for lack of room and never trimmed. Posts no
- // other garrison holds come first (in plan order: windows, then outer doors,
- // with the storeys taking turns), then every other verified indoor position
- // (best view first, storeys taking turns), then standing places on rings around
- // the building facing outward, and last the soldier's own spawn point. Every
- // post keeps the planner's post spacing. Added posts are all fixed, so no added
- // patrol crosses posts of a cached garrison. Traced and examined candidates are
- // bounded per stage.
+ // Interior patrollers on free roam stops, in plan order (spread over the
+ // storeys). Free-room rule: a patroller joins a walk group only while at least
+ // KeepFree of its stops stay free after he takes his, so patrollers can always
+ // move on. Bounded: at most 96 traced stops.
+ protected void AddPatrollers(EXPG_BuildingPlan plan, array<IEntity> originals, array<vector> occupied, array<ref EXPG_Placement> placements, int count)
+ {
+  if (placements.Count() >= count || plan.RoamStops.IsEmpty()) { return; }
+  array<int> freeStops = {};
+  for (int g = 0; g < plan.WalkGroupCount(); g++) { freeStops.Insert(0); }
+  foreach (int stop : plan.RoamStops)
+  {
+   int area = plan.Nodes[stop].WalkGroup;
+   if (area < 0 || area >= freeStops.Count()) { continue; }
+   if (plan.StopFree(stop) && Spaced(plan.Nodes[stop].Position, occupied)) { freeStops[area] = freeStops[area] + 1; }
+  }
+  int traced = 0;
+  foreach (int roam : plan.RoamStops)
+  {
+   if (placements.Count() >= count || traced >= 96) { break; }
+   EXPG_BuildingNode node = plan.Nodes[roam];
+   int walkGroup = node.WalkGroup;
+   if (walkGroup < 0 || walkGroup >= freeStops.Count() || freeStops[walkGroup] - 1 < plan.KeepFree(walkGroup)) { continue; }
+   if (!plan.StopFree(roam) || !Spaced(node.Position, occupied) || !plan.Inside(node.Position, 0.35)) { continue; }
+   traced++;
+   if (!plan.Supported(node.Position, 0.2, null, originals) || !plan.ClearBody(node.Position, node.Position + "0 0.01 0", null, originals)) { continue; }
+   freeStops[walkGroup] = freeStops[walkGroup] - 1;
+   AddPlacement(placements, occupied, roam, node.Position, node.WatchLook, false, EXPG_Placement.ROAM);
+  }
+ }
+
+ // An added squad is never refused for lack of room and never trimmed. Fixed
+ // posts no other garrison holds come first (in plan order: windows, then outer
+ // doors, with the storeys taking turns), then interior patrol starts under the
+ // free-room rule (AddPatrollers), then other verified watch positions (windows,
+ // doors, entrances, stairs; best view first, storeys taking turns) that keep
+ // clear of every patrol stop, so patrollers always have free stops, then
+ // standing places on rings around the building facing outward (at most 24.75 m
+ // beyond its walls), and last the soldier's own spawn point. Every post keeps the
+ // planner's post spacing and stays out of door zones. Patrollers claim stops
+ // clear of every other claim and of a cached garrison's parked posts. Traced and
+ // examined candidates are bounded per stage.
  protected void ChooseReinforcement(EXPG_GarrisonRecord record, array<IEntity> originals, array<ref EXPG_Placement> placements)
  {
   EXPG_BuildingPlan plan = record.Plan;
   int count = originals.Count();
   array<vector> occupied = {};
   OtherGarrisons(record, occupied);
-  foreach (int slot : plan.Slots)
+  foreach (int slotOrder, int slot : plan.Slots)
   {
    if (placements.Count() >= count) { break; }
+   // Patrol starts of the plan are not fixed posts; patrollers come next.
+   if (!plan.FixedSlots[slotOrder]) { continue; }
    TryBuildingPost(plan, slot, EXPG_Placement.PLANNED, originals, occupied, placements);
   }
+  AddPatrollers(plan, originals, occupied, placements, count);
   if (placements.Count() < count)
   {
+   // Extra posts never take a patrol stop's room: spaced from every stop too.
+   array<vector> keepClear = {};
+   keepClear.Copy(occupied);
+   foreach (int roamStop : plan.RoamStops) { keepClear.Insert(plan.Nodes[roamStop].Position); }
+   int firstExtra = placements.Count();
    array<int> scores = {};
    scores.Insert(EXPG_BuildingPlan.SCORE_SENTINEL);
    scores.Insert(EXPG_BuildingPlan.SCORE_WINDOW);
    scores.Insert(EXPG_BuildingPlan.SCORE_DOOR);
    scores.Insert(EXPG_BuildingPlan.SCORE_ENTRANCE);
    scores.Insert(EXPG_BuildingPlan.SCORE_STAIRS);
-   scores.Insert(0);
    array<ref array<int>> ranked = {};
    for (int rank = 0; rank < scores.Count(); rank++) { ranked.Insert(new array<int>()); }
    foreach (int nodeIndex, EXPG_BuildingNode candidate : plan.Nodes)
    {
     // Outside the walls (porch, steps, under the eaves) or on a stair flight is
     // never a building post; only the explicit ring stage below stands outside.
-    if (!candidate.Reachable || !candidate.Interior || candidate.Stair || plan.Slots.Contains(nodeIndex)) { continue; }
+    if (!candidate.Reachable || !candidate.Interior || candidate.Stair || candidate.DoorBlock || plan.Slots.Contains(nodeIndex)) { continue; }
     int bucket = scores.Find(candidate.Score);
-    if (bucket < 0) { bucket = scores.Count() - 1; }
+    if (bucket < 0) { continue; }
     ranked[bucket].Insert(nodeIndex);
    }
    int attempts = 0;
@@ -875,13 +1252,15 @@ class EXPG_GarrisonManager
     {
      if (placements.Count() >= count || attempts >= 256 || examined >= 4096) { break; }
      examined++;
-     if (TryBuildingPost(plan, extra, EXPG_Placement.BUILDING, originals, occupied, placements) > 0) { attempts++; }
+     if (TryBuildingPost(plan, extra, EXPG_Placement.BUILDING, originals, keepClear, placements) > 0) { attempts++; }
     }
    }
+   for (int placed = firstExtra; placed < placements.Count(); placed++) { occupied.Insert(placements[placed].Position); }
   }
+  // Around posts stay close: ring gaps 1 m to 24.75 m beyond the walls.
   int probes = 0;
   int points = 0;
-  for (int ring = 0; ring < 24 && placements.Count() < count && probes < 256 && points < 4096; ring++)
+  for (int ring = 0; ring < 20 && placements.Count() < count && probes < 256 && points < 4096; ring++)
   {
    float gap = 1.0 + 1.25 * ring;
    float left = plan.Mins[0] - gap;
@@ -927,17 +1306,19 @@ class EXPG_GarrisonManager
     if (!member.CacheMember.Dead && !member.CacheMember.WasPlayer) { guards++; }
    }
   }
-  int placed = kinds[0] + kinds[1] + kinds[2] + kinds[3];
+  int placed = kinds[0] + kinds[1] + kinds[2] + kinds[3] + kinds[4];
   string building = string.Format("%1 at %2", record.Plan.Structure, record.Plan.Origin);
   string total = string.Format("%1 squads, %2 guards", squads, guards);
-  PrintFormat("[EXPG Garrison] group=%1 added to building %2: placed %3 of %4 soldiers (building posts %5, more building positions %6, around the building %7, at spawn point %8); building garrison now %9", record.Group, building, placed, requested, kinds[0], kinds[1], kinds[2], kinds[3], total);
+  string placedAt = string.Format("building posts %1, more building positions %2, patrolling inside %3, around the building %4, at spawn point %5", kinds[0], kinds[1], kinds[4], kinds[2], kinds[3]);
+  PrintFormat("[EXPG Garrison] group=%1 added to building %2: placed %3 of %4 soldiers (%5); building garrison now %6", record.Group, building, placed, requested, placedAt, total);
  }
 
  protected bool Wake(EXPG_GarrisonRecord record)
  {
   if (record.Full) { return WakeFull(record); }
   // This record is outside Optimizer's zone registry; observe casualties and
-  // possession before its adapter restores the retained original actors.
+  // possession before its adapter restores the retained original actors. A
+  // possessed guard is that guard's matter only: the others wake on their posts.
   foreach (EXPG_GarrisonMember member : record.Members)
   {
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
@@ -945,23 +1326,31 @@ class EXPG_GarrisonManager
    CharacterControllerComponent controller = actor.GetCharacterController();
    if (IsDeadActor(actor)) { member.CacheMember.Dead = true; member.ReleaseControl(); }
    if (controller && (controller.IsPlayerControlled() || actor.EBG_WasPlayerControlled()))
-   { member.CacheMember.WasPlayer = true; record.ReleaseRequested = true; member.ReleaseControl(); }
+   { member.CacheMember.WasPlayer = true; member.ReleaseControl(); }
   }
   if (!record.Simulation) { return true; }
   // A deleted original cannot be restored and must never be recreated. Retire
-  // its snapshot explicitly so missing actors cannot wedge Force Move forever.
+  // its snapshot explicitly so missing actors cannot wedge Force Move forever;
+  // Tick marks him dead, and the other guards keep their posts.
   for (int i = record.Simulation.Members.Count() - 1; i >= 0; i--)
   {
    EBG_SimulationAgent saved = record.Simulation.Members[i];
    if (saved.Character) { continue; }
    if (saved.Devices) { saved.Devices.Discard(); }
    record.Simulation.Members.Remove(i);
-   record.ReleaseRequested = true;
   }
   string reason;
   if (!EBG_SimulationCache.Restore(record.Simulation, reason)) { record.Report(reason); return false; }
   record.Simulation = null;
   record.Created = Now();
+  // Patrollers kept their controls while cached: each stands at his stop for a
+  // fresh dwell, then walks again.
+  foreach (EXPG_GarrisonMember resumed : record.Members)
+  {
+   if (resumed.Patrol) { resumed.Patrol.RestartDwell(); }
+  }
+  ReleaseSettle(record);
+  record.AlertActive = false;
   record.Report("Garrison restored");
   return true;
  }
@@ -989,15 +1378,35 @@ class EXPG_GarrisonManager
   record.Plan.Unpark(record);
   if (!record.ReleaseRequested)
   {
+   // A survivor another squad took meanwhile is forgotten alone.
+   ForgetLeavers(record);
+   if (record.WakeHeldSince < 0) { record.WakeHeldSince = Now(); }
+   bool patient = Now() - record.WakeHeldSince < 10;
    foreach (EXPG_GarrisonMember member : record.Members)
    {
-    if (member.CacheMember.Dead || member.CacheMember.WasPlayer) { continue; }
+    if (member.CacheMember.Dead || member.CacheMember.WasPlayer || member.Forced) { continue; }
     SCR_ChimeraCharacter actor = member.CacheMember.Entity;
+    // Not recreated (deleted meanwhile, or abandoned by the operator): gone for
+    // good and never respawned; the others wake on their posts.
+    if (!actor)
+    {
+     member.CacheMember.Dead = true;
+     member.ReleaseControl();
+     PrintFormat("[EXPG Garrison] group=%1 guard %2 was not restored; never respawned, the other guards keep their posts", record.Group, member.CacheMember.Id);
+     continue;
+    }
+    if (actor.GetCharacterGroup() != record.Group)
+    { record.Report(string.Format("Full recovery held: guard %1 is not back in the squad yet", member.CacheMember.Id)); return false; }
     bool standing = false;
-    if (actor && member.NodeIndex >= 0) { standing = record.Plan.Inside(actor.GetOrigin(), 0.25) && record.Plan.Supported(actor.GetOrigin(), 0.2, actor); }
-    else if (actor) { standing = record.Plan.GroundSupported(actor.GetOrigin(), 0.2, actor); }
-    if (!actor || actor.GetCharacterGroup() != record.Group || !standing || !record.Plan.ClearBody(actor.GetOrigin(), actor.GetOrigin() + "0 0.01 0", actor))
-    { record.Report("Full recovery held: restored position or membership is unsafe"); return false; }
+    if (member.NodeIndex >= 0) { standing = record.Plan.Inside(actor.GetOrigin(), 0.25) && record.Plan.Supported(actor.GetOrigin(), 0.2, actor); }
+    else { standing = record.Plan.GroundSupported(actor.GetOrigin(), 0.2, actor); }
+    if (standing && record.Plan.ClearBody(actor.GetOrigin(), actor.GetOrigin() + "0 0.01 0", actor)) { continue; }
+    // A corpse or debris on his spot: after 10 s he is better awake and bound
+    // where he stands (never moved) than frozen for good.
+    if (patient)
+    { record.Report(string.Format("Full recovery held: guard %1's restored position is unsafe (floor or body clearance)", member.CacheMember.Id)); return false; }
+    member.Forced = true;
+    PrintFormat("[EXPG Garrison] group=%1 guard %2 restored where the safety check failed for 10 s; holds where he stands", record.Group, member.CacheMember.Id);
    }
    if (!record.BindControls()) { record.Report("Full recovery held: guard controls not ready"); return false; }
   }
@@ -1005,12 +1414,19 @@ class EXPG_GarrisonManager
   // Save/Force Move first materializes every survivor, then releases normal AI
   // without reassigning it to the building. Controls already exist otherwise.
   if (!full.ReleaseRestored()) { record.Report("Full recovery held: " + full.GetError()); return false; }
-  if (!record.Group) { record.ReleaseRequested = true; }
+  if (!record.Group) { record.RequestRelease("Squad deleted"); }
   record.Full = null;
   record.FullRecord = null;
-  foreach (EXPG_GarrisonMember member : record.Members) { member.PatrolState = null; }
+  record.WakeHeldSince = -1;
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   member.PatrolState = null;
+   member.Forced = false;
+  }
   record.Created = Now();
   record.ClearSince = -1;
+  ReleaseSettle(record);
+  record.AlertActive = false;
   record.Report("Garrison restored");
   return true;
  }
@@ -1018,8 +1434,8 @@ class EXPG_GarrisonManager
  protected void TryFullSleep(EXPG_GarrisonRecord record)
  {
   SCR_AIGroup group = record.Group;
-  if (!group || group.EBG_Exclude || group.IsSlave() || group.GetMaster() || group.IsCreatedByCommander() || !group.EBG_HasCompletedInitialSpawn())
-  { record.Report("Full cache held: group has external ownership"); return; }
+  string ownership = SquadProblem(group);
+  if (!ownership.IsEmpty()) { record.Report("Full cache held: " + ownership); return; }
   EBG_CacheGroup captured = new EBG_CacheGroup();
   captured.Id = m_NextFullId--;
   captured.Group = group;
@@ -1029,14 +1445,15 @@ class EXPG_GarrisonManager
    EBG_CacheMember cache = member.CacheMember;
    captured.Members.Insert(cache);
    if (cache.Dead) { captured.Dead++; continue; }
-   if (cache.WasPlayer || !EligiblePlacement(cache.Entity, group)) { record.Report("Full cache held: survivor ownership changed"); return; }
+   string survivor = SurvivorProblem(cache, group);
+   if (!survivor.IsEmpty()) { record.Report(string.Format("Full cache held: guard %1 %2", cache.Id, survivor)); return; }
    string problem = EBG_SimulationCache.Unsupported(cache.Entity, false);
-   if (!problem.IsEmpty()) { record.Report("Full cache held: " + problem); return; }
+   if (!problem.IsEmpty()) { record.Report(string.Format("Full cache held: guard %1: %2", cache.Id, problem)); return; }
    if (!member.Fixed)
    {
-    if (!member.Patrol) { record.Report("Full cache held: patrol state unavailable"); return; }
+    if (!member.Patrol) { record.Report(string.Format("Full cache held: guard %1's patrol is not bound yet", cache.Id)); return; }
     member.PatrolState = member.Patrol.CaptureState();
-    if (!member.PatrolState) { record.Report("Full cache held: patrol ownership changed"); return; }
+    if (!member.PatrolState) { record.Report(string.Format("Full cache held: guard %1's patrol ownership changed", cache.Id)); return; }
     member.NodeIndex = member.PatrolState.NodeIndex;
    }
    captured.FullMembers.Insert(cache);
@@ -1057,8 +1474,36 @@ class EXPG_GarrisonManager
   record.Full = null;
   record.FullRecord = null;
   record.Plan.Unpark(record);
-  if (!record.BindControls()) { record.ReleaseRequested = true; }
+  // Untouched originals: bind again; a guard not bound yet is retried every Tick.
+  record.BindControls();
   record.Report("Full cache held: " + failure);
+ }
+
+ // Why the squad itself cannot be Full cached; empty when it can.
+ protected string SquadProblem(SCR_AIGroup group)
+ {
+  if (!group) { return "squad deleted"; }
+  if (group.EBG_Exclude) { return "the squad is excluded from Unit Caching"; }
+  if (group.IsSlave() || group.GetMaster()) { return "the squad is attached to another group"; }
+  if (group.IsCreatedByCommander()) { return "the squad belongs to the commander"; }
+  if (!group.EBG_HasCompletedInitialSpawn()) { return "the squad has not finished spawning"; }
+  return string.Empty;
+ }
+
+ // Why one living guard cannot be Full cached; empty when he can.
+ protected string SurvivorProblem(EBG_CacheMember cache, SCR_AIGroup group)
+ {
+  SCR_ChimeraCharacter actor = cache.Entity;
+  if (!actor) { return "is missing"; }
+  if (actor.GetCharacterGroup() != group) { return "is in another squad"; }
+  if (cache.WasPlayer || actor.EBG_WasPlayerControlled()) { return "was possessed by a player (a once-possessed soldier is never cached)"; }
+  if (actor.IsInVehicle()) { return "is in a vehicle"; }
+  if (actor.EBG_HasLeftSquad()) { return "left the squad"; }
+  CharacterControllerComponent controller = actor.GetCharacterController();
+  if (!controller || controller.IsDead()) { return "is dying"; }
+  if (controller.IsUnconscious()) { return "is unconscious"; }
+  if (controller.IsPlayerControlled()) { return "is possessed by a player"; }
+  return string.Empty;
  }
 
  protected void TrySleep(EXPG_GarrisonRecord record)
@@ -1069,15 +1514,54 @@ class EXPG_GarrisonManager
   GameProject.GetLoadedAddons(addons);
   if (addons.Contains("6A1876F37D65AB09") && !addons.Contains("07BC942D90324CD9"))
   { record.Report("Cache held: CDF requires the EXPBG GM Tools CDF companion for save protection"); return; }
-  if (EBG_OptimizerControl.Preparing || EBG_CacheSnapshot.Loading) { return; }
-  if (CacheModeInUse(record.Group) == 2) { TryFullSleep(record); return; }
+  if (EBG_OptimizerControl.Preparing || EBG_CacheSnapshot.Loading) { record.Report("Cache held: a Unit Caching save or load is in progress"); return; }
+  // Patrollers first finish their walk at a stop (silently: not a refusal).
+  if (!PatrolsSettled(record)) { return; }
+  if (CacheModeInUse(record.Group) == 2)
+  {
+   TryFullSleep(record);
+   // A held sleep lets the patrol go on until the next attempt.
+   if (!record.Full) { ReleaseSettle(record); }
+   return;
+  }
   string reason;
   record.Simulation = EBG_SimulationCache.Suspend(record.Group, reason);
   // Full chosen, CDF loaded: one status line per sleep names the fallback.
   string cachedStatus = "Simulation cached";
   if (record.Group.EXPG_CacheMode == 2) { cachedStatus = "Simulation cached (CDF loaded)"; }
   if (record.Simulation) { record.Report(cachedStatus); }
-  else { record.Report("Cache held: " + reason); }
+  else
+  {
+   record.Report("Cache held: " + reason);
+   ReleaseSettle(record);
+  }
+ }
+
+ // Cache sleep waits until every living patroller dwells at his claimed stop:
+ // no new walks start; after 20 s a walker stops at a stop near him.
+ protected bool PatrolsSettled(EXPG_GarrisonRecord record)
+ {
+  if (record.SettleSince < 0) { record.SettleSince = Now(); }
+  bool settled = true;
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   if (member.CacheMember.Dead || !member.Patrol) { continue; }
+   member.Patrol.SetSettle(true);
+   if (member.Patrol.Settled()) { continue; }
+   settled = false;
+   if (Now() - record.SettleSince >= 20) { member.Patrol.ForceSettle(); }
+  }
+  return settled;
+ }
+
+ protected void ReleaseSettle(EXPG_GarrisonRecord record)
+ {
+  if (record.SettleSince < 0) { return; }
+  record.SettleSince = -1;
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   if (member.Patrol) { member.Patrol.SetSettle(false); }
+  }
  }
 
  // CDF Game Master Save (6A1876F37D65AB09) cannot keep Garrison Full survivors.
@@ -1125,20 +1609,213 @@ class EXPG_GarrisonManager
   return text;
  }
 
+ // Seconds without any guard of the building at ALERTED or above before the
+ // patrollers return to patrol.
+ static const float CALM_SECONDS = 60;
+
+ // Alarm, building-wide: the native listeners' flags (threat state ALERTED,
+ // squad enemy detection) and a poll of at most 32 threat states refresh the
+ // building's last alarm. While it is recent, at most two patrollers per Tick
+ // claim the nearest free window (facing the threat when known), else a free
+ // door or stairs watch point within 12 steps, else hold the stop they have;
+ // holders without a window retry every 5 s. Calm: one holder every 3-8 s goes
+ // back to patrol. No timers, no world scans.
+ protected void ServiceAlert(EXPG_GarrisonRecord record)
+ {
+  EXPG_BuildingPlan plan = record.Plan;
+  float now = Now();
+  bool alerted = false;
+  EXPG_AlertListener squad = record.SquadHook;
+  if (squad && squad.Raised)
+  {
+   alerted = true;
+   squad.Raised = false;
+   if (squad.Known)
+   {
+    plan.ThreatPos = squad.Where;
+    plan.ThreatAt = now;
+    squad.Known = false;
+   }
+  }
+  int polled = 0;
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   if (member.CacheMember.Dead || polled >= 32) { continue; }
+   polled++;
+   if (member.ThreatHook && member.ThreatHook.Raised)
+   {
+    alerted = true;
+    member.ThreatHook.Raised = false;
+   }
+   SCR_AIUtilityComponent utility = member.ThreatUtility;
+   if (utility && utility.m_ThreatSystem && utility.m_ThreatSystem.GetState() >= EAIThreatState.ALERTED) { alerted = true; }
+  }
+  if (alerted) { plan.LastAlert = now; }
+  if (now - plan.LastAlert < CALM_SECONDS)
+  {
+   record.AlertActive = true;
+   vector threat;
+   bool known = ThreatSide(record, threat);
+   int handled = 0;
+   foreach (EXPG_GarrisonMember patroller : record.Members)
+   {
+    EXPG_PatrolControl patrol = patroller.Patrol;
+    if (handled >= 2) { break; }
+    if (patroller.CacheMember.Dead || !patrol) { continue; }
+    if (!patrol.InAlert())
+    {
+     handled++;
+     PlaceAlert(plan, patrol, threat, known, false);
+     continue;
+    }
+    if (patrol.HoldsWindow() || !patrol.RetryDue()) { continue; }
+    handled++;
+    patrol.DelayRetry(5);
+    PlaceAlert(plan, patrol, threat, known, true);
+   }
+   return;
+  }
+  if (!record.AlertActive || now < record.NextRelease) { return; }
+  foreach (EXPG_GarrisonMember holder : record.Members)
+  {
+   if (holder.CacheMember.Dead || !holder.Patrol || !holder.Patrol.InAlert()) { continue; }
+   holder.Patrol.Calm();
+   record.NextRelease = now + Math.RandomFloat(3, 8);
+   return;
+  }
+  record.AlertActive = false;
+ }
+
+ // Threat side: the squad's known targets (at most 8, owned by its perception),
+ // else the last detected enemy position of the building (30 s), else unknown.
+ protected bool ThreatSide(EXPG_GarrisonRecord record, out vector threat)
+ {
+  threat = record.Plan.ThreatPos;
+  bool known = Now() - record.Plan.ThreatAt < 30;
+  if (!record.Group) { return known; }
+  SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(record.Group.FindComponent(SCR_AIGroupUtilityComponent));
+  if (!utility || !utility.m_Perception) { return known; }
+  vector sum = vector.Zero;
+  int count = 0;
+  foreach (SCR_AITargetInfo target : utility.m_Perception.m_aTargets)
+  {
+   if (!target) { continue; }
+   sum = sum + target.m_vWorldPos;
+   count++;
+   if (count >= 8) { break; }
+  }
+  if (count == 0) { return known; }
+  threat = sum * (1.0 / count);
+  return true;
+ }
+
+ // One patroller, one breadth-first pass: the best of three free windows (steps
+ // x 0.75, plus 3 x (1 - facing) towards a known threat; a window looking more
+ // than 107 degrees away from it is skipped), else the nearest free door or
+ // stairs watch point within 12 steps, else hold. Each claim is unique and 1.5 m
+ // from every other.
+ protected void PlaceAlert(EXPG_BuildingPlan plan, EXPG_PatrolControl patrol, vector threat, bool known, bool windowOnly)
+ {
+  SCR_ChimeraCharacter actor = patrol.GetActor();
+  if (!actor) { return; }
+  int from = plan.NearestNode(actor.GetOrigin(), 1.5, false);
+  if (from < 0) { from = patrol.ClaimedNode(); }
+  if (from < 0) { return; }
+  plan.DistancesFrom(from, 40);
+  array<int> best = {};
+  array<float> scores = {};
+  foreach (int window : plan.WindowNodes)
+  {
+   int hops = plan.Hops(window);
+   if (hops < 0 || !plan.StopFree(window, actor)) { continue; }
+   float score = hops * 0.75;
+   if (known)
+   {
+    vector toward = threat - plan.Nodes[window].Position;
+    toward[1] = 0;
+    if (toward.Length() > 0.1)
+    {
+     toward.Normalize();
+     float facing = vector.Dot(plan.Nodes[window].Look, toward);
+     if (facing < -0.3) { continue; }
+     score += 3 * (1 - facing);
+    }
+   }
+   EXPG_BuildingPlan.KeepBest(best, scores, window, score, 3);
+  }
+  foreach (int choice : best)
+  {
+   if (patrol.Alert(choice, plan.Nodes[choice].Look, true, plan.Hops(choice))) { return; }
+  }
+  if (windowOnly) { return; }
+  best.Clear();
+  scores.Clear();
+  foreach (int watch : plan.WatchNodes)
+  {
+   int watchHops = plan.Hops(watch);
+   if (watchHops < 0 || watchHops > 12 || !plan.StopFree(watch, actor)) { continue; }
+   EXPG_BuildingPlan.KeepBest(best, scores, watch, watchHops, 3);
+  }
+  foreach (int point : best)
+  {
+   if (patrol.Alert(point, plan.Nodes[point].Look, false, plan.Hops(point))) { return; }
+  }
+  patrol.HoldHere();
+ }
+
+ // A living guard who is no longer in this squad (an AI Surrender prisoner, a
+ // Game Master split or regroup, ungrouped) is forgotten alone: never cached,
+ // respawned or deleted by this garrison; the other guards keep their posts and
+ // caching. A possessed guard is not a leaver (the player's group is not his).
+ protected void ForgetLeavers(EXPG_GarrisonRecord record)
+ {
+  for (int leftIndex = record.Members.Count() - 1; leftIndex >= 0; leftIndex--)
+  {
+   EXPG_GarrisonMember leaver = record.Members[leftIndex];
+   SCR_ChimeraCharacter leaverActor = leaver.CacheMember.Entity;
+   if (leaver.CacheMember.Dead || !leaverActor || leaverActor.GetCharacterGroup() == record.Group || IsDeadActor(leaverActor)) { continue; }
+   CharacterControllerComponent leaverController = leaverActor.GetCharacterController();
+   if (leaverController && leaverController.IsPlayerControlled()) { continue; }
+   string departure = "moved to another squad";
+   if (leaverActor.EBG_HasLeftSquad()) { departure = "left the squad for good"; }
+   leaver.ReleaseControl();
+   record.Members.RemoveOrdered(leftIndex);
+   PrintFormat("[EXPG Garrison] group=%1 guard %2 (%3) %4; forgotten, the other guards keep their posts", record.Group, leaver.CacheMember.Id, leaverActor, departure);
+  }
+ }
+
+ // The first living guard who is not under garrison control (for the hold reason).
+ protected string UnboundGuard(EXPG_GarrisonRecord record)
+ {
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   if (member.CacheMember.Dead || member.Post || member.Patrol) { continue; }
+   if (!member.Arrived) { return string.Format("guard %1 is still being moved to his post", member.CacheMember.Id); }
+   return string.Format("guard %1 is not under garrison control yet (vehicle, another squad or a native control not ready)", member.CacheMember.Id);
+  }
+  return "a guard is not under garrison control yet";
+ }
+
  protected void Tick(EXPG_GarrisonRecord record)
  {
-  if (!record.Group) { record.ReleaseRequested = true; }
-  if (!record.Plan.Valid()) { record.ReleaseRequested = true; }
-  // One floor support check per group service catches damaged/removed posts
-  // without rescanning the whole building or teleporting survivors into rubble.
+  if (!record.Group) { record.RequestRelease("Squad deleted"); }
+  if (!record.Plan.Valid()) { record.RequestRelease("Building moved or was replaced"); }
+  // One floor support check per group service catches damaged or removed floors
+  // without rescanning the whole building. Never a release and never a teleport:
+  // a guard whose floor gives way falls and holds where he lands (PostControl);
+  // until then caching is held. Debris on a post is no floor loss while the guard
+  // still stands on something.
   if (!record.Members.IsEmpty())
   {
    EXPG_GarrisonMember check = record.Members[record.SafetyCursor++ % record.Members.Count()];
+   SCR_ChimeraCharacter standing = check.CacheMember.Entity;
    bool supported = true;
-   if (!check.CacheMember.Dead && check.NodeIndex >= 0) { supported = record.Plan.Supported(record.Plan.Nodes[check.NodeIndex].Position, 0.2, check.CacheMember.Entity); }
-   else if (!check.CacheMember.Dead) { supported = record.Plan.GroundSupported(check.PostPosition, 0.2, check.CacheMember.Entity); }
-   if (!supported)
-   { record.Report("Structure position destroyed; releasing survivors"); record.ReleaseRequested = true; }
+   if (!check.CacheMember.Dead && check.NodeIndex >= 0) { supported = record.Plan.Supported(record.Plan.Nodes[check.NodeIndex].Position, 0.2, standing); }
+   else if (!check.CacheMember.Dead) { supported = record.Plan.GroundSupported(check.PostPosition, 0.2, standing); }
+   if (!supported && standing && !record.Full && !record.Simulation) { supported = record.Plan.GroundSupported(standing.GetOrigin(), 0.2, standing); }
+   if (!supported && !check.FloorLost)
+   { PrintFormat("[EXPG Garrison] group=%1 guard %2: the floor under his post gave way; nobody released", record.Group, check.CacheMember.Id); }
+   check.FloorLost = !supported;
   }
   if (record.Full)
   {
@@ -1153,14 +1830,15 @@ class EXPG_GarrisonManager
    bool wake = record.ReleaseRequested || !record.Group || CacheModeInUse(record.Group) != 1;
    if (record.Group && Near(record, record.Group.EXPG_WakeDistance)) { wake = true; }
    if (!record.Simulation.Suspended) { wake = true; }
-   // Death, external deletion and possession must release sleeping originals,
-   // even when no player has crossed the distance boundary.
+   // Death, external deletion, a squad change and possession wake the sleeping
+   // originals, even when no player has crossed the distance boundary. Awake,
+   // each is handled for that guard alone; nobody else is released.
    foreach (EXPG_GarrisonMember sleeping : record.Members)
    {
    SCR_ChimeraCharacter actor = sleeping.CacheMember.Entity;
    if (sleeping.CacheMember.Dead) { continue; }
    if (IsDeadActor(actor)) { wake = true; break; }
-   if (!actor || actor.GetCharacterGroup() != record.Group || actor.EBG_WasPlayerControlled()) { wake = true; record.ReleaseRequested = true; break; }
+   if (!actor || actor.GetCharacterGroup() != record.Group || actor.EBG_WasPlayerControlled()) { wake = true; break; }
     CharacterControllerComponent controller = actor.GetCharacterController();
     if (!controller || controller.IsDead() || controller.IsPlayerControlled()) { wake = true; break; }
    }
@@ -1169,41 +1847,119 @@ class EXPG_GarrisonManager
   if (record.ReleaseRequested) { record.FinishRelease(); return; }
   if (!record.Ready)
   {
-   if (Now() - record.Created > 45) { record.Report("Squad initialization timed out; retained as a normal squad"); record.ReleaseRequested = true; }
+   if (Now() - record.Created > 45) { record.RequestRelease("Squad initialization timed out; retained as a normal squad"); }
    else { Initialize(record); }
    return;
   }
-  // A guard who left his squad for good (an AI Surrender prisoner) is forgotten:
-  // never cached, respawned or deleted; the other guards keep posts and caching.
-  for (int leftIndex = record.Members.Count() - 1; leftIndex >= 0; leftIndex--)
-  {
-   EXPG_GarrisonMember leaver = record.Members[leftIndex];
-   SCR_ChimeraCharacter leaverActor = leaver.CacheMember.Entity;
-   if (leaver.CacheMember.Dead || !leaverActor || !leaverActor.EBG_HasLeftSquad() || leaverActor.GetCharacterGroup() == record.Group || IsDeadActor(leaverActor)) { continue; }
-   leaver.ReleaseControl();
-   record.Members.RemoveOrdered(leftIndex);
-   PrintFormat("[EXPG Garrison] group=%1 guard %2 left the squad for good; forgotten, garrison kept", record.Group, leaverActor);
-  }
+  ForgetLeavers(record);
   int alive;
   bool unsafe;
+  // Why caching is held this Tick (the first reason found; NoteHold shows it).
+  string hold;
   foreach (EXPG_GarrisonMember member : record.Members)
   {
    EBG_CacheMember cached = member.CacheMember;
    if (cached.Dead) { continue; }
    SCR_ChimeraCharacter actor = cached.Entity;
-   if (!actor) { record.ReleaseRequested = true; unsafe = true; continue; }
+   // Deleted (a Game Master, a cleanup): gone for good and never respawned; the
+   // other guards keep their posts.
+   if (!actor)
+   {
+    cached.Dead = true;
+    member.ReleaseControl();
+    unsafe = true;
+    PrintFormat("[EXPG Garrison] group=%1 guard %2 was deleted; never respawned, the other guards keep their posts", record.Group, cached.Id);
+    continue;
+   }
    CharacterControllerComponent controller = actor.GetCharacterController();
    if (IsDeadActor(actor)) { cached.Dead = true; member.ReleaseControl(); continue; }
    alive++;
    cached.Position = actor.GetOrigin();
-   if (!controller || controller.IsPlayerControlled() || actor.EBG_WasPlayerControlled() || actor.GetCharacterGroup() != record.Group)
-   { record.ReleaseRequested = true; unsafe = true; member.ReleaseControl(); continue; }
-   if (member.Post && !member.Post.Tick()) { record.ReleaseRequested = true; unsafe = true; }
-   if (member.Patrol && !member.Patrol.Tick()) { record.ReleaseRequested = true; unsafe = true; }
-   if (!EBG_SimulationCache.Unsupported(actor, CacheModeInUse(record.Group) == 1).IsEmpty()) { unsafe = true; }
+   if (!controller)
+   {
+    unsafe = true;
+    if (hold.IsEmpty()) { hold = string.Format("guard %1 has no character controller", cached.Id); }
+    continue;
+   }
+   // Possessed: free while a player has him; afterwards he holds where he was left
+   // (BindControls). Unit Caching never caches a once-possessed soldier.
+   if (controller.IsPlayerControlled())
+   {
+    if (member.Post || member.Patrol)
+    { PrintFormat("[EXPG Garrison] group=%1 guard %2 (%3) possessed by a player; the other guards keep their posts", record.Group, cached.Id, actor); }
+    cached.WasPlayer = true;
+    member.ReleaseControl();
+    unsafe = true;
+    if (hold.IsEmpty()) { hold = string.Format("guard %1 is possessed by a player", cached.Id); }
+    continue;
+   }
+   if (actor.EBG_WasPlayerControlled()) { cached.WasPlayer = true; }
+   // A lost control (a vehicle, another agent) is that guard's matter only: he is
+   // bound again by BindControls when he can be.
+   if (member.Post && !member.Post.Tick()) { member.Post = null; unsafe = true; }
+   // Displaced and come to rest (conscious, still): a plausible spot becomes his
+   // post; any other spot (more than 6 m from his post, off the floor, on the roof
+   // or outside the building) never does, and he is sent back to his post.
+   vector anchor;
+   if (member.Post && member.Post.TakeMoved(anchor))
+   {
+    vector before = member.PostPoint();
+    float shift = vector.Distance(before, anchor);
+    if (shift <= 0.5)
+    {
+     member.Returning = false;
+     member.Post.Return(before);
+    }
+    else if (cached.WasPlayer || member.Plausible(anchor, actor))
+    {
+     member.Returning = false;
+     member.Anchor(anchor);
+     PrintFormat("[EXPG Garrison] group=%1 guard %2 (%3) moved %4 m; holds where he stands", record.Group, cached.Id, actor, shift);
+    }
+    else if (!member.Returning)
+    {
+     member.Returning = true;
+     member.ReturnSent = -1000;
+     PrintFormat("[EXPG Garrison] group=%1 guard %2 (%3) came to rest %4 m from his post at %5, not a plausible post; sent back to it", record.Group, cached.Id, actor, shift, before);
+    }
+   }
+   if (member.Post && member.Returning)
+   {
+    unsafe = true;
+    if (hold.IsEmpty()) { hold = string.Format("guard %1 is being sent back to his post", cached.Id); }
+    if (member.OnPost(actor.GetOrigin()))
+    {
+     member.Returning = false;
+     member.Post.Return(member.PostPoint());
+    }
+    else if (Now() - member.ReturnSent >= 3 && EXPG_GarrisonMember.AtRest(actor))
+    {
+     member.ReturnSent = Now();
+     member.Post.Return(member.PostPoint());
+     EXPG_GarrisonMember.Teleport(actor, member.PostPoint(), member.PostLook);
+    }
+   }
+   if (member.Patrol)
+   {
+    if (!member.Patrol.Tick()) { member.Patrol = null; unsafe = true; }
+    // The post a patroller holds is his current claim (floor checks, parking).
+    else if (member.Patrol.ClaimedNode() >= 0) { member.NodeIndex = member.Patrol.ClaimedNode(); }
+   }
+   if (member.FloorLost)
+   {
+    unsafe = true;
+    if (hold.IsEmpty()) { hold = string.Format("the floor under guard %1's post gave way", cached.Id); }
+   }
+   string problem = EBG_SimulationCache.Unsupported(actor, CacheModeInUse(record.Group) == 1);
+   if (!problem.IsEmpty())
+   {
+    unsafe = true;
+    if (hold.IsEmpty()) { hold = string.Format("guard %1: %2", cached.Id, problem); }
+   }
   }
   // A casualty may remain in the native agent list during its removal callback.
   // Compare identity instead of counts, so one death does not release the guards.
+  // A soldier who is not a guard (added by a Game Master) holds caching only.
   array<AIAgent> currentAgents = {};
   record.Group.GetAgents(currentAgents);
   foreach (AIAgent current : currentAgents)
@@ -1213,17 +1969,38 @@ class EXPG_GarrisonManager
    {
     if (original.CacheMember.Entity == current.GetControlledEntity()) { known = true; break; }
    }
-   if (!known) { record.ReleaseRequested = true; break; }
+   if (known) { continue; }
+   unsafe = true;
+   if (hold.IsEmpty()) { hold = "a soldier who is not one of its guards joined the squad (posts kept)"; }
+   break;
   }
-  if (alive == 0) { record.ReleaseRequested = true; }
+  if (alive == 0) { record.RequestRelease("No surviving guards"); }
   if (record.ReleaseRequested) { record.FinishRelease(); return; }
-  if (!record.BindControls()) { record.Report("Guard controls unavailable; releasing survivors"); record.FinishRelease(); return; }
+  if (!record.BindControls())
+  {
+   unsafe = true;
+   if (hold.IsEmpty()) { hold = UnboundGuard(record); }
+  }
+  else if (record.Status == "Native controls are initializing") { record.Report("Garrison active"); }
+  ServiceAlert(record);
   vector settings = EXPG_GarrisonSettings.Normalize(Vector(record.Group.EXPG_WakeDistance, record.Group.EXPG_SleepDistance, record.Group.EXPG_CacheMode));
   record.Group.EXPG_WakeDistance = settings[0];
   record.Group.EXPG_SleepDistance = settings[1];
   record.Group.EXPG_CacheMode = settings[2];
-  if (unsafe || record.Group.EXPG_CacheMode == 0 || Near(record, record.Group.EXPG_SleepDistance) || Now() - record.Created < 15)
-  { record.ClearSince = -1; return; }
+  // Awake by design (caching Off, a player near, just placed or woken): no hold.
+  if (record.Group.EXPG_CacheMode == 0 || Near(record, record.Group.EXPG_SleepDistance) || Now() - record.Created < 15)
+  { record.ClearSince = -1; ReleaseSettle(record); record.ClearHold(); return; }
+  // An alarm, like combat, keeps the garrison awake until it calms down; any
+  // other hold names its reason ("Cache held: ...").
+  if (record.AlertActive || unsafe)
+  {
+   if (record.AlertActive) { hold = "combat alarm in the building within the last minute"; }
+   record.ClearSince = -1;
+   ReleaseSettle(record);
+   record.NoteHold(hold, Now());
+   return;
+  }
+  record.ClearHold();
   if (record.ClearSince < 0) { record.ClearSince = Now(); }
   if (Now() - record.ClearSince < 30 || Now() < record.RetryAt) { return; }
   record.RetryAt = Now() + 5;

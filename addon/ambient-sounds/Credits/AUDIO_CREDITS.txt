@@ -264,3 +264,28 @@ Changes: L/R averaged to mono; the last 2.0 s equal-power crossfaded into the
 start for a seamless loop; gain x0.411 (-7.7 dB) to RMS 1700, matching
 EAS_Crowd_Angry (RMS 1673). The 44.1 kHz rate was kept; the other crowd
 derivatives are 24 kHz. No audible quality or loop certification is implied.
+
+## Vinny Sounds unchanged recordings — Vinuesa — APL-SA
+
+Thirteen recordings from **Vinny - Sounds** (Workshop ID `61D358A07E15C5FE`, by
+**Vinuesa**) were added on 2026-10-05 byte-for-byte, with their original resource
+GUIDs, for the placed "Sound: ..." modules. They are distributed under the same
+APL-SA grant, attribution, conditions and authorship caveats as the Vinny
+derivatives above. `EAS_Radio_HanoiHannah.wav` also plays from the radios (radio
+recording 13, Hanoi Hannah broadcast). No changes were made to these files.
+
+| File | Resource GUID | SHA-256 |
+|---|---|---|
+| EAS_Radio_HanoiHannah.wav | D068B1B8A04135E3 | 455c5386c42c44a14ece8ea82ff214b04eef42f9f9da79fa5641f4ac268c796e |
+| EAS_Drone_Overhead.wav | 5DC17FDC2CBD471E | dfbe07e3c5ad1cd5fe45838d7eee42ce0c2045244c049efa60d207b5af2ba354 |
+| EAS_Crowd_Market.wav | 5B8228A2A237BC1F | 344be669c4875eb387a470e83df29c3ef5bca0f51a89871577860b88ac166d92 |
+| EAS_Crowd_MarketSeller.wav | A55654F64F0F4A7C | 7c1448b92d5598d83128f93a8e3654916be262e2c12c24f37f13de3322c12b6a |
+| EAS_Crowd_MuslimPrayer.wav | E60E56801E602B25 | 4ff38ed62dc3c5d10a68318a1d62e61d2fd363fc105bd1e0e1640b41f25e4848 |
+| EAS_Crowd_StreetSinging.wav | 00F5A178028DF1DD | f05568d5a0293a7222a24bed9acb2d4b95025822dcb6dd4bb18da4bfec01b369 |
+| EAS_CarAlarm.wav | A5F8A80F6FE55A93 | 56d691def48b4433a81028231fe53f2ad797818384297e8e00612d19669e40f2 |
+| EAS_ChurchBell.wav | ADC1AC696E170A8E | 57b66c070b1121bf436d71026703c55790f347872c01baf82a4431a2f6aed89a |
+| EAS_DistantBarking.wav | 42E0F3AE6AB4D1E4 | 33e6f4c0dfcb5aa830f2f3a9cea29418b160e504cc61eb188bf7bc5189b5713b |
+| EAS_DistantSheep.wav | 82F75A6A948E4248 | 4eab7568dd7fd2db82d16b0241335ba7efa4f9c889473e6a86d49c123b587a27 |
+| EAS_NokiaRingtone.wav | 03CB733A77468732 | 5851bea634055140fcab3a1fee547e8b1fa2bce9c1cd942101163f8f07f95218 |
+| EAS_PoliceCar.wav | 5778AF084F9DFAB7 | f096c100fa09452d64d000e12e821bec27f0c264a945d8335183658043e10f2f |
+| EAS_TrafficMedium.wav | 29410D46622CE6A8 | c7d7b8d79807bb0fd19bd18a1834c01c0933463dec99c3b7b388683c67afbfba |

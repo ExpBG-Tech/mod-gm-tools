@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{A5B41CA1F3B60085}EBMArt/NewProps/Tela_Projetor/Data/telao.emat"
+ Configurations {
+  EMATResourceClass PC {}
+  EMATResourceClass HEADLESS : PC {}
+ }
+}

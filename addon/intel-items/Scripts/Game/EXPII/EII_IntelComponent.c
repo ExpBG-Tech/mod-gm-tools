@@ -9,6 +9,10 @@ class EII_IntelComponent : ScriptComponent
  static const ResourceName SOUND_PROJECT = "{E110000000000030}Audio/EXPII/EII_Startup.acp";
  // Nonzero only during synchronous CDF restoration; pickups during restore stay silent.
  static int RestoreDepth;
+ // Server: every intel item in play, for read-only lookups by other modules (AI Surrender
+ // interrogation). Non-owning: an entry turns null when its item is deleted, and OnDelete
+ // removes it. No item state is kept or changed here.
+ protected static ref array<IEntity> s_aRegistered = {};
 
  [Attribute("", UIWidgets.EditBox, "Intel title (up to 128 UTF-8 bytes)"), RplProp()]
  protected string m_sTitle;
@@ -53,6 +57,17 @@ class EII_IntelComponent : ScriptComponent
  {
   return title.Length() <= TITLE_LIMIT && content.Length() <= CONTENT_LIMIT;
  }
+ // Server: copies the intel items currently in play (wherever they are: loose, in a
+ // container or carried) into outItems and returns their count. Read-only.
+ static int GetRegistered(notnull array<IEntity> outItems)
+ {
+  for (int i = s_aRegistered.Count() - 1; i >= 0; i--)
+  {
+   if (!s_aRegistered[i]) s_aRegistered.Remove(i);
+  }
+  outItems.Copy(s_aRegistered);
+  return outItems.Count();
+ }
  bool SetText(string title, string content)
  {
   if (!IsAuthority() || !ValidText(title, content)) return false;
@@ -93,6 +108,7 @@ class EII_IntelComponent : ScriptComponent
   if (!GetGame().InPlayMode()) return;
   m_Item = InventoryItemComponent.Cast(owner.FindComponent(InventoryItemComponent));
   if (!IsAuthority()) return;
+  s_aRegistered.Insert(owner);
   if (m_Item) m_Item.m_OnParentSlotChangedInvoker.Insert(OnSlotChanged);
   SCR_GarbageSystem garbage = SCR_GarbageSystem.GetByEntityWorld(owner);
   if (garbage) garbage.UpdateBlacklist(owner, true);
@@ -143,6 +159,7 @@ class EII_IntelComponent : ScriptComponent
  override void OnDelete(IEntity owner)
  {
   if (m_Item) m_Item.m_OnParentSlotChangedInvoker.Remove(OnSlotChanged);
+  if (s_aRegistered) s_aRegistered.RemoveItem(owner);
   Trace("deleted; local audio released");
   StopAudio();
   super.OnDelete(owner);

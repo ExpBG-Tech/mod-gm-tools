@@ -1,0 +1,82 @@
+FrameWidgetClass {
+ Name "ETW_FadeRoot"
+ Slot FrameWidgetSlot {
+  Anchor 0 0 1 1
+  PositionX 0
+  OffsetLeft 0
+  PositionY 0
+  OffsetTop 0
+  SizeX 0
+  OffsetRight 0
+  SizeY 0
+  OffsetBottom 0
+ }
+ "Z Order" 1000
+ Color 1 1 1 1
+ {
+  ImageWidgetClass {
+   Name "ETW_Black"
+   Slot FrameWidgetSlot {
+    Anchor 0 0 1 1
+    PositionX 0
+    OffsetLeft 0
+    PositionY 0
+    OffsetTop 0
+    SizeX 0
+    OffsetRight 0
+    SizeY 0
+    OffsetBottom 0
+   }
+   Opacity 0
+   Color 0 0 0 1
+  }
+  TextWidgetClass {
+   Name "ETW_Text"
+   Slot FrameWidgetSlot {
+    Anchor 0 0.5 1 0.5
+    PositionX 40
+    OffsetLeft 40
+    PositionY -70
+    OffsetTop -70
+    SizeX -80
+    OffsetRight 40
+    SizeY 80
+    OffsetBottom -10
+   }
+   Opacity 0
+   Color 1 1 1 1
+   Text ""
+   "Font Size" 48
+   "Min Font Size" 24
+   "Horizontal Alignment" Center
+   "Vertical Alignment" Center
+   FontProperties FontProperties {
+    Font "{EABA4FE9D014CCEF}UI/Fonts/RobotoCondensed/RobotoCondensed_Bold.fnt"
+   }
+  }
+  TextWidgetClass {
+   Name "ETW_Time"
+   Slot FrameWidgetSlot {
+    Anchor 0 0.5 1 0.5
+    PositionX 40
+    OffsetLeft 40
+    PositionY 20
+    OffsetTop 20
+    SizeX -80
+    OffsetRight 40
+    SizeY 50
+    OffsetBottom -70
+   }
+   Opacity 0
+   Color 0.8 0.8 0.8 1
+   Text ""
+   "Font Size" 30
+   "Min Font Size" 18
+   "Horizontal Alignment" Center
+   "Vertical Alignment" Center
+   FontProperties FontProperties {
+    Font "{3E7733BAC8C831F6}UI/Fonts/RobotoCondensed/RobotoCondensed_Regular.fnt"
+   }
+  }
+ }
+}

@@ -1,5 +1,218 @@
 # EXPBG GM Tools changelog
 
+## 0.1.10
+
+- New module Time and Weather (Systems): "Weather Transition" blends the
+  weather to a chosen target (clouds, rain, fog, wind) over 1-120 real minutes
+  (default 10) instead of switching at once. Saving its settings starts the
+  transition; a new one takes over smoothly from the current values. While the
+  module exists, weather picked in Scenario Properties blends too (switchable).
+  "Time Skip" fades every screen to black, shows "6 hours later" (editable) and
+  the new time, moves the clock forward (the date rolls over) and fades back in
+  (defaults 6 h, fades 2/3/2 s). Not yet compiled or tested in the game; the
+  card art follows.
+- Game Master entity browser: pack items no longer start with "EXPBG", so the
+  item name is readable at a glance; they still carry the EXPBG logo and EXPBG
+  faction. For example "Radio Black", "Sound: Church bell", "Ambient
+  Civilians", "Intel - Server Rack A", "AI Cache Zone" and "Briefing
+  Projector Screen". A browser search for "EXPBG" no longer finds them by
+  name. Context actions (EXPBG Add Garrison, EXPBG: Brief on map), attribute
+  tabs and the EXPBG label keep their names. A portable guard now rejects
+  entity names with the prefix.
+- Garrison: guards no longer stand where they block a door. In a live test 17
+  guards held a two-storey Morton house through four firefights, but one stood
+  right behind the front door, so it could not be opened (a guard on a post
+  cannot step aside). Every door leaf of the building now has a keep-out zone:
+  its full swing on both sides (native doors open either way) and the doorway
+  1.5 m deep on each side. No post, patrol stop or alarm position lies in it,
+  including entrance posts, extra positions of added squads and places around
+  the building (nobody stands on the step in front of a door); soldiers still
+  walk through. Door guards now stand 2-4 m inside the outer door, at least
+  1.2 m deep, preferably diagonal to the doorway, facing it. Small houses may
+  offer a few fewer posts.
+- Garrison: soldiers beyond the window, door and stair posts now patrol inside
+  the building. Each walks at walking pace to a free stop of the same indoor
+  area (stairs included, never outside, never in a doorway), stays 10-30 s
+  watching a hallway or doorway, then moves on; stops are claimed, at least
+  1.5 m from every other guard, so patrollers never bunch up, and enough stops
+  stay free that they can always move on. Added squads take free posts first,
+  then patrol inside while there is room, then other window, door and stair
+  positions that leave every patrol stop free, then stand around the building
+  (now at most about 25 m from its walls). When a firefight starts
+  (any guard of the building is shot at, injured or sees an enemy) each
+  patroller runs to the nearest free window, preferably facing the enemy; if
+  none is free he watches a door or stairs from a free spot nearby, or holds
+  his stop. A window post whose guard was killed can be taken during an alarm
+  (unless the body lies on it); posts are never refilled in peace. A minute after
+  the last alarm they return to patrol one by one. Caching waits until every
+  patroller stands at a stop (at most about 20 s), and Full and Simulation
+  caching bring patrollers back as patrollers at their stop; casualties are
+  never replaced. A patroller whose walk fails steps onto a free stop next to
+  him or walks back to the stop he came from, so he never stands in a hallway
+  beside another guard, and after Simulation caching each patroller first
+  stands at his stop again. Patrol movement passed the native interior test on
+  a two-storey Everon town house.
+- Garrison log: the "added to building" line also counts soldiers patrolling
+  inside.
+- Garrison: a guard on a post now stays there. Live report: guards left their
+  spots and ran around, and their garrison was no longer cached. One guard
+  knocked more than 1.5 m off his spot (ACE ragdoll or unconsciousness, a blast,
+  a push through a doorway, an ACE carry or drag, a Game Master move), possessed,
+  moved to another squad or deleted released the whole squad without a word, and
+  released soldiers are ordinary AI (EXPBG RO AI sends them to cover). Now each
+  case concerns that guard alone: knocked off his spot, he holds where he came to
+  rest (he never walks back and keeps the plan position if one is within 0.5 m)
+  when that spot is plausible: within 6 m of his post and, for a post in the
+  building, on its indoor floor (never on the roof or outside); otherwise, once
+  he is conscious and still, he is put back on his post. A newly placed soldier
+  is bound only once he stands on his post (the move is sent again if it has not
+  landed), so nobody takes his spawn point as his post;
+  possessed, he holds where the player leaves him; moved to another squad, he is
+  forgotten; deleted, he is never respawned. The others keep their posts and
+  their caching. Guards on posts still crouch, go prone, turn, aim and fire in
+  place; only patrollers move, and only inside (one who cannot patrol for 10 s
+  holds where he stands). A whole garrison is released only by Force Move, the
+  Release attribute, Unit Caching (regroup, Prepare for Save), a deleted squad, a
+  moved or replaced building or the last guard's death. The server log then
+  prints "[EXPG Garrison] group=... released (reason)" and the garrison's status
+  shows "Released: reason".
+- Garrison caching: a garrison that should cache but cannot says why in its
+  status and the server log, for example "Cache held: guard 3: Unsupported life
+  or movement state" (unconscious), a bleeding or possessed guard, a soldier who
+  is not one of its guards, or a combat alarm. Full cache refusals name the guard
+  or the squad reason. A Full restore no longer stays frozen when one survivor's
+  spot fails its safety check (after 10 s he wakes where he stands) or a survivor
+  is missing (he counts as dead and is never respawned). A soldier who was ever
+  possessed is never cached (Unit Caching rule), so his garrison stays awake
+  while he lives; the status says so.
+- AI Surrender: new setting "Commander: grenade suicide instead of surrender
+  (%)". It defaults to 0, so nothing changes until a Game Master raises it.
+  When a broken squad's leader would surrender, this chance is rolled once for
+  him. If it hits, he does not surrender: he stops fighting, crouches, places a
+  fragmentation grenade at his feet 1-2.5 s later, and it goes live a second
+  after that. The grenade's own fuse (about 4 s) and explosion do the rest, so
+  the blast also hurts anyone close by, including his surrendering men. The
+  rest of the squad surrenders as usual. The leader is the squad's leader; if
+  the squad has none, its highest-ranking able soldier. "Commander must carry a
+  grenade" (default ON) means he uses one of his own grenades, and a leader
+  without one surrenders; with it OFF, such a leader gets a vanilla M67 (US) or
+  RGD-5 (other sides). Players, possessed soldiers, soldiers in vehicles and
+  cached squads are never affected; a grenade that someone picks up, or whose
+  leader a Game Master possesses, before it goes live is never set live. He
+  does not shoot himself, because vanilla has no animation for that. Saves now
+  store the commander settings; older saves still load, with the two new
+  settings at their defaults, but a save made with this version does not load
+  in 0.1.9. The native fixture `tests/ESR_CommanderGrenadeGameplay.c` is
+  written but has not been run yet.
+- AI Surrender: new setting "Interrogation: reveal intel items (%)" (default
+  30). The first time a prisoner answers anything but a refusal, this chance is
+  rolled once, on its own; the squad and identity chances are unchanged. If it
+  hits, he also points out the nearest intel items (EXPBG Intel Items, at most
+  three) within the "Reveal search radius (m)": lying on the ground, in a crate
+  or vehicle, or on a body. Items a player carries, items he carries himself,
+  and laptops or tablets a player has already read or picked up are left out
+  (Intel Items keeps no read state for notebooks and manuals, so those count
+  until a player carries them). Each item gets a map marker "Intel
+  (interrogation)" for the interrogating player's faction, kept or removed like
+  the squad marker ("Intel marker lifetime"), and his answer ends with a line
+  such as "He also points out 2 intel items: about 75 m north-east, about 150 m
+  south." Asking again repeats it without new markers. Saves now store
+  thirteen AI Surrender settings; older saves still load, with the new setting
+  at 30%. Intel Items now keeps a read-only server list of the intel items in
+  play for this search. The native fixture `tests/ESR_IntelRevealGameplay.c` is
+  written but has not been run yet.
+- AI Surrender: surrender and interrogation chances per squad and per soldier.
+  A new "EXPBG Surrender & Intel" tab in the Edit properties of an AI squad and
+  of an AI soldier (shown while an AI Surrender module is placed) has "Surrender
+  chance (%)", "Interrogation: reveal squad (%)", "Interrogation: identity (%)"
+  and "Interrogation: reveal intel items (%)", 0-100% in steps of 5. Each starts
+  on "Use module setting" (squad) or "Use squad or module setting" (soldier), so
+  nothing changes until a Game Master sets one. A soldier's own value wins over
+  his squad's, and the squad's over the module. A squad's values apply to all
+  its soldiers, including later reinforcements. Whether a squad breaks is still
+  decided by the module's casualty threshold; then every able soldier rolls his
+  own surrender chance, and a set chance is exact (the random factor only
+  spreads the module chance), so 0% never surrenders and 100% always does. A
+  prisoner takes his squad's interrogation values with him when he surrenders,
+  so later changes to the squad do not affect prisoners already taken; his own
+  values can still be changed while he is a prisoner. The values stay with the
+  squad and soldier through Unit Caching and Garrison caching (Full and
+  Simulation) and are kept by native saves and by CDF Game Master Save; missions
+  and cache snapshots saved before this version load with no overrides. With
+  Diagnostics on, the server logs each change, each squad's chance and source,
+  and each prisoner's effective chances. The native fixture
+  `tests/ESR_OverrideGameplay.c` is written but has not been run yet.
+- AI Global Skills: rules of engagement per soldier. The squad's rules of
+  engagement move from "EXPBG ROE" in the vanilla Group tab to "Rules of
+  engagement (squad)" in a new "EXPBG Rules of Engagement" tab, next to a new
+  "Rules of engagement (soldier)" on AI soldiers with the same choices (Return
+  Fire Only, Fire on Sight, Warning Shots First, Exempt) and "Use squad setting"
+  as the default. A soldier's own choice wins over his squad's, and the squad's
+  over the module default. With his own Return Fire Only he holds fire until his
+  squad is fired upon, even in a Fire on Sight squad; with Warning Shots First he
+  fires the warning rounds himself and turns lethal 5 s later. Player squads keep
+  vanilla behaviour. The soldier's choice survives Unit Caching and Garrison
+  caching and is kept by native saves (earlier saves still load, and a save
+  without soldier choices still loads in 0.1.9) and CDF Game Master Save. Squad
+  rules of engagement now also survive Unit Caching Full caching, which
+  recreates the squad.
+- Advanced Briefing Map: the map on the board was a quarter turn round (north
+  pointed left, the title ran up the left edge), squeezed and cut off on one
+  side. Cause: the wall-map model shows its render texture turned 90 degrees
+  and uses only three quarters of it. The board is now drawn upright in its own
+  canvas, sized to the screen surface's texture area, and handed to the
+  model's render texture turned the other way, so north is up, the title reads
+  left to right and nothing is cut off or stretched. Markers and drawn lines
+  turn with the map and stay on their places.
+- Advanced Briefing Map: the board now shows roads, buildings, place names,
+  contours and the grid like the in-game map. Before, it showed only the
+  world's map image (terrain shading). It now borrows the game's own map
+  renderer, styled by the scenario's map settings, for the briefer's view. One
+  board per player draws it, and only while that player's own map is closed: a
+  second board nearby, or the board while your own map is open, shows the plain
+  map image as before. Your own map then opens at your own zoom and position.
+- Advanced Briefing Map: the Game Master item is now "Briefing Projector
+  Screen" (Systems): the Prop - Projector Screen model from Structures For GM
+  byHeine by Heine.CRV (Workshop 628EDA2ABC937159, APL-SA; credited in
+  `docs/licenses/advanced-briefing-map` and the module's Credits folder), about
+  4 x 2.3 m and floor-standing, with the live map on its screen. The picture is
+  on the side the roller case sticks out to; turn that side toward the
+  audience. Heine's screen image and prefab are not included. The wall-map
+  "Briefing Board" stays for existing saves (with the orientation fix) but is no
+  longer offered in the Game Master list. None of this has been checked in the
+  game yet: the turned canvas, the game map on the board, the projector's look
+  and its collision still need a native test.
+- Ambient Destruction: new zone setting "Vehicle types" (after Wreck
+  intensity): Civilian, Military or Both. Both is the default and keeps the
+  previous mix, so existing seeds still give the same layouts. Civilian zones
+  spawn only car, van, bus, taxi, police, ambulance, pickup and civilian truck
+  wrecks; Military zones only BRDM-2, BMP-1, BTR-70, M113, T-62, M151A2, HMMWV,
+  UAZ-469, UAZ-452, M923A1 and Ural-4320 wrecks. Judgement calls: the UAZ-452
+  van and the UAZ-469 count as military (Soviet army vehicles in the base
+  game); police car and ambulance count as civilian. The category of each
+  wreck is data in the wreck catalog, so a mod that adds wrecks can classify
+  them too. Changing the setting regenerates the zone's scenery (destroyed
+  buildings stay destroyed). It is saved with the zone: CDF saves now write
+  zone snapshot schema 3, and older saves still load, as Both, with their
+  wrecks unchanged (0.1.9 and older cannot load the new saves). The native
+  fixture `tests/EAD_VehicleCategoryGameplay.c` is written but has not been
+  run yet.
+- Ambient Sounds: the entity browser offers exactly three radios: Radio Black
+  (civilian) and the military Radio AN/GRC-160 and Radio R123M. Their Recording
+  holds radio chatter and broadcasts only: radio static, Apache, US
+  battlefield, Russian, Chinese and Arab chatter, the per-language Random
+  choices, and now also the Hanoi Hannah broadcast. Nokia ringtone, church
+  bell, firefights and the other non-radio sounds stay on the placed
+  "Sound: ..." modules, which keep all 28 recordings. The eleven radio-chatter
+  "Sound: ..." items now show the Sound effects picture instead of a radio, so
+  the browser no longer looks as if every track had its own radio. Radio Red
+  stays out of the browser and still loads from saves. Saved radios keep their
+  recording (radios store a permanent recording ID, not a list position); a
+  save with a radio set to Hanoi Hannah does not restore that radio in 0.1.9.
+  The Credits now list the thirteen unchanged Vinny - Sounds recordings.
+  Portable guard `tests/Test-Radios.ps1`; Hanoi Hannah on a radio has not been
+  heard in the game yet.
+
 ## 0.1.9
 
 - AI Surrender: a prisoner who gave away squads could answer "He insists there

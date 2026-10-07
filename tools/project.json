@@ -3,7 +3,7 @@
     "name": "EXPBG_GM_Tools",
     "source": "addon",
     "dependencies": ["58D0FB3206B6F859"],
-    "runtimePaths": ["Assets", "Audio", "Configs", "Credits", "EIIArt", "Language", "Licenses", "Prefabs", "PrefabsEditable", "Scripts/Game", "Sounds", "UI"],
+    "runtimePaths": ["Assets", "Audio", "Configs", "Credits", "EBMArt", "EIIArt", "Language", "Licenses", "Prefabs", "PrefabsEditable", "Scripts/Game", "Sounds", "UI"],
     "preview": "UI/Textures/EXPBG_Garrison/EXPG_Workshop.png"
   },
   "legacyPublishWorkflows": []

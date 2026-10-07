@@ -121,8 +121,19 @@ class EXPG_GarrisonStatusAttribute : EXPG_GarrisonAttribute
  {
   if (!manager) return null;
   m_Group = GetGarrison(item);
+  // A released garrison keeps showing why it was released ("Released: <reason>").
+  if (!m_Group) m_Group = GetReleased(item);
   if (!m_Group) return null;
   return SCR_BaseEditorAttributeVar.CreateFloat(0);
+ }
+
+ protected SCR_AIGroup GetReleased(Managed item)
+ {
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
+  if (!editable) return null;
+  SCR_AIGroup group = SCR_AIGroup.Cast(editable.GetOwner());
+  if (!group || group.EXPG_Active || !group.EXPG_Status.StartsWith("Released: ")) return null;
+  return group;
  }
 
  override int GetEntries(notnull array<ref SCR_BaseEditorAttributeEntry> outEntries)

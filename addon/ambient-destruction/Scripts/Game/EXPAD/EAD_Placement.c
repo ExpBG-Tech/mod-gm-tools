@@ -125,6 +125,8 @@ class EAD_Placement
  }
  static EAD_PropRecord Candidate(EAD_Zone zone, EAD_Random random, int asset, bool grouped = false, vector groupOrigin = vector.Zero, int lane = 0)
  {
+  // An empty wreck bag (a catalog without wrecks) yields no asset; never record one.
+  if (EAD_Catalog.Prefab(asset) == "") return null;
   BaseWorld world = zone.GetWorld();
   float angle = random.Next() * Math.PI2;
   float distance = Math.Sqrt(random.Next()) * zone.Radius;

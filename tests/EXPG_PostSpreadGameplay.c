@@ -356,7 +356,7 @@ class EXPG_GarrisonGameplay : GenericEntity
     SCR_ChimeraCharacter actor = member.CacheMember.Entity;
     bool alive = !member.CacheMember.Dead && actor && actor.GetCharacterGroup() == add.Group && !EXPG_GarrisonManager.IsDeadActor(actor);
     if (alive) actors.Insert(actor);
-    // The post control's own tolerance: EXPG_PostControl.Tick releases a guard pushed more than 1.5 m.
+    // Bind tolerance: a guard knocked off his post holds where he came to rest (his post moves to him).
     if (alive && (!member.Fixed || vector.DistanceSq(actor.GetOrigin(), member.PostPoint()) <= 2.25)) held++;
    }
   }

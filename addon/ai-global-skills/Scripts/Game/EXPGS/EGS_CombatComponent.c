@@ -30,6 +30,17 @@ modded class SCR_AICombatComponent
 	protected int m_iEGS_WarningToken;
 	protected int m_iEGS_WarningShots;
 
+	// Soldier ROE (EGS_UnitRoe.c): effective own ROE or EGS_UnitRoe.FOLLOW, and his own
+	// warning-shot state (armed, pending, lethal) while it is Warning Shots First.
+	protected static const int EGS_UNIT_ARMED = 0;
+	protected static const int EGS_UNIT_PENDING = 1;
+	protected static const int EGS_UNIT_LETHAL = 2;
+	protected int m_iEGS_UnitRoe = -1;
+	protected int m_iEGS_UnitWarn;
+	protected int m_iEGS_UnitToken;
+	protected bool m_bEGS_UnitWarnEnded;
+	protected bool m_bEGS_UnitShots;
+
 	//------------------------------------------------------------------------------------------------
 	//! Server: apply the resolved settings of this soldier.
 	void EGS_SetProfile(EAISkill skill, float perception, float aimErrorScale)
@@ -102,9 +113,147 @@ modded class SCR_AICombatComponent
 		if (!agent)
 			return;
 
+		// A soldier with his own ROE answers for himself, never as his squad's shooter.
+		if (m_iEGS_UnitRoe != EGS_UnitRoe.FOLLOW)
+		{
+			if (m_iEGS_UnitRoe == EGS_Settings.ROE_WARNING_SHOTS)
+				EGS_OnUnitHostileSelected(outCurrentTarget.GetTargetEntity());
+
+			return;
+		}
+
 		SCR_AIGroup group = SCR_AIGroup.Cast(agent.GetParentGroup());
 		if (group && group.EGS_GetAppliedRoe() == EGS_Settings.ROE_WARNING_SHOTS)
 			group.EGS_OnHostileSelected(this, outCurrentTarget.GetTargetEntity());
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: his effective own ROE (EGS_Settings.ROE_*) or EGS_UnitRoe.FOLLOW. A change
+	//! restarts his warning-shot state.
+	void EGS_SetUnitRoe(int roe)
+	{
+		if (roe == m_iEGS_UnitRoe)
+			return;
+
+		if (m_bEGS_UnitShots)
+			EGS_EndWarningShots(false);
+
+		m_iEGS_UnitToken++;
+		m_iEGS_UnitWarn = EGS_UNIT_ARMED;
+		m_bEGS_UnitWarnEnded = false;
+		int previous = m_iEGS_UnitRoe;
+		m_iEGS_UnitRoe = roe;
+		PrintFormat("[EXPBG AI SKILLS] unit=%1 roe=%2 (was %3; -1 follows the squad)", GetOwner(), roe, previous);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	int EGS_GetUnitRoe()
+	{
+		return m_iEGS_UnitRoe;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Vanilla soldiers take their combat mode from the group. A soldier with his own ROE in
+	//! a managed AI squad answers himself (resolved here, when vanilla asks; no polling).
+	override EAIGroupCombatMode GetCombatMode()
+	{
+		if (m_iEGS_UnitRoe == EGS_UnitRoe.FOLLOW)
+			return super.GetCombatMode();
+
+		AIAgent agent = GetAiAgent();
+		if (!agent)
+			return super.GetCombatMode();
+
+		SCR_AIGroup group = SCR_AIGroup.Cast(agent.GetParentGroup());
+		if (!group || !group.EGS_IsManaged())
+			return super.GetCombatMode();
+
+		if (m_iEGS_UnitRoe == EGS_Settings.ROE_FIRE_ON_SIGHT)
+			return EAIGroupCombatMode.FIRE_AT_WILL;
+
+		if (m_iEGS_UnitRoe == EGS_Settings.ROE_VANILLA)
+			return group.EGS_VanillaMode();
+
+		if (m_iEGS_UnitRoe == EGS_Settings.ROE_WARNING_SHOTS && m_iEGS_UnitWarn == EGS_UNIT_LETHAL)
+			return EAIGroupCombatMode.FIRE_AT_WILL;
+
+		return group.EGS_ReturnFireMode();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: Warning Shots First of his own; he selected a new hostile target.
+	protected void EGS_OnUnitHostileSelected(IEntity target)
+	{
+		if (m_iEGS_UnitWarn != EGS_UNIT_ARMED || !EGS_Manager.IsPlayerControlled(target))
+			return;
+
+		AIAgent agent = GetAiAgent();
+		SCR_AIGroup group;
+		if (agent)
+			group = SCR_AIGroup.Cast(agent.GetParentGroup());
+
+		if (!group || !group.EGS_IsManaged())
+			return;
+
+		m_iEGS_UnitToken++;
+		m_iEGS_UnitWarn = EGS_UNIT_PENDING;
+		m_bEGS_UnitWarnEnded = false;
+		int token = m_iEGS_UnitToken;
+		float window = 0;
+		if (EGS_StartWarningShots(target, null, token))
+		{
+			m_bEGS_UnitShots = true;
+			window = EGS_Manager.WARNING_WINDOW_S;
+		}
+
+		PrintFormat("[EXPBG AI SKILLS] unit warning shots shooter=%1 target=%2", GetOwner(), target);
+		EGS_Manager.ScheduleUnit(this, EGS_Manager.TIMER_WARNING_END, window, token);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: his warning rounds are out (or the window closed): pause, then lethal.
+	protected void EGS_OnUnitWarningDone(int token)
+	{
+		if (token != m_iEGS_UnitToken || m_iEGS_UnitWarn != EGS_UNIT_PENDING || m_bEGS_UnitWarnEnded)
+			return;
+
+		m_bEGS_UnitWarnEnded = true;
+		if (m_bEGS_UnitShots)
+			EGS_EndWarningShots(false);
+
+		EGS_Manager.ScheduleUnit(this, EGS_Manager.TIMER_LETHAL, EGS_Manager.WARNING_PAUSE_S, token);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: one-shot timers of his own warning sequence (EGS_Manager tick).
+	void EGS_OnUnitTimer(int kind, int token)
+	{
+		if (token != m_iEGS_UnitToken || m_iEGS_UnitRoe != EGS_Settings.ROE_WARNING_SHOTS)
+			return;
+
+		if (kind == EGS_Manager.TIMER_WARNING_END)
+		{
+			EGS_OnUnitWarningDone(token);
+			return;
+		}
+
+		if (kind == EGS_Manager.TIMER_LETHAL && m_iEGS_UnitWarn == EGS_UNIT_PENDING)
+		{
+			m_iEGS_UnitWarn = EGS_UNIT_LETHAL;
+			EGS_Manager.ScheduleUnit(this, EGS_Manager.TIMER_REARM, EGS_Manager.REARM_DELAY_S, token);
+			return;
+		}
+
+		if (kind == EGS_Manager.TIMER_REARM && m_iEGS_UnitWarn == EGS_UNIT_LETHAL)
+		{
+			if (GetCurrentTarget())
+			{
+				EGS_Manager.ScheduleUnit(this, EGS_Manager.TIMER_REARM, EGS_Manager.REARM_RETRY_S, token);
+				return;
+			}
+
+			m_iEGS_UnitWarn = EGS_UNIT_ARMED;
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -161,8 +310,12 @@ modded class SCR_AICombatComponent
 
 		SCR_AIGroup group = m_EGS_WarningGroup;
 		m_EGS_WarningGroup = null;
+		bool unitShots = m_bEGS_UnitShots;
+		m_bEGS_UnitShots = false;
 		if (notifyGroup && group)
 			group.EGS_OnWarningShotsDone(m_iEGS_WarningToken);
+		else if (notifyGroup && unitShots)
+			EGS_OnUnitWarningDone(m_iEGS_WarningToken);
 	}
 
 	//------------------------------------------------------------------------------------------------

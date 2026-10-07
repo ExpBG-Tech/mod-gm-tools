@@ -1,0 +1,61 @@
+GenericEntity : "{10C26F96EF7A8CF5}Prefabs/Props/Core/Props_Base.et" {
+ ID "527C88289D9C54C0"
+ components {
+  MeshObject "{5872F0EB7FA40561}" {
+   Object "{795B11AE8F4687D6}EBMArt/NewProps/Tela_Projetor/TelaProjetor.xob"
+   Materials {
+    MaterialAssignClass "{41483357549B33A5}" {
+     SourceMaterial "tela1"
+     AssignedMaterial "{AA3CD43539C7EF56}Assets/EXPBM/EBM_BoardRT.emat"
+    }
+   }
+  }
+  RigidBody "{5872F0EB7DFB5A9D}" {
+   ModelGeometry 1
+   Static 1
+  }
+  RplComponent "{5BECED7A1AA25112}" : "{B193E926C1935A4C}Prefabs/Editor/Components/Default_RplComponent.ct" {
+  }
+  EBM_BriefingBoardComponent "{A07145CCC2EF4F1B}" {
+   m_fBoardScale 1
+   m_iRtSize 1024
+   m_fScreenUMin 0.0505
+   m_fScreenUMax 0.6223
+   m_fScreenVMin 0.0087
+   m_fScreenVMax 0.9912
+   m_fScreenRotation -90
+  }
+  ActionsManagerComponent "{E342DBEC396C63BE}" {
+   ActionContexts {
+    UserActionContext "{16E26A8D59373623}" {
+     ContextName "default"
+     Position PointInfo "{BC9CBA7AE892B9ED}" {
+      Offset 0.1 1.23 0
+     }
+     Radius 2
+    }
+   }
+   additionalActions {
+    EBM_BriefAction "{F8110D892923C839}" {
+     ParentContextList {
+      "default"
+     }
+     UIInfo SCR_ActionUIInfo "{D2336487D9787C34}" {
+      Name "EXPBG: Brief on map"
+     }
+    }
+   }
+  }
+  SCR_EditableEntityComponent "{87CD159780D4C446}" : "{996046FE206C699A}Prefabs/Editor/Components/Default_SCR_EditableEntityComponent.ct" {
+   m_UIInfo SCR_EditableEntityUIInfo "{77026DD42C9657AD}" {
+    Name "#EXPBG-BriefingProjector_Name"
+    Description "#EXPBG-BriefingProjector_Description"
+    m_Image "{298B6DAB4180CFCC}UI/Textures/EXPBM/EBM_Card.edds"
+    m_aAuthoredLabels {
+     1 122 157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+  }
+ }
+}

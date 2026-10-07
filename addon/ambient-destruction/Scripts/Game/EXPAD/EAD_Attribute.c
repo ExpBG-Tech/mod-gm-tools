@@ -66,3 +66,5 @@ class EAD_DebugAttribute : EAD_Attribute {}
 class EAD_DebugDrawAttribute : EAD_Attribute {}
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class EAD_BodyModeAttribute : EAD_Attribute {}
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class EAD_VehicleTypesAttribute : EAD_Attribute {}

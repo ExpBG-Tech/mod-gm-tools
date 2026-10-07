@@ -131,6 +131,14 @@
         "repository": "ExpBG-Tech/mod-gm-tools",
         "note": "Developed in this repository."
       }
+    },
+    {
+      "name": "time-weather",
+      "title": "Time and Weather",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
     }
   ],
   "merge": [

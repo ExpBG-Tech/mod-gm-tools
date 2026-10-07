@@ -1,7 +1,9 @@
 // EXPBG AI Surrender server logic. Event-driven: a soldier going down (life-state
 // change) or a casualty leaving his group queues that squad once; one coalesced call
-// evaluates at most GROUPS_PER_PASS squads. No soldier is polled. The only timer is a
-// 5-second upkeep over the capped prisoner list, and only while prisoners exist.
+// evaluates at most GROUPS_PER_PASS squads. No soldier is polled. The only repeating
+// timer is a 5-second upkeep over the capped prisoner list, and only while prisoners
+// exist; a squad leader who takes a grenade instead of surrendering runs three one-shot
+// timers (place, set live, check after the blast), at most MAX_COMMANDERS at a time.
 
 // One squad that has taken a casualty while the module was active.
 class ESR_SquadRecord
@@ -10,6 +12,7 @@ class ESR_SquadRecord
  int Peak;
  int LastCasualties;
  float Threshold;
+ IEntity RolledCommander; // weak; the leader whose grenade chance was rolled
 }
 
 // Identity captured on the server at the moment of surrender. Strings may be
@@ -80,6 +83,9 @@ class ESR_Prisoner
  SCR_ChimeraCharacter Character; // weak
  ESR_InterrogationPoint Point; // weak
  SCR_AIGroup Group; // weak; the squad he left
+ // His squad's overrides when he surrendered (ESR_Overrides slots, -1 = none); his own
+ // stay on him and are read at question time (ESR_Overrides.ForPrisoner).
+ ref array<int> SquadOverrides = {};
  ref ESR_Dossier Dossier;
  string SideKey;
  int Attempts;
@@ -88,12 +94,36 @@ class ESR_Prisoner
  int RevealDistance;
  int RevealBearing;
  int MarkerId = -1;
+ // Intel items he pointed out (ESR_IntelQuery), nearest first: reported distance (25 m
+ // steps), compass sector and map marker id per item. Rolled once, with his first answer.
+ bool IntelRolled;
+ ref array<int> IntelDistances = {};
+ ref array<int> IntelBearings = {};
+ ref array<int> IntelMarkers = {};
  int PoseTries;
  bool AceMode; // held in ACE Captives' surrender state (ACE loaded)
  bool AceFailed; // ACE did not take him: the vanilla sit from then on
  int AceTries;
  int AceIdle; // upkeep ticks with every ACE state cleared
  float NextQuestion;
+}
+
+// A squad leader who sets a grenade live at his own feet instead of surrendering
+// (server). Each record ends through its own one-shot timers; Id keys those timers so a
+// deleted body never strands a record.
+class ESR_Commander
+{
+ int Id;
+ SCR_ChimeraCharacter Character; // weak
+ SCR_AIGroup Group; // weak; he stays in it until the blast
+ IEntity Grenade; // weak; the grenade at his feet
+ ResourceName Prefab;
+ bool MustCarry; // the setting when he decided
+ bool OwnGrenade; // decided with, then placed from, his own inventory
+ bool Live;
+ float Fuse;
+ float Started;
+ string Ending;
 }
 
 class ESR_SurrenderManager
@@ -123,13 +153,35 @@ class ESR_SurrenderManager
  static const float QUESTION_COOLDOWN = 2;
  static const ResourceName POINT_PREFAB = "{B412A163F3014DFE}Prefabs/EXPSR/ESR_InterrogationPoint.et";
  static const string CIVILIAN_FACTION = "CIV";
+ static const string INTEL_MARKER_TEXT = "Intel (interrogation)";
+
+ // Commander grenade. He crouches, takes 1-2.5 s, places the grenade at his feet and it
+ // goes live one second later, as the vanilla scenario action arms a placed grenade
+ // (SCR_ScenarioFrameworkActionSetGrenadeLive: "only after it is truly prepared"). The
+ // vanilla frag fuse (TimerTriggerComponent TIMER 4) does the rest.
+ static const int MAX_COMMANDERS = 16;
+ static const float GRENADE_PREP_MIN = 1.0;
+ static const float GRENADE_PREP_MAX = 2.5;
+ static const int GRENADE_ARM_MS = 1000;
+ static const float GRENADE_FUSE_FALLBACK = 4;
+ static const float GRENADE_AFTER_BLAST = 4;
+ static const float GRENADE_FORWARD = 0.25;
+ static const float GRENADE_LIFT = 0.05;
+ // The placed grenade has no physics to settle: the floor or ground under it is traced
+ // from this height above his feet, and accepted only within this distance of them.
+ static const float GRENADE_SNAP_HEIGHT = 0.5;
+ static const float COMMANDER_MAX_AGE = 60;
+ static const ResourceName GRENADE_RGD5 = "{645C73791ECA1698}Prefabs/Weapons/Grenades/Grenade_RGD5.et";
+ static const ResourceName GRENADE_M67 = "{E8F00BF730225B00}Prefabs/Weapons/Grenades/Grenade_M67.et";
 
  protected static bool s_bListening;
  protected static bool s_bQueued;
  protected static bool s_bUpkeep;
+ protected static int s_iCommanderSerial;
  protected static ref array<SCR_AIGroup> s_aQueue = {};
  protected static ref array<ref ESR_SquadRecord> s_aSquads = {};
  protected static ref array<ref ESR_Prisoner> s_aPrisoners = {};
+ protected static ref array<ref ESR_Commander> s_aCommanders = {};
 
  //------------------------------------------------------------------------------------------------
  // State and switches
@@ -174,6 +226,8 @@ class ESR_SurrenderManager
   for (int i = s_aQueue.Count() - 1; i >= 0; i--) { if (!s_aQueue[i]) s_aQueue.Remove(i); }
   for (int j = s_aSquads.Count() - 1; j >= 0; j--) { if (!s_aSquads[j] || !s_aSquads[j].Group) s_aSquads.Remove(j); }
   for (int k = s_aPrisoners.Count() - 1; k >= 0; k--) { if (!s_aPrisoners[k] || !s_aPrisoners[k].Character) ReleaseAt(k, "stale"); }
+  // Commander timers are keyed by record id: a stale one finds no record and ends.
+  PruneCommanders();
   if (!s_aQueue.IsEmpty()) ScheduleQueue();
   StartUpkeep();
   // Logs once per world whether ACE Captives' surrender or the vanilla sit is used.
@@ -324,7 +378,7 @@ class ESR_SurrenderManager
    CharacterControllerComponent controller = member.GetCharacterController();
    if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious()) continue;
    able++;
-   if (!member.IsInVehicle() && !FindPrisoner(member)) candidates.Insert(member);
+   if (!member.IsInVehicle() && !FindPrisoner(member) && !FindCommander(member)) candidates.Insert(member);
   }
   ESR_SquadRecord record = Squad(group, true);
   if (!record) return;
@@ -332,26 +386,438 @@ class ESR_SurrenderManager
   if (record.Peak <= 0) return;
   // A squad whose cached or transitional state is still held (Unit Caching,
   // Garrison) is asleep: its casualties are rolled once it is plainly awake.
-  if (EBG_CacheManager.IsCacheHeld(group)) return;
+  if (EBG_CacheManager.IsCacheHeld(group)) { Trace(string.Format("squad %1 not rolled: its cache state is held", group)); return; }
   int casualties = record.Peak - able;
   // Rolls happen once per new casualty, never twice for the same loss.
-  if (casualties <= record.LastCasualties) return;
+  if (casualties <= record.LastCasualties) { Trace(string.Format("squad %1 not rolled: peak=%2 able=%3 casualties=%4 already rolled=%5", group, record.Peak, able, casualties, record.LastCasualties)); return; }
   record.LastCasualties = casualties;
   float ratio = casualties * 100.0 / record.Peak;
   Trace(string.Format("squad %1 peak=%2 able=%3 casualties=%4 ratio=%5 threshold=%6 candidates=%7", group, record.Peak, able, casualties, ratio, record.Threshold, candidates.Count()));
   if (ratio < record.Threshold) return;
-  float chance = ESR_Settings.Get(ESR_Settings.CHANCE);
+  // Whether the squad breaks is decided above (module threshold); each soldier then rolls
+  // his own effective chance: his override, else the squad's, else the module setting
+  // (ESR_Overrides). An override is exact; the random factor spreads the module chance only.
+  int squadSource;
+  float chance = ESR_Overrides.Resolve(null, group, ESR_Overrides.SURRENDER, squadSource);
   float spread = ESR_Settings.Get(ESR_Settings.RANDOM);
+  // Chosen before anyone leaves the squad.
+  SCR_ChimeraCharacter commander = SquadCommander(group, candidates);
   int surrendered;
+  int grenades;
+  int ownChances;
   foreach (SCR_ChimeraCharacter candidate : candidates)
   {
    if (s_aPrisoners.Count() >= MAX_PRISONERS) break;
-   float rolled = Math.Clamp(chance + ESR_Jitter(spread), 0, 100);
-   if (Math.RandomFloat(0, 100) >= rolled) continue;
+   float rolled = chance;
+   int own = candidate.ESR_GetOverride(ESR_Overrides.SURRENDER);
+   if (own >= 0)
+   {
+    rolled = own;
+    ownChances++;
+   }
+   else if (squadSource == ESR_Overrides.SOURCE_MODULE) rolled = Math.Clamp(chance + ESR_Jitter(spread), 0, 100);
+   if (rolled < 100 && Math.RandomFloat(0, 100) >= rolled) continue;
+   // He would surrender; the squad leader may take a grenade instead.
+   if (candidate == commander && ChoosesGrenade(candidate, group, record))
+   {
+    grenades++;
+    continue;
+   }
    if (Surrender(candidate, group)) surrendered++;
   }
+  Trace(string.Format("squad %1 surrender chance=%2 source=%3 soldierOverrides=%4 surrendered=%5 of %6", group, chance, ESR_Overrides.SourceName(squadSource), ownChances, surrendered, candidates.Count()));
+  if (grenades > 0) Trace(string.Format("squad %1: leader %2 took a grenade, %3 surrendered", group, commander, surrendered));
   // Prisoners now count as losses; they must not trigger another round by themselves.
+  // The leader still counts as able until the blast; his death rolls the rest again.
   record.LastCasualties += surrendered;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Commander grenade (server)
+ //------------------------------------------------------------------------------------------------
+ // The squad leader: the group's leader agent when he can act (able, on foot, not a
+ // prisoner); none when that leader is down or in a vehicle. A group without a leader
+ // agent: its highest-ranking candidate, the first on a tie.
+ static SCR_ChimeraCharacter SquadCommander(SCR_AIGroup group, notnull array<SCR_ChimeraCharacter> candidates)
+ {
+  if (!group || candidates.IsEmpty()) return null;
+  IEntity leader = group.GetLeaderEntity();
+  if (leader)
+  {
+   SCR_ChimeraCharacter leaderCharacter = SCR_ChimeraCharacter.Cast(leader);
+   if (leaderCharacter && candidates.Contains(leaderCharacter)) return leaderCharacter;
+   return null;
+  }
+  SCR_ChimeraCharacter best = null;
+  int bestRank = -1;
+  foreach (SCR_ChimeraCharacter candidate : candidates)
+  {
+   int rank = SCR_CharacterRankComponent.GetCharacterRank(candidate);
+   if (rank == SCR_ECharacterRank.INVALID) rank = 0;
+   if (best && rank <= bestRank) continue;
+   best = candidate;
+   bestRank = rank;
+  }
+  return best;
+ }
+
+ // Rolled once for a leader, only at the moment he would surrender. False: he surrenders.
+ protected static bool ChoosesGrenade(SCR_ChimeraCharacter commander, SCR_AIGroup group, ESR_SquadRecord record)
+ {
+  int chance = ESR_Settings.Get(ESR_Settings.GRENADE);
+  if (chance <= 0 || !record || record.RolledCommander == commander) return false;
+  record.RolledCommander = commander;
+  float roll = Math.RandomFloat(0, 100);
+  Trace(string.Format("squad %1 leader %2 grenade roll=%3 chance=%4", group, commander, roll, chance));
+  if (roll >= chance) return false;
+  return StartGrenade(commander, group);
+ }
+
+ // Server: he stops fighting, crouches and, after a short pause, sets a fragmentation
+ // grenade live at his own feet. He stays in his squad (the rest surrender as usual).
+ // False leaves him to the normal surrender: player-controlled, prisoner, down, in a
+ // vehicle, asleep in a cache, at the record cap, or without a grenade while the
+ // "must carry" setting is on.
+ static bool StartGrenade(SCR_ChimeraCharacter character, SCR_AIGroup group)
+ {
+  if (!Replication.IsServer() || !character || FindPrisoner(character) || FindCommander(character)) return false;
+  PruneCommanders();
+  if (s_aCommanders.Count() >= MAX_COMMANDERS) return false;
+  if (!CommanderBlocked(character).IsEmpty()) return false;
+  SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
+  AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
+  if (!controller || !control) return false;
+  bool mustCarry = ESR_Settings.Get(ESR_Settings.GRENADE_CARRY) != 0;
+  ResourceName prefab = PrefabOf(FindFragGrenade(character));
+  bool own = !prefab.IsEmpty();
+  if (!own)
+  {
+   if (mustCarry)
+   {
+    Trace(string.Format("leader %1 carries no fragmentation grenade: he surrenders", character));
+    return false;
+   }
+   prefab = SideGrenade(character);
+   if (prefab.IsEmpty()) return false;
+  }
+  ESR_Commander commander = new ESR_Commander();
+  s_iCommanderSerial++;
+  commander.Id = s_iCommanderSerial;
+  commander.Character = character;
+  commander.Group = group;
+  commander.Prefab = prefab;
+  commander.MustCarry = mustCarry;
+  commander.OwnGrenade = own;
+  commander.Started = Now();
+  s_aCommanders.Insert(commander);
+  RetireSuppression(control.GetControlAIAgent());
+  control.DeactivateAI();
+  controller.SetStanceChange(ECharacterStanceChange.STANCECHANGE_TOCROUCH);
+  int delay = Math.Round(Math.RandomFloat(GRENADE_PREP_MIN, GRENADE_PREP_MAX) * 1000);
+  GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.PlaceGrenade, delay, false, commander.Id);
+  PrintFormat("[EXPBG SURRENDER] %1 (squad leader) takes a grenade instead of surrendering at %2 own=%3 prefab=%4 delayMs=%5 commanders=%6", character, character.GetOrigin(), own, prefab, delay, s_aCommanders.Count());
+  return true;
+ }
+
+ // Why he can no longer act; empty when he can.
+ protected static string CommanderBlocked(SCR_ChimeraCharacter character)
+ {
+  if (!character)
+   return "deleted";
+  CharacterControllerComponent controller = character.GetCharacterController();
+  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious())
+   return "down";
+  if (IsPlayerCharacter(character))
+   return "player-controlled";
+  if (character.IsInVehicle())
+   return "in a vehicle";
+  if (FindPrisoner(character))
+   return "prisoner";
+  AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
+  AIAgent agent;
+  if (control) agent = control.GetControlAIAgent();
+  // A cached soldier holds a permanent LOD pin (see Surrender): asleep.
+  if (agent && agent.GetPermanentLOD() >= 0)
+   return "asleep";
+  return string.Empty;
+ }
+
+ // Timer 1: the grenade goes to his feet, taken from his inventory when he decided with
+ // his own. Vanilla removal (as SCR_ScenarioFrameworkActionRemoveItemFromInventory), then
+ // a fresh entity of the same prefab: a placed grenade, exactly where he crouches.
+ protected static void PlaceGrenade(int id)
+ {
+  ESR_Commander commander = FindCommanderById(id);
+  if (!commander) return;
+  SCR_ChimeraCharacter character = commander.Character;
+  string blocked = CommanderBlocked(character);
+  if (!blocked.IsEmpty())
+  {
+   EndCommander(commander, blocked, true);
+   return;
+  }
+  ResourceName prefab = commander.Prefab;
+  if (commander.OwnGrenade)
+  {
+   IEntity carried = FindFragGrenade(character);
+   ResourceName carriedPrefab = PrefabOf(carried);
+   InventoryStorageManagerComponent inventory = InventoryStorageManagerComponent.Cast(character.FindComponent(InventoryStorageManagerComponent));
+   if (!carriedPrefab.IsEmpty() && inventory && inventory.TryDeleteItem(carried))
+   {
+    prefab = carriedPrefab;
+   }
+   else if (commander.MustCarry)
+   {
+    // His grenade is gone: nothing left to use, so he surrenders after all.
+    EndCommander(commander, "grenade gone", true);
+    Surrender(character, commander.Group);
+    return;
+   }
+   else
+   {
+    commander.OwnGrenade = false;
+    prefab = SideGrenade(character);
+   }
+  }
+  IEntity grenade = SpawnGrenade(prefab, character);
+  if (!grenade)
+  {
+   EndCommander(commander, "grenade not spawned", true);
+   return;
+  }
+  commander.Prefab = prefab;
+  commander.Grenade = grenade;
+  GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.LiveGrenade, GRENADE_ARM_MS, false, id);
+  Trace(string.Format("leader %1 placed %2 at %3 (%4 m) own=%5", character, prefab, grenade.GetOrigin(), vector.Distance(grenade.GetOrigin(), character.GetOrigin()), commander.OwnGrenade));
+ }
+
+ // A hand's width in front of his feet, where he crouches. No projectile simulation: a
+ // placed grenade.
+ protected static IEntity SpawnGrenade(ResourceName prefab, SCR_ChimeraCharacter character)
+ {
+  if (prefab.IsEmpty() || !character) return null;
+  // Keep the loaded resource in a local before spawning.
+  Resource resource = Resource.Load(prefab);
+  if (!resource || !resource.IsValid()) return null;
+  EntitySpawnParams spawn = new EntitySpawnParams();
+  spawn.TransformMode = ETransformMode.WORLD;
+  Math3D.MatrixIdentity4(spawn.Transform);
+  spawn.Transform[3] = GrenadeSpot(character);
+  IEntity grenade = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawn);
+  if (!grenade) return null;
+  BaseTriggerComponent trigger = BaseTriggerComponent.Cast(grenade.FindComponent(BaseTriggerComponent));
+  if (!trigger)
+  {
+   SCR_EntityHelper.DeleteEntityAndChildren(grenade);
+   return null;
+  }
+  // His own grenade: the kill is his, never a nearby player's.
+  trigger.SetInstigator(Instigator.CreateInstigator(character));
+  return grenade;
+ }
+
+ // On the floor or ground a hand's width in front of his feet: on a slope that is not his
+ // feet's height, and the grenade does not settle by itself. Traced down from knee height
+ // with the vanilla item snap (SCR_TerrainHelper.SnapToGeometry: terrain and building
+ // floors, him excluded). No usable surface there (a wall, a steep bank): at his feet.
+ protected static vector GrenadeSpot(notnull SCR_ChimeraCharacter character)
+ {
+  vector feet = character.GetOrigin();
+  vector forward = character.GetWorldTransformAxis(2);
+  forward[1] = 0;
+  forward.Normalize();
+  vector spot = feet + forward * GRENADE_FORWARD;
+  array<IEntity> exclude = {};
+  exclude.Insert(character);
+  vector snapped;
+  SCR_TerrainHelper.SnapToGeometry(snapped, spot + vector.Up * GRENADE_SNAP_HEIGHT, exclude, GetGame().GetWorld());
+  if (Math.AbsFloat(snapped[1] - feet[1]) <= GRENADE_SNAP_HEIGHT)
+   spot[1] = snapped[1];
+  else
+   spot = feet;
+  return spot + vector.Up * GRENADE_LIFT;
+ }
+
+ // Timer 2: vanilla scripted arming of a placed grenade. BaseTriggerComponent.SetLive()
+ // starts the prefab's own TimerTriggerComponent fuse; the native trigger then applies
+ // the prefab's explosion and warhead (damage to everyone in range, ACE medical too).
+ // Armed even if he was shot in the last second: the pin is already out.
+ protected static void LiveGrenade(int id)
+ {
+  ESR_Commander commander = FindCommanderById(id);
+  if (!commander) return;
+  IEntity grenade = commander.Grenade;
+  BaseTriggerComponent trigger;
+  if (grenade) trigger = BaseTriggerComponent.Cast(grenade.FindComponent(BaseTriggerComponent));
+  if (!trigger)
+  {
+   EndCommander(commander, "grenade gone", true);
+   return;
+  }
+  // Never armed in someone's hands or inventory (picked up in the last second) or under
+  // a player (a Game Master possessed him since): it stays a plain item.
+  InventoryItemComponent item = InventoryItemComponent.Cast(grenade.FindComponent(InventoryItemComponent));
+  if (grenade.GetParent() || (item && item.GetParentSlot()))
+  {
+   EndCommander(commander, "grenade picked up", true);
+   return;
+  }
+  if (IsPlayerCharacter(commander.Character))
+  {
+   EndCommander(commander, "player-controlled", true);
+   return;
+  }
+  trigger.SetLive();
+  commander.Live = true;
+  float fuse = GRENADE_FUSE_FALLBACK;
+  TimerTriggerComponent timer = TimerTriggerComponent.Cast(trigger);
+  if (timer && timer.GetTimer() > 0) fuse = timer.GetTimer();
+  fuse = Math.Clamp(fuse + trigger.GetArmingTime(), 1, 15);
+  commander.Fuse = fuse;
+  int wait = Math.Round((fuse + GRENADE_AFTER_BLAST) * 1000);
+  GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.AfterBlast, wait, false, id);
+  PrintFormat("[EXPBG SURRENDER] %1 (squad leader) set a grenade live at his feet at %2 prefab=%3 own=%4 fuse=%5", commander.Character, grenade.GetOrigin(), commander.Prefab, commander.OwnGrenade, fuse);
+ }
+
+ // Timer 3: after the fuse. Normally he is dead or down; a leader still standing (the
+ // grenade was moved or deleted by a Game Master) gets his AI back and fights on.
+ protected static void AfterBlast(int id)
+ {
+  ESR_Commander commander = FindCommanderById(id);
+  if (!commander) return;
+  SCR_ChimeraCharacter character = commander.Character;
+  bool down = true;
+  if (character)
+  {
+   CharacterControllerComponent controller = character.GetCharacterController();
+   down = !controller || controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious();
+  }
+  if (down)
+  {
+   EndCommander(commander, "blast", false);
+   return;
+  }
+  Print(string.Format("[EXPBG SURRENDER] %1 (squad leader) survived his grenade: AI resumed", character), LogLevel.WARNING);
+  EndCommander(commander, "survived", true);
+ }
+
+ // Ends a record. wake: a living, conscious leader who is not player-controlled or
+ // asleep in a cache gets his AI back.
+ protected static void EndCommander(ESR_Commander commander, string reason, bool wake)
+ {
+  if (!commander) return;
+  s_aCommanders.RemoveItem(commander);
+  commander.Ending = reason;
+  SCR_ChimeraCharacter character = commander.Character;
+  if (wake && CommanderBlocked(character).IsEmpty())
+  {
+   AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
+   if (control && !control.IsAIActivated()) control.ActivateAI();
+  }
+  Trace(string.Format("leader %1 grenade ended (%2) commanders=%3", character, reason, s_aCommanders.Count()));
+ }
+
+ // Records whose leader is gone or that outlived every timer (a world change).
+ protected static void PruneCommanders()
+ {
+  float now = Now();
+  for (int i = s_aCommanders.Count() - 1; i >= 0; i--)
+  {
+   ESR_Commander commander = s_aCommanders[i];
+   if (!commander || !commander.Character || now < commander.Started || now - commander.Started > COMMANDER_MAX_AGE) s_aCommanders.Remove(i);
+  }
+ }
+
+ static ESR_Commander FindCommander(IEntity entity)
+ {
+  if (!entity) return null;
+  foreach (ESR_Commander commander : s_aCommanders)
+  {
+   if (commander && commander.Character == entity) return commander;
+  }
+  return null;
+ }
+
+ static ESR_Commander FindCommanderById(int id)
+ {
+  foreach (ESR_Commander commander : s_aCommanders)
+  {
+   if (commander && commander.Id == id) return commander;
+  }
+  return null;
+ }
+
+ // Test and diagnostics access.
+ static int CommanderCount()
+ {
+  return s_aCommanders.Count();
+ }
+
+ static ESR_Commander GetCommanderAt(int index)
+ {
+  if (!s_aCommanders.IsIndexValid(index)) return null;
+  return s_aCommanders[index];
+ }
+
+ // A fragmentation grenade he carries (grenade slots, pouches, backpack): a weapon of
+ // type WT_FRAGGRENADE with a trigger. Smoke grenades never count.
+ static IEntity FindFragGrenade(IEntity character)
+ {
+  if (!character) return null;
+  InventoryStorageManagerComponent inventory = InventoryStorageManagerComponent.Cast(character.FindComponent(InventoryStorageManagerComponent));
+  if (!inventory) return null;
+  array<IEntity> items = {};
+  array<typename> query = {};
+  query.Insert(BaseWeaponComponent);
+  inventory.FindItemsWithComponents(items, query, EStoragePurpose.PURPOSE_ANY);
+  foreach (IEntity item : items)
+  {
+   if (IsFragGrenade(item)) return item;
+  }
+  return null;
+ }
+
+ static bool IsFragGrenade(IEntity item)
+ {
+  if (!item) return false;
+  BaseWeaponComponent weapon = BaseWeaponComponent.Cast(item.FindComponent(BaseWeaponComponent));
+  if (!weapon || weapon.GetWeaponType() != EWeaponType.WT_FRAGGRENADE) return false;
+  return item.FindComponent(BaseTriggerComponent) != null;
+ }
+
+ static ResourceName PrefabOf(IEntity entity)
+ {
+  if (!entity) return ResourceName.Empty;
+  EntityPrefabData data = entity.GetPrefabData();
+  if (!data) return ResourceName.Empty;
+  return data.GetPrefabName();
+ }
+
+ // A vanilla fragmentation grenade of his side: M67 for US-like sides, RGD-5 for every
+ // other (USSR, FIA, modded); the other one when the first does not load.
+ static ResourceName SideGrenade(IEntity character)
+ {
+  ResourceName first = GRENADE_RGD5;
+  ResourceName second = GRENADE_M67;
+  SCR_ChimeraCharacter chimera = SCR_ChimeraCharacter.Cast(character);
+  Faction side;
+  if (chimera) side = chimera.GetFaction();
+  if (side && IsUsSide(side.GetFactionKey()))
+  {
+   first = GRENADE_M67;
+   second = GRENADE_RGD5;
+  }
+  Resource firstResource = Resource.Load(first);
+  if (firstResource && firstResource.IsValid()) return first;
+  Resource secondResource = Resource.Load(second);
+  if (secondResource && secondResource.IsValid()) return second;
+  return ResourceName.Empty;
+ }
+
+ static bool IsUsSide(string key)
+ {
+  if (key == "US") return true;
+  return key.Contains("USA") || key.Contains("USMC");
  }
 
  //------------------------------------------------------------------------------------------------
@@ -359,7 +825,7 @@ class ESR_SurrenderManager
  //------------------------------------------------------------------------------------------------
  static bool Surrender(SCR_ChimeraCharacter character, SCR_AIGroup group)
  {
-  if (!Replication.IsServer() || !character || FindPrisoner(character) || s_aPrisoners.Count() >= MAX_PRISONERS) return false;
+  if (!Replication.IsServer() || !character || FindPrisoner(character) || FindCommander(character) || s_aPrisoners.Count() >= MAX_PRISONERS) return false;
   SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
   AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
   if (!controller || !control || controller.GetLifeState() != ECharacterLifeState.ALIVE || character.IsInVehicle() || IsPlayerCharacter(character)) return false;
@@ -371,6 +837,8 @@ class ESR_SurrenderManager
   ESR_Prisoner prisoner = new ESR_Prisoner();
   prisoner.Character = character;
   prisoner.Group = group;
+  // Before he leaves the squad: its interrogation overrides go with him.
+  ESR_Overrides.CaptureSquad(prisoner, group);
   // Before he leaves the squad: the leader may change once he is gone.
   prisoner.Dossier = ESR_Dossier.Capture(character, leader);
   Faction faction = character.GetFaction();
@@ -755,20 +1223,26 @@ class ESR_SurrenderManager
    else
    {
     prisoner.Attempts++;
-    float reveal = ESR_Settings.Get(ESR_Settings.REVEAL);
-    float identity = ESR_Settings.Get(ESR_Settings.IDENTITY);
+    // His own override, else his former squad's (captured at surrender), else the module.
+    float reveal = ESR_Overrides.ForPrisoner(prisoner, ESR_Overrides.REVEAL, ESR_Settings.Get(ESR_Settings.REVEAL));
+    float identity = ESR_Overrides.ForPrisoner(prisoner, ESR_Overrides.IDENTITY, ESR_Settings.Get(ESR_Settings.IDENTITY));
     float roll = Math.RandomFloat(0, 100);
     if (roll < reveal) outcome = Reveal(prisoner, user, playerId);
     else if (roll < Math.Min(100, reveal + identity)) outcome = OUTCOME_IDENTITY;
     else outcome = OUTCOME_REFUSED;
     // Once he talks the answer is fixed: asking again repeats it.
-    if (outcome != OUTCOME_REFUSED) prisoner.Outcome = outcome;
+    if (outcome != OUTCOME_REFUSED)
+    {
+     prisoner.Outcome = outcome;
+     // Intel items: a roll of its own after the answer above, so its odds are unchanged.
+     RevealIntel(prisoner, user, playerId);
+    }
    }
   }
   int left = attempts - prisoner.Attempts;
   if (left < 0) left = 0;
-  point.SendResult(playerId, outcome, prisoner.RevealCount, prisoner.RevealDistance, prisoner.RevealBearing, left);
-  Trace(string.Format("interrogation of %1 by player %2: outcome=%3 attempts=%4/%5 marker=%6", prisoner.Character, playerId, outcome, prisoner.Attempts, attempts, prisoner.MarkerId));
+  point.SendResult(playerId, outcome, prisoner.RevealCount, prisoner.RevealDistance, prisoner.RevealBearing, left, prisoner.IntelDistances, prisoner.IntelBearings);
+  Trace(string.Format("interrogation of %1 by player %2: outcome=%3 attempts=%4/%5 marker=%6 intel=%7 chances: %8", prisoner.Character, playerId, outcome, prisoner.Attempts, attempts, prisoner.MarkerId, prisoner.IntelDistances.Count(), ESR_Overrides.DescribePrisoner(prisoner)));
   return outcome;
  }
 
@@ -798,17 +1272,63 @@ class ESR_SurrenderManager
   bool found = query.Nearest(origin, center, count);
   Trace(string.Format("reveal by %1 side=%2 radius=%3: agents=%4 groups=%5 squads=%6 found=%7 count=%8 at %9", prisoner.Character, prisoner.SideKey, radius, query.AgentCount(), query.GroupCount(), query.SquadCount(), found, count, center));
   if (!found) return OUTCOME_NO_SQUAD;
-  vector offset = center - origin;
-  float distance = vector.DistanceXZ(origin, center);
-  int rounded = Math.Round(distance / 25);
-  prisoner.RevealDistance = rounded * 25;
-  float angle = Math.Atan2(offset[0], offset[2]) * Math.RAD2DEG;
-  if (angle < 0) angle += 360;
-  int sector = Math.Round(angle / 45);
-  prisoner.RevealBearing = sector % 8;
+  prisoner.RevealDistance = ReportedDistance(origin, center);
+  prisoner.RevealBearing = ReportedBearing(origin, center);
   prisoner.RevealCount = count;
   prisoner.MarkerId = PlaceMarker(center, user, playerId, count);
   return OUTCOME_REVEAL;
+ }
+
+ // What a prisoner says about a place: its map distance in 25 m steps.
+ static int ReportedDistance(vector from, vector to)
+ {
+  int rounded = Math.Round(vector.DistanceXZ(from, to) / 25);
+  return rounded * 25;
+ }
+
+ // ...and its compass sector: 0 = north, clockwise in 45-degree steps.
+ static int ReportedBearing(vector from, vector to)
+ {
+  vector offset = to - from;
+  float angle = Math.Atan2(offset[0], offset[2]) * Math.RAD2DEG;
+  if (angle < 0) angle += 360;
+  int sector = Math.Round(angle / 45);
+  return sector % 8;
+ }
+
+ // Server, once per prisoner, with his first answer other than a refusal: the intel chance
+ // is rolled on its own (the squad and identity roll before it is untouched). On a hit he
+ // points out the nearest unclaimed intel items within the reveal search radius (one
+ // bounded ESR_IntelQuery pass); each gets a map marker like a revealed squad's. The result
+ // is kept on the record, so asking again repeats it without new markers.
+ protected static void RevealIntel(ESR_Prisoner prisoner, IEntity user, int playerId)
+ {
+  if (prisoner.IntelRolled || !prisoner.Character) return;
+  prisoner.IntelRolled = true;
+  // His own override, else his former squad's (captured at surrender), else the module.
+  int chance = ESR_Overrides.ForPrisoner(prisoner, ESR_Overrides.INTEL, ESR_Settings.Get(ESR_Settings.INTEL));
+  if (chance <= 0) return;
+  if (chance < 100 && Math.RandomFloat(0, 100) >= chance)
+  {
+   Trace(string.Format("intel by %1: chance=%2 missed", prisoner.Character, chance));
+   return;
+  }
+  vector origin = prisoner.Character.GetOrigin();
+  int radius = ESR_Settings.Get(ESR_Settings.RADIUS);
+  ESR_IntelQuery query = new ESR_IntelQuery();
+  query.Collect(origin, radius, prisoner.Character);
+  int found = query.Count();
+  string placed;
+  for (int i = 0; i < found; i++)
+  {
+   vector position = query.PositionAt(i);
+   int marker = PlaceIntelMarker(position, user, playerId);
+   prisoner.IntelDistances.Insert(ReportedDistance(origin, position));
+   prisoner.IntelBearings.Insert(ReportedBearing(origin, position));
+   prisoner.IntelMarkers.Insert(marker);
+   placed += string.Format(" %1@%2", marker, position);
+  }
+  Trace(string.Format("intel by %1 chance=%2 radius=%3: registered=%4 scanned=%5 eligible=%6 pointed=%7 markers:%8", prisoner.Character, chance, radius, query.RegisteredCount(), query.ScannedCount(), query.EligibleCount(), found, placed));
  }
 
  protected static Faction ViewerFaction(IEntity user, int playerId)
@@ -823,8 +1343,7 @@ class ESR_SurrenderManager
   return null;
  }
 
- // A player-owned static marker, as if the interrogator had placed it: his faction sees
- // it, he can delete it from the map, and it is part of the marker manager's JIP state.
+ // The revealed squad: an enemy infantry symbol.
  protected static int PlaceMarker(vector center, IEntity user, int playerId, int count)
  {
   SCR_MapMarkerManagerComponent markers = SCR_MapMarkerManagerComponent.GetInstance();
@@ -835,10 +1354,28 @@ class ESR_SurrenderManager
    marker = new SCR_MapMarkerBase();
    marker.SetType(SCR_EMapMarkerType.PLACED_CUSTOM);
   }
+  return PublishMarker(markers, marker, center, string.Format("Prisoner intel: squad of %1", count), user, playerId);
+ }
+
+ // An intel item he points out: a plain placed marker, the kind players place themselves.
+ protected static int PlaceIntelMarker(vector position, IEntity user, int playerId)
+ {
+  SCR_MapMarkerManagerComponent markers = SCR_MapMarkerManagerComponent.GetInstance();
+  if (!markers) return -1;
+  SCR_MapMarkerBase marker = new SCR_MapMarkerBase();
+  marker.SetType(SCR_EMapMarkerType.PLACED_CUSTOM);
+  return PublishMarker(markers, marker, position, INTEL_MARKER_TEXT, user, playerId);
+ }
+
+ // A player-owned static marker, as if the interrogator had placed it: his faction sees
+ // it, he can delete it from the map, and it is part of the marker manager's JIP state.
+ // The marker lifetime setting removes it on the server.
+ protected static int PublishMarker(notnull SCR_MapMarkerManagerComponent markers, notnull SCR_MapMarkerBase marker, vector center, string text, IEntity user, int playerId)
+ {
   int x = center[0];
   int z = center[2];
   marker.SetWorldPos(x, z);
-  marker.SetCustomText(string.Format("Prisoner intel: squad of %1", count));
+  marker.SetCustomText(text);
   marker.SetTimestampVisibility(true);
   ChimeraWorld world = GetGame().GetWorld();
   if (world) marker.SetTimestamp(world.GetServerTimestamp());
@@ -1021,6 +1558,117 @@ class ESR_SquadQuery
   }
   if (living > 0) center = sum * (1.0 / living);
   return living;
+ }
+}
+
+// Finds the intel items a prisoner can point out: EXPBG Intel Items (laptops, tablets,
+// notebooks, manuals) within the reveal search radius (map distance), nearest first, at most
+// MAX_ITEMS. One pass per answer that rolls intel, over Intel Items' own registry of the
+// items in play (EII_IntelComponent.GetRegistered, capped at MAX_SCAN), so the work grows
+// with the number of intel items, never with everything else in the radius.
+// Unclaimed, from the Intel Items data model: it keeps no read or picked-up flag for
+// notebooks and manuals; its one spent state is a computer item's startup token (laptop,
+// tablet), consumed when a player first reads it or picks it up (HasStarted). An item counts
+// unless that token is spent or a player carries it: any holder up its hierarchy (vest,
+// backpack, the seat of a vehicle) is a player-controlled or possessed character. Items
+// lying loose, in a crate or vehicle, or on a body count, at their outermost holder's
+// position. Items the prisoner carries himself are left out: searching him finds them.
+// EXPBG server racks and USB drives are not intel items: a rack is fixed scenery that
+// downloads never use up, and a drive holds only intel a player already downloaded.
+class ESR_IntelQuery
+{
+ static const int MAX_ITEMS = 3;
+ // Registered items read per answer: far beyond what a Game Master places.
+ static const int MAX_SCAN = 4096;
+ // Holder levels walked per item (item, vest, character, vehicle seat, vehicle, ...).
+ static const int MAX_DEPTH = 8;
+ protected ref array<vector> m_aPositions = {};
+ protected ref array<float> m_aDistances = {};
+ protected int m_iRegistered;
+ protected int m_iScanned;
+ protected int m_iEligible;
+
+ // Diagnostics: items registered, items read, unclaimed items inside the radius.
+ int RegisteredCount()
+ {
+  return m_iRegistered;
+ }
+
+ int ScannedCount()
+ {
+  return m_iScanned;
+ }
+
+ int EligibleCount()
+ {
+  return m_iEligible;
+ }
+
+ int Count()
+ {
+  return m_aPositions.Count();
+ }
+
+ vector PositionAt(int index)
+ {
+  if (!m_aPositions.IsIndexValid(index)) return vector.Zero;
+  return m_aPositions[index];
+ }
+
+ void Collect(vector origin, float radius, IEntity prisoner)
+ {
+  m_aPositions.Clear();
+  m_aDistances.Clear();
+  m_iScanned = 0;
+  m_iEligible = 0;
+  array<IEntity> items = {};
+  m_iRegistered = EII_IntelComponent.GetRegistered(items);
+  int total = items.Count();
+  if (total > MAX_SCAN) total = MAX_SCAN;
+  float radiusSq = radius * radius;
+  for (int i = 0; i < total; i++)
+  {
+   IEntity item = items[i];
+   m_iScanned++;
+   if (!item) continue;
+   EII_IntelComponent intel = EII_IntelComponent.Cast(item.FindComponent(EII_IntelComponent));
+   if (!intel || intel.HasStarted()) continue;
+   IEntity holder = Holder(item, prisoner);
+   if (!holder) continue;
+   vector position = holder.GetOrigin();
+   float distanceSq = vector.DistanceSqXZ(origin, position);
+   if (distanceSq > radiusSq) continue;
+   m_iEligible++;
+   // Keep the MAX_ITEMS nearest, in order.
+   int slot = m_aDistances.Count();
+   while (slot > 0 && m_aDistances[slot - 1] > distanceSq) slot--;
+   if (slot >= MAX_ITEMS) continue;
+   m_aDistances.InsertAt(distanceSq, slot);
+   m_aPositions.InsertAt(position, slot);
+   if (m_aDistances.Count() > MAX_ITEMS)
+   {
+    m_aDistances.RemoveOrdered(MAX_ITEMS);
+    m_aPositions.RemoveOrdered(MAX_ITEMS);
+   }
+  }
+ }
+
+ // The item's outermost holder (the item itself while it lies loose); null while a player
+ // or the prisoner carries it, at any depth.
+ protected static IEntity Holder(notnull IEntity item, IEntity prisoner)
+ {
+  IEntity holder = item;
+  IEntity parent = item.GetParent();
+  int depth = 0;
+  while (parent && depth < MAX_DEPTH)
+  {
+   if (parent == prisoner) return null;
+   if (ChimeraCharacter.Cast(parent) && ESR_SurrenderManager.IsPlayerCharacter(parent)) return null;
+   holder = parent;
+   parent = parent.GetParent();
+   depth++;
+  }
+  return holder;
  }
 }
 

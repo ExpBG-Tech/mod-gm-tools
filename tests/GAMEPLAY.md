@@ -123,13 +123,72 @@ AdoptFresh) with US fire teams on one building: at least three adds (the third
 while the first garrison is Full cached) and more until some soldiers stand
 around the house (at most eight). Every add must be accepted and placed in full
 (no trim, no refusal) on valid posts that keep clear of every fixed post, and
-earlier garrisons stay untouched. Then the garrisons sleep (one Simulation, the
-rest Full), the second wakes alone, all wake on their posts, and Force Move
-releases the second alone. Deadline 330 s. Source reviewed; native execution
-pending.
+earlier garrisons stay untouched. Overflow soldiers may patrol inside (kind 4,
+`roam=`, not fixed, on an indoor stop outside every door zone) before any stands
+around the house. Then the garrisons sleep (one Simulation, the rest Full), the
+second wakes alone, all wake on their posts, and Force Move releases the second
+alone. Deadline 330 s. Source reviewed; native execution pending.
 
 ```powershell
-pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RepeatGarrisonGameplay.c -ExpectResult '\[EXPG REPEAT RESULT\] checks=[1-9]\d* failures=0 adds=[3-8] guards=[1-9]\d* capacity=[1-9]\d* posts=[1-9]\d* building=\d+ around=[1-9]\d* spawn=0 reason=completed' -TimeoutSeconds 480 -OrchestratorSlotGranted
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RepeatGarrisonGameplay.c -ExpectResult '\[EXPG REPEAT RESULT\] checks=[1-9]\d* failures=0 adds=[3-8] guards=[1-9]\d* capacity=[1-9]\d* posts=[1-9]\d* building=\d+ roam=\d+ around=[1-9]\d* spawn=0 reason=completed' -TimeoutSeconds 480 -OrchestratorSlotGranted
+```
+
+`EXPG_InteriorGameplay.c` (custom fixture, same driver name, a House_Town_E_2I01
+of the Everon map, whose floors are in the baked navmesh; a house spawned at run
+time has navmesh only on the terrain under it) covers the 2026-10-07 live test: 17 guards held a two-storey Morton house, but
+one stood right behind the front door so it could not be opened, and the Game
+Master asked for overflow soldiers to patrol inside, take free windows (or watch
+a hallway or door) in a firefight and not bunch up. Door clearance: no fixed
+slot, patrol stop, alarm window or watch point lies in a door zone (the
+planner's `InDoorZone` and the fixture's own subset: leaf width + 0.5 m around
+the hinge or 0.8 m around the closed leaf's centre, on its floor); every door
+that opens fully on the empty house (`SetControlValue(1)`, 4 s) opens fully again
+with the guards in place (three tries), and no standing guard is in a door zone.
+US fire teams are added (CanFit, fresh roster, AdoptFresh, caching Off) until
+at least three soldiers patrol inside (at most twelve adds; each add is checked
+once every soldier is bound on his post or stop). Patrol, 60 s sampled
+every 0.5 s: every patroller walks at least 3 m over two claimed stops, never
+outside (roof and sixteen-bearing test) or off the indoor floor; standing
+soldiers stay 1.2 m apart and any two 0.5 m; claims stay unique and 1.5 m apart.
+Alarm: `ThreatBulletImpact(5)` on one fixed guard drives the real threat-state
+event; within 30 s every patroller holds a free window, a distinct watch point
+or his stop, none outside or stacked, at least one window when one was free.
+Calm: all back on patrol within 150 s and one walking again. One patroller is
+killed; a Full cycle and a Simulation cycle must bring every survivor back as a
+patroller within 1.5 m of his claimed stop, the casualty stays dead, nobody is
+replenished. Deadline 540 s. No players, GM UI, real combat or save/load.
+Source reviewed; native execution pending. `tests/Test-Interior.ps1` guards the
+source invariants and this fixture's wiring portably.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_InteriorGameplay.c -ExpectResult '\[EXPG INTERIOR RESULT\] checks=[1-9]\d* failures=0 leaves=[1-9]\d* zoned=0 doorGuards=0 doorsOpened=\d+ doorsBlocked=0 guards=[1-9]\d* rovers=[3-9]\d* roamMoved=[3-9]\d* roamOutside=0 stacked=0 overlap=0 alertWindows=\d+ alertWatch=\d+ alertOutside=0 alertStacked=0 calmReturned=1 killed=1 fullRovers=[2-9]\d* simRovers=[2-9]\d* replenished=0 reason=completed' -TimeoutSeconds 600 -OrchestratorSlotGranted
+```
+
+`EXPG_HoldGameplay.c` (custom fixture, same driver name, House_Town_E_2I01)
+covers the 2026-10-07 live report (0.1.9, ACE, EXPBG RO AI, dedicated server):
+guards left their spots and ran around, and the garrison was no longer cached.
+One US fire team garrisons the house (CanFit, fresh roster, AdoptFresh; caching
+Off at first) and needs at least three fixed guards. Case 1: one fixed guard is
+moved 2-4 m by a Game Master transform (editable `SetTransform`) and another is
+knocked unconscious (`SetUnconscious`, as the Scenario Framework does) for 10 s.
+No release; the moved guard holds where he came to rest (his post moves to him,
+controls bound, he never walks back), the knocked guard is bound again within
+0.6 m of his post after waking and stays within 2 m of where he stood, and every
+other fixed guard keeps his exact post (same node, never re-anchored, within
+0.5 m). Case 2: a third fixed guard is deleted (editable `Delete`); he is marked
+dead and never respawned, the others keep their posts. Case 3: cache mode Full
+(no CDF in the fixture modset) then Off, then Simulation then Off; every survivor
+is restored within 0.5 m of where he slept and, if fixed, within 0.6 m of his
+(anchored) post with controls bound, three soldiers in the squad. Case 4: the
+Game Master's Release is the only release and names its reason (status
+"Released: Released by the Game Master"). Any earlier release or a refused or
+retained status fails the run; "Cache held" statuses are logged as
+`[EXPG HOLD STATUS]`. Deadline 540 s. No players, GM UI, ACE, real blasts or
+possession. Source reviewed; native execution pending. `tests/Test-PostHold.ps1`
+guards the source invariants and this fixture's wiring portably.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_HoldGameplay.c -ExpectResult '\[EXPG HOLD RESULT\] checks=[1-9]\d* failures=0 guards=4 fixed=[34] pushHeld=1 knockedOut=1 knockHeld=1 othersKept=1 deleted=1 respawned=0 fullRestored=3 simRestored=3 premature=0 released=1 reasons=1 reason=completed' -TimeoutSeconds 600 -OrchestratorSlotGranted
 ```
 
 `EXPG_PostSpreadGameplay.c` (custom fixture, same driver name) covers the live
@@ -150,7 +209,10 @@ twelve alive on their posts, no two within 0.8 m, posts on at least two storeys,
 none around the building or at the spawn point. Deadline 300 s. No players, GM
 UI, caching or combat. Source reviewed; native execution pending. The planner
 change behind it also alters slot counts, so the `-FreshTrim` expectation of
-nine Village slots must be re-measured.
+nine Village slots must be re-measured. The interior change (door posts set back
+2-4 m, door zones, patrol starts instead of score-0 slots) alters them again; a
+patroller counts as holding his post, and `around=0` assumes the town house has
+room inside for twelve soldiers.
 
 ```powershell
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_PostSpreadGameplay.c -ExpectResult '\[EXPG SPREAD RESULT\] checks=[1-9]\d* failures=0 slots=[1-9]\d* storeys=[2-9] windowSlots=[1-9]\d* doorSlots=\d+ guards=12 postStoreys=[2-9] outside=0 around=0 crowded=0 reason=completed' -TimeoutSeconds 420 -OrchestratorSlotGranted
@@ -301,4 +363,173 @@ pending.
 
 ```powershell
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EAD_RoadWrecksGameplay.c -TimeoutSeconds 300 -OrchestratorSlotGranted -ExpectResult '\[EXPG EAD ROAD RESULT\] checks=[1-9]\d* failures=0 wrecks=([6-9]|[1-9]\d+) reason=complete'
+```
+
+## Ambient Destruction vehicle types fixture
+
+`tests/EAD_VehicleCategoryGameplay.c` (custom fixture, same driver name) spawns
+the production `EAD_Zone` prefab at the road wreck fixture's Morton point
+(radius 150, Wrecks 100, Bodies 0, Destruction 0, one seed). A new zone must
+default to Both, and out-of-range values must clamp. The packed `Edit.conf`
+entry `EAD_VehicleTypesAttribute` (key 12, Civilian 0 / Military 1 / Both 2)
+switches the zone through the server-only attribute write that CDF restore
+uses: Military, Civilian, Both, then Military again. Every wreck of the
+Military and Civilian layouts must carry that `EAD_Catalog.Category` (at
+least four each). Both must place at least six wrecks and mix the two
+categories. The second Military layout must equal the first exactly. A
+schema 3 snapshot must keep the setting. A schema 2 payload (written before
+the setting existed) must read back as Both with every record, and importing
+it (the CDF bridge path) must keep those records without regenerating.
+Deadline 270 s. No players, GM UI, CDF or real save/load. Source reviewed;
+native execution pending. `tests/Test-VehicleCategory.ps1` guards the
+classification and wiring portably.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EAD_VehicleCategoryGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[EXPG EAD VEHICLE RESULT\] checks=[1-9]\d* failures=0 military=([4-9]|[1-9]\d+) civilian=([4-9]|[1-9]\d+) both=([6-9]|[1-9]\d+) mixed=1 replay=1 legacy=1 reason=complete'
+```
+
+## AI Surrender commander grenade fixture
+
+`tests/ESR_CommanderGrenadeGameplay.c` (custom fixture, same driver name) spawns
+the real AI Surrender module prefab and four native USSR rifle squads at least
+140 m apart, then kills two non-leaders per squad through the native damage
+manager (2 of 6 is above the 10% threshold; surrender 100%, random 0). The
+production evaluation decides every case. Settings checks come first: the
+prefab defaults (grenade 0%, must carry ON), the clamp, a ten-value save from
+before the commander settings (restored with their defaults), a twelve-value
+save (restored and mirrored), and a save with more values than settings
+(fourteen since the intel setting; refused).
+
+- own: grenade 100%, must carry ON. If his loadout has no frag, the fixture puts
+  one in his inventory. He does not surrender and stays in his squad with his AI
+  off. Exactly one of his grenades leaves his inventory, a timed vanilla frag of
+  the same prefab lies within 1 m of him and goes live, and he is dead or
+  unconscious after the fuse. The other three able soldiers surrendered, and his
+  record ends with "blast".
+- spawned: must carry OFF, his frags removed. A vanilla RGD-5 (USSR side) is
+  placed live within 1 m of him, and he is down after the fuse.
+- mustCarry: must carry ON, his frags removed. He surrenders with the others.
+- control: grenade 0%. The leader surrenders as before, and no commander record
+  is left.
+
+Deadline 240 s. No players, GM UI, ACE, CDF or real save/load. Source reviewed;
+native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ESR_CommanderGrenadeGameplay.c -TimeoutSeconds 300 -OrchestratorSlotGranted -ExpectResult '\[ESR GRENADE RESULT\] checks=[1-9]\d* failures=0 own=1 spawned=1 mustCarry=1 control=1 reason=complete'
+```
+
+## AI Surrender intel items fixture
+
+`tests/ESR_IntelRevealGameplay.c` (custom fixture, same driver name) spawns the
+real AI Surrender module prefab and one native USSR rifle squad. Settings checks
+come first: the prefab default (30%), the clamp, ten- and twelve-value saves
+(restored with the intel default), a thirteen-value save (restored and
+mirrored) and a fourteen-value save (refused). Then reveal 0%, identity 100%,
+intel 100%, radius 300 m. One soldier carries an Intel Items notebook and
+surrenders through the production call; a squad mate carrying a manual is
+killed. Around the prisoner: a notebook 50 m east, a manual 100 m north, a
+tablet 200 m south, a laptop 20 m west whose startup token is spent, and a
+notebook 330 m east.
+
+- query: the production `ESR_IntelQuery` alone counts four unclaimed items
+  inside 300 m (three listed) and five inside 400 m.
+- first answer (production Interrogate): identity, and he points out exactly
+  the body's manual, the east notebook and the north manual, nearest first,
+  with the 25 m distances and compass sectors computed by the fixture from the
+  holders' positions. The tablet is fourth (at most three); the spent laptop,
+  his own notebook and the item outside the radius are left out. Three static
+  "Intel (interrogation)" placed markers stand at those positions, and the
+  dialog text lists the three. Asking again repeats it without new markers.
+- refused: a second prisoner with identity 0% refuses; no intel is rolled.
+- chanceZero: intel 0%, identity 100%; he answers with no intel line and no
+  marker.
+
+Deadline 180 s. No players (an item in a player's inventory is not covered), GM
+UI, client dialog, CDF or real save/load. Source reviewed; native execution
+pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ESR_IntelRevealGameplay.c -TimeoutSeconds 300 -OrchestratorSlotGranted -ExpectResult '\[ESR INTEL RESULT\] checks=[1-9]\d* failures=0 listed=3 markers=3 refused=1 chanceZero=1 reason=complete'
+```
+
+## Per-squad and per-soldier override fixture
+
+`tests/ESR_OverrideGameplay.c` (custom fixture, same driver name) spawns the
+real AI Surrender and AI Global Skills module prefabs, two native USSR rifle
+squads (A, and control B 150 m east), one Intel Items notebook and, later, a
+real Unit Caching zone in Full mode over A. Module settings: surrender 0%,
+threshold 10%, random 0, reveal, identity and intel 0%, radius 300 m, grenade
+0%, default ROE Return Fire Only. Presence is injected through
+`EBG_CacheManager.UpdatePlayers`; the server has no players.
+
+- overrides: through the production attribute classes on the attribute-saver
+  path (null manager, playerID -1): A surrender 100%, reveal 100%, intel 100%
+  (identity on the module), one soldier of A (the holdout) surrender 0%; A ROE
+  Fire on Sight, the holdout's own ROE Return Fire Only. Saved reads return set
+  values as spinbox entries and nothing for unset ones; resolution gives a plain
+  A soldier 100% (squad), the holdout 0% (soldier) and B 0% (module); a module
+  change reaches B through the per-squad cache.
+- roe: A FIRE_AT_WILL, B RETURN_FIRE; the holdout answers HOLD_FIRE himself
+  while a squad mate gives FIRE_AT_WILL, before caching and after the wake. B's
+  ROE override set mid-mission applies at once and clears back to the default.
+- cached: A Full caches (squad deleted, survivors respawned later). The squad
+  snapshot holds A's values and ROE, exactly one survivor carry holds the
+  holdout's, and a portable snapshot written and read back by production keeps
+  both. After the wake the recreated squad and the respawned holdout have every
+  value back and no other soldier took one.
+- save path: exported squad overrides bind back by persistence id at once after
+  being cleared; the holdout's exported ROE binds back on the AI Global Skills
+  tick (skipped with a log line if the world has no persistence id).
+- control: one casualty in B (module 0%): nobody surrenders.
+- surrendered / heldOut: one casualty in A: the four able soldiers surrender
+  (100%, exact), the holdout stays in his squad; each prisoner carries A's
+  values.
+- interrogation / intel: A's reveal is then changed to 0%. Prisoner 1 still
+  reveals B (his squad's 100% at surrender) and points out the notebook;
+  prisoner 2, given his own reveal 0% and identity 100% as a prisoner, gives his
+  identity; prisoner 3, given his own reveal and identity 0%, refuses.
+
+Deadline 300 s. No GM UI, clients or JIP (nothing replicates), Garrison Full
+caching (same survivor carry, squad entity kept) or real native or CDF
+save/load. Source reviewed; native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ESR_OverrideGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ESR OVERRIDE RESULT\] checks=[1-9]\d* failures=0 surrendered=4 heldOut=1 control=0 interrogation=3 intel=1 roe=1 cached=1 reason=complete'
+```
+
+## Time and Weather fixture
+
+`tests/ETW_TimeWeatherGameplay.c` (custom fixture, same driver name) spawns the
+real Weather Transition and Time Skip module prefabs and drives the public server
+entry points the Game Master attributes call (`ETW_TimeSkip.Start`,
+`ETW_WeatherRunner.StartFromModule`).
+
+- rollover: calendar arithmetic (year end, leap day, non-leap February, 30-day
+  month, century rule), the module defaults (10 min; 6 h, fades 2/3/2 s,
+  "{hours} hours later"), clamps, native-save restore, choice values and texts.
+- skip: with day auto-advance off, +26 h 30 min from 2026-12-31 22:00 lands on
+  2027-01-02 00:30 and +2 h from 2028-02-28 23:00 on 2028-02-29 01:00; a second
+  skip during the first is refused; the dedicated server draws no black screen.
+- broadcasts: three skips send three fade broadcasts and the local handler runs
+  three times.
+- gradual / finished: a 1-minute transition to another weather (Rainy unless
+  the start is Rainy) with rain to 100% (0% if it starts at 50% or more) and
+  wind 8 m/s. Rain moves monotonically and is about half way after 30 s; at the
+  end rain and wind are at target, the target state is reached and held.
+- interrupt: a new transition 20 s into another one continues from the rain
+  reached (no jump a second later) with a restarted clock.
+- skipFinish: a time skip during a transition completes it at full black.
+- foreign: `ForceWeatherTo` (what Scenario Properties weather does) stops the
+  transition and hands rain back to the weather.
+- smooth (evidence only, 0 or 1): 1 when the clouds reached the target through
+  the engine's own blend without the end-of-transition snap. Judge it from the
+  `[ETW SAMPLE]` overcast column as well; 0 means the smooth engine transition
+  did not run from script and needs a fix before release.
+
+Deadline 300 s. No players, GM UI, client black screen, JIP or real save/load.
+Source reviewed; native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ETW_TimeWeatherGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ETW RESULT\] checks=[1-9]\d* failures=0 rollover=1 skip=1 broadcasts=3 gradual=1 finished=1 interrupt=1 skipFinish=1 foreign=1 smooth=[01] reason=complete'
 ```

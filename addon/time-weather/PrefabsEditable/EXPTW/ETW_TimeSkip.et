@@ -1,0 +1,24 @@
+ETW_TimeSkipModule {
+ ID "4F3F556F1CAF2E35"
+ components {
+  SCR_EditableEntityComponent "{832596D4BB053F64}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{91BF854C31FE0F98}" {
+    Name "#EXPBG-TimeSkip_Name"
+    Description "#EXPBG-TimeSkip_Description"
+    Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM 157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{9B23A1E8C838B33C}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{12D441DCF3493AA6}" {
+  }
+ }
+}

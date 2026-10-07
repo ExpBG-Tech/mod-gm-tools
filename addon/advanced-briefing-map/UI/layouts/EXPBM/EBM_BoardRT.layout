@@ -5,20 +5,20 @@ FrameWidgetClass {
   OffsetTop 0
   SizeX 1024
   OffsetRight -1024
-  SizeY 720
-  OffsetBottom -720
+  SizeY 1024
+  OffsetBottom -1024
  }
  "Ignore Cursor" 1
  {
   RTTextureWidgetClass "{99BA64235DE7DB5C}" {
-   Name "RTTexture0"
+   Name "EBM_Canvas"
    Slot FrameWidgetSlot "{696ACBFF7811E5EC}" {
     OffsetLeft 0
     OffsetTop 0
-    SizeX 1024
-    OffsetRight -1024
-    SizeY 720
-    OffsetBottom -720
+    SizeX 1006
+    OffsetRight -1006
+    SizeY 586
+    OffsetBottom -586
    }
    "Ignore Cursor" 1
    {
@@ -65,6 +65,23 @@ FrameWidgetClass {
        }
        "Ignore Cursor" 1
        Size 1024 720
+      }
+      FrameWidgetClass "{84D2AA25C03DF969}" {
+       Name "EBM_EngineMapSlot"
+       Slot FrameWidgetSlot "{9EDE12C4D8C61BF4}" {
+        Anchor 0 0 1 1
+        PositionX 0
+        OffsetLeft 0
+        PositionY 0
+        OffsetTop 0
+        SizeX 0
+        OffsetRight 0
+        SizeY 0
+        OffsetBottom 0
+        Alignment 0 0
+       }
+       Clipping True
+       "Ignore Cursor" 1
       }
       FrameWidgetClass "{8BABFAF09025A2BF}" {
        Name "EBM_Lines"
@@ -118,6 +135,30 @@ FrameWidgetClass {
        }
       }
      }
+    }
+   }
+  }
+  RTTextureWidgetClass "{3D986AC0CBC1705F}" {
+   Name "RTTexture0"
+   Slot FrameWidgetSlot "{ECCE90765066C343}" {
+    OffsetLeft 0
+    OffsetTop 0
+    SizeX 1024
+    OffsetRight -1024
+    SizeY 1024
+    OffsetBottom -1024
+   }
+   "Ignore Cursor" 1
+   {
+    ImageWidgetClass "{BA001F05A684A319}" {
+     Name "EBM_Screen"
+     Slot FrameWidgetSlot "{6D7CB7C0A1749530}" {
+      OffsetLeft 0
+      OffsetTop 0
+      SizeToContent 1
+     }
+     "Ignore Cursor" 1
+     Size 1006 586
     }
    }
   }

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{C088CA797526BB5A}PrefabsEditable/EXPBM/EBM_BriefingProjector.et"
+ Configurations {
+  EntityTemplateResourceClass PC {}
+  EntityTemplateResourceClass HEADLESS : PC {}
+ }
+}

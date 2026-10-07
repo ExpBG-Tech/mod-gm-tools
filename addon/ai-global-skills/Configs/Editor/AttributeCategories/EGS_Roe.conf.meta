@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{CB1FB5533BC95820}Configs/Editor/AttributeCategories/EGS_Roe.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

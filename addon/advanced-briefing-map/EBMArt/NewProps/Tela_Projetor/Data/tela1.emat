@@ -1,0 +1,4 @@
+MatPBRBasic {
+ Color 0.913 0.913 0.913 1
+ MetalnessScale 0
+}

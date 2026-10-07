@@ -3,7 +3,8 @@ class EXPG_BuildingNode
 {
  vector Position;
  vector Look;
- // Window and door posts: metres to the watched opening (or to the open view's exit).
+ // Window and door posts: metres to the watched opening (or to the open view's exit;
+ // plus 1 for a door post in line with its doorway), lower ranks first.
  float Range = 1000;
  int Column;
  int Score;
@@ -20,6 +21,18 @@ class EXPG_BuildingNode
  bool Enclosed;
  // Stair tread or ramp: links floors, never a post, patrol stop or extra position.
  bool Stair;
+ // In a door leaf's swing or its doorway (EXPG_BuildingPlan.InDoorZone): never a
+ // post, patrol stop or watch point, so every door can still be opened; walkable.
+ bool DoorBlock;
+ // Indoor floor a patrol may walk: an enclosed interior node, or a stair or aside
+ // node whose stair-connected group touches only such nodes (BuildWalk).
+ bool IndoorWalk;
+ // Connected indoor walking area of IndoorWalk nodes; -1 for none.
+ int WalkGroup = -1;
+ // Interior patrol stop (EXPG_BuildingPlan.RoamStops) and the hallway or doorway
+ // a patroller there watches.
+ bool RoamStop;
+ vector WatchLook;
  ref array<int> Links = {};
 }
 
@@ -36,6 +49,21 @@ class EXPG_BuildingOpening
  // A door between an enclosed room and the outside; Inward points into the room.
  bool Exterior;
  vector Inward;
+ // Doors: level unit vector across the doorway (along the frame) and half the
+ // frame's width, so a door post can prefer a spot diagonal to the opening.
+ vector Side;
+ float HalfWidth;
+}
+
+// One door leaf's keep-out zone (EXPG_BuildingPlan.InDoorZone): the hinge, the level
+// unit vector from the hinge across the doorway towards the frame centre, the leaf
+// width and the floor height under the leaf.
+class EXPG_DoorLeaf
+{
+ vector Hinge;
+ vector Along;
+ float LeafSpan;
+ float FloorY;
 }
 
 class EXPG_BuildingReservation
@@ -72,6 +100,9 @@ class EXPG_BuildingPlan
  static const float WIDE_SPACING = 2.5;
  // A body clears this much floor rise without touching it (a stair tread).
  static const float STEP_HEIGHT = 0.45;
+ // Interior patrol stops, alarm windows and alarm watch points kept per building.
+ static const int MAX_ROAM = 96;
+ static const int MAX_ALERT_NODES = 256;
  IEntity Structure;
  vector Origin;
  vector Angles;
@@ -86,6 +117,17 @@ class EXPG_BuildingPlan
  float LastUsed;
  // Last time a Game Master waited for this analysis (EXPG_GarrisonManager.Wait).
  float WaitedAt = -1000;
+ // Interior patrol stops (farthest first, storeys taking turns, 1.5 m apart and
+ // from every fixed slot), alarm windows and alarm watch points (doors, stairs,
+ // entrances); none lies in a door zone.
+ ref array<int> RoamStops = {};
+ ref array<int> WindowNodes = {};
+ ref array<int> WatchNodes = {};
+ // Building-wide alarm shared by every garrison of the building (seconds of
+ // world time, EXPG_GarrisonManager.ServiceAlert).
+ float LastAlert = -1000;
+ float ThreatAt = -1000;
+ vector ThreatPos;
  protected int m_Width;
  protected int m_Depth;
  protected int m_Column;
@@ -103,6 +145,22 @@ class EXPG_BuildingPlan
  protected ref array<ref EXPG_ParkedPost> m_Parked = {};
  protected ref array<float> m_StoreyBases = {};
  protected int m_Turn;
+ protected ref array<ref EXPG_DoorLeaf> m_DoorLeaves = {};
+ // Roam stops per walk group; breadth-first scratch (hops per node, touched nodes).
+ protected ref array<int> m_GroupStops = {};
+ protected ref array<int> m_Hops = {};
+ protected ref array<int> m_Touched = {};
+ // Roam stop selection (phase 5): candidates, their squared floor gap to the
+ // nearest slot or stop, how many stops each gap already counts, full storeys.
+ protected ref array<int> m_RoamCandidates = {};
+ protected ref array<float> m_RoamGap = {};
+ protected ref array<int> m_RoamSeen = {};
+ protected ref array<bool> m_RoamFull = {};
+ protected int m_RoamCursor;
+ protected int m_RoamBest = -1;
+ protected float m_RoamBestGap = -1;
+ protected int m_RoamStorey;
+ protected int m_WatchCursor;
 
  // Fixed guards and stopped patrols occupy a node. One entry per live actor.
  bool ReserveNode(IEntity owner, int node)
@@ -198,6 +256,231 @@ class EXPG_BuildingPlan
   return Math.Max(aFrom[1], aTo[1]) + 2.0 >= Math.Min(bFrom[1], bTo[1]) && Math.Max(bFrom[1], bTo[1]) + 2.0 >= Math.Min(aFrom[1], aTo[1]);
  }
 
+ // A door's keep-out zone on its floor (0.6 m below to 1.2 m above the leaf's
+ // floor): the leaf's swing disc, width plus 0.6 m (body and margin) around the
+ // hinge, on both sides because native doors open either way, and the doorway
+ // passage, 0.3 m beyond the leaf's span and 1.5 m deep on each side. Scalar only.
+ static bool InDoorZone(vector point, vector hinge, vector along, float span, float floorY)
+ {
+  float rise = point[1] - floorY;
+  if (rise < -0.6 || rise > 1.2) return false;
+  float dx = point[0] - hinge[0];
+  float dz = point[2] - hinge[2];
+  float reach = span + 0.6;
+  if (dx * dx + dz * dz < reach * reach) return true;
+  float lengthwise = dx * along[0] + dz * along[2];
+  float crosswise = Math.AbsFloat(dx * along[2] - dz * along[0]);
+  return lengthwise >= -0.3 && lengthwise <= span + 0.3 && crosswise < 1.5;
+ }
+
+ bool InAnyDoorZone(vector point)
+ {
+  foreach (EXPG_DoorLeaf leaf : m_DoorLeaves)
+  {
+   if (InDoorZone(point, leaf.Hinge, leaf.Along, leaf.LeafSpan, leaf.FloorY)) return true;
+  }
+  return false;
+ }
+
+ int DoorLeafCount()
+ {
+  return m_DoorLeaves.Count();
+ }
+
+ // No other guard's post, stop or destination (and no parked post of a
+ // Full-cached garrison) within POST_SPACING on the same floor.
+ bool StopFree(int node, IEntity exceptOwner = null)
+ {
+  if (node < 0 || node >= Nodes.Count()) return false;
+  vector point = Nodes[node].Position;
+  foreach (EXPG_BuildingReservation reservation : m_Reservations)
+  {
+   if (!reservation.Owner || reservation.Owner == exceptOwner) continue;
+   if (Crowded(point, Nodes[reservation.From].Position, POST_SPACING) || Crowded(point, Nodes[reservation.To].Position, POST_SPACING)) return false;
+  }
+  foreach (EXPG_ParkedPost parked : m_Parked)
+  {
+   if (Crowded(point, parked.Position, POST_SPACING)) return false;
+  }
+  return true;
+ }
+
+ // A patroller's single claim: his current stop or his destination, never both.
+ // Whoever claims first wins; a claimed stop keeps POST_SPACING from every other
+ // claim and parked post, lies outside every door zone and fits a standing body.
+ bool TryClaimStop(IEntity owner, int node)
+ {
+  if (!owner || node < 0 || node >= Nodes.Count()) return false;
+  EXPG_BuildingNode target = Nodes[node];
+  if (!target.Reachable || !target.IndoorWalk || target.Stair || target.DoorBlock) return false;
+  if (!StopFree(node, owner)) return false;
+  if (!ClearBody(target.Position, target.Position + "0 0.01 0", owner)) return false;
+  return ReserveNode(owner, node);
+ }
+
+ bool NearParked(vector point, float reach)
+ {
+  foreach (EXPG_ParkedPost parked : m_Parked)
+  {
+   if (Math.AbsFloat(parked.Position[1] - point[1]) < 2.0 && vector.DistanceXZ(parked.Position, point) < reach) return true;
+  }
+  return false;
+ }
+
+ // The nearest indoor walking node within reach (horizontal, 0.8 m vertical) in
+ // the 3 x 3 grid columns around the point: O(1), no traces. Standing excludes
+ // stair and aside nodes and door zones.
+ int NearestNode(vector point, float reach, bool standing)
+ {
+  if (!Structure || m_Width < 1 || m_Depth < 1) return -1;
+  vector local = Structure.CoordToLocal(point);
+  int x = Math.Floor((local[0] - Mins[0]) / GRID);
+  int z = Math.Floor((local[2] - Mins[2]) / GRID);
+  int best = -1;
+  float bestDistance = reach * reach;
+  for (int dz = -1; dz <= 1; dz++)
+  {
+   for (int dx = -1; dx <= 1; dx++)
+   {
+    int columnX = x + dx;
+    int columnZ = z + dz;
+    if (columnX < 0 || columnZ < 0 || columnX >= m_Width || columnZ >= m_Depth) continue;
+    foreach (int index : Columns[columnZ * m_Width + columnX].Nodes)
+    {
+     EXPG_BuildingNode node = Nodes[index];
+     if (!node.IndoorWalk || Math.AbsFloat(node.Position[1] - point[1]) > 0.8) continue;
+     if (standing && (node.Stair || node.DoorBlock)) continue;
+     float distance = vector.DistanceSqXZ(node.Position, point);
+     if (distance > bestDistance) continue;
+     best = index;
+     bestDistance = distance;
+    }
+   }
+  }
+  return best;
+ }
+
+ // On the indoor floor: within 0.7 m (about one grid step) of an indoor walking node.
+ bool OnIndoorFloor(vector point)
+ {
+  return NearestNode(point, 0.7, false) >= 0;
+ }
+
+ // A patrol's containment test for its native path and its next step.
+ bool Contained(vector point)
+ {
+  return Inside(point, 0.25) && OnIndoorFloor(point);
+ }
+
+ // Breadth-first steps over indoor walking nodes from one node, at most maxHops
+ // steps and 4096 nodes; Hops reads the result until the next call. Resets only
+ // the entries the previous call touched.
+ void DistancesFrom(int from, int maxHops)
+ {
+  if (m_Hops.Count() != Nodes.Count())
+  {
+   m_Hops.Clear();
+   for (int i = 0; i < Nodes.Count(); i++) { m_Hops.Insert(-1); }
+   m_Touched.Clear();
+  }
+  foreach (int touched : m_Touched) { m_Hops[touched] = -1; }
+  m_Touched.Clear();
+  if (from < 0 || from >= Nodes.Count()) return;
+  m_Hops[from] = 0;
+  m_Touched.Insert(from);
+  for (int cursor = 0; cursor < m_Touched.Count() && m_Touched.Count() < 4096; cursor++)
+  {
+   int current = m_Touched[cursor];
+   int hops = m_Hops[current];
+   if (hops >= maxHops) continue;
+   foreach (int next : Nodes[current].Links)
+   {
+    if (m_Hops[next] >= 0 || !Nodes[next].IndoorWalk) continue;
+    m_Hops[next] = hops + 1;
+    m_Touched.Insert(next);
+   }
+  }
+ }
+
+ int Hops(int node)
+ {
+  if (node < 0 || node >= m_Hops.Count()) return -1;
+  return m_Hops[node];
+ }
+
+ int WalkGroupCount()
+ {
+  return m_GroupStops.Count();
+ }
+
+ // Free-room rule: patrollers join a walk group only while at least this many of
+ // its stops stay free, max(2, a third of its stops).
+ int KeepFree(int group)
+ {
+  if (group < 0 || group >= m_GroupStops.Count()) return 1000;
+  int keep = Math.Ceil(m_GroupStops[group] / 3.0);
+  if (keep < 2) keep = 2;
+  return keep;
+ }
+
+ int GroupStopCount(int group)
+ {
+  if (group < 0 || group >= m_GroupStops.Count()) return 0;
+  return m_GroupStops[group];
+ }
+
+ // Keeps the lowest scores (ascending, at most keep entries) of a bounded list.
+ static void KeepBest(notnull array<int> nodes, notnull array<float> scores, int node, float score, int keep)
+ {
+  int at = 0;
+  while (at < scores.Count() && scores[at] <= score) { at++; }
+  if (at >= keep) return;
+  nodes.InsertAt(node, at);
+  scores.InsertAt(score, at);
+  if (nodes.Count() > keep)
+  {
+   nodes.RemoveOrdered(keep);
+   scores.RemoveOrdered(keep);
+  }
+ }
+
+ // A patrol leg: a free stop of the same indoor area 5-20 steps away, seven times
+ // in ten on the same storey (otherwise 2-40 steps on any storey), one of the four
+ // farthest from every other claim, picked at random and claimed for the owner.
+ int ClaimRoamStop(IEntity owner, int from, notnull array<int> avoid)
+ {
+  if (!owner || from < 0 || from >= Nodes.Count()) return -1;
+  DistancesFrom(from, 40);
+  bool sameStorey = Math.RandomFloat01() < 0.7;
+  array<int> picks = {};
+  array<float> scores = {};
+  for (int pass = 0; pass < 2 && picks.IsEmpty(); pass++)
+  {
+   foreach (int stop : RoamStops)
+   {
+    int hops = Hops(stop);
+    if (stop == from || hops < 2 || avoid.Contains(stop)) continue;
+    if (pass == 0 && (hops < 5 || hops > 20 || (sameStorey && Nodes[stop].Storey != Nodes[from].Storey))) continue;
+    if (!StopFree(stop, owner)) continue;
+    float clearance = 10;
+    foreach (EXPG_BuildingReservation reservation : m_Reservations)
+    {
+     if (!reservation.Owner || reservation.Owner == owner) continue;
+     clearance = Math.Min(clearance, vector.Distance(Nodes[stop].Position, Nodes[reservation.To].Position));
+    }
+    KeepBest(picks, scores, stop, -clearance, 4);
+   }
+  }
+  while (!picks.IsEmpty())
+  {
+   int choice = Math.RandomInt(0, picks.Count());
+   int pick = picks[choice];
+   if (TryClaimStop(owner, pick)) return pick;
+   picks.RemoveOrdered(choice);
+  }
+  return -1;
+ }
+
  void Begin(IEntity building)
  {
   Structure = building;
@@ -238,8 +521,11 @@ class EXPG_BuildingPlan
   {
    IEntity part = parts[cursor];
    for (IEntity child = part.GetChildren(); child && parts.Count() < 512; child = child.GetSibling()) parts.Insert(child);
-   if (part == Structure || m_Openings.Count() >= 64) continue;
+   if (part == Structure) continue;
    DoorComponent door = DoorComponent.Cast(part.FindComponent(DoorComponent));
+   // Every leaf (both leaves of a double door) keeps its own keep-out zone.
+   if (door) AddDoorLeaf(part, door);
+   if (m_Openings.Count() >= 64) continue;
    NavmeshCustomLinkComponent link = NavmeshCustomLinkComponent.Cast(part.FindComponent(NavmeshCustomLinkComponent));
    if (door && link && link.HasLinkOfNavmeshType("Soldiers") && Math.AbsFloat(door.GetAngleRange()) > 1)
    {
@@ -265,6 +551,41 @@ class EXPG_BuildingPlan
    opening.Door = door != null;
    m_Openings.Insert(opening);
   }
+ }
+
+ // The hinge is the same whether the door is open or closed; the doorway's
+ // direction comes from the frame (the leaf itself when it has none, assumed
+ // closed), signed from the hinge towards the frame centre.
+ protected void AddDoorLeaf(IEntity part, DoorComponent door)
+ {
+  if (m_DoorLeaves.Count() >= 64) return;
+  IEntity frameEntity = part;
+  if (part.GetParent() && part.GetParent() != Structure) frameEntity = part.GetParent();
+  vector frame[4]; frameEntity.GetWorldTransform(frame);
+  vector mins, maxs; frameEntity.GetBounds(mins, maxs);
+  vector across = frame[0];
+  if (maxs[0] - mins[0] < maxs[2] - mins[2]) across = frame[2];
+  across[1] = 0;
+  if (across.Length() < 0.1) return;
+  across.Normalize();
+  EXPG_DoorLeaf leaf = new EXPG_DoorLeaf();
+  leaf.Hinge = door.GetDoorPivotPointWS();
+  vector leafMins, leafMaxs; part.GetBounds(leafMins, leafMaxs);
+  // A closed leaf lies across the doorway from its hinge; an open one points
+  // into a room, so the frame centre decides then.
+  vector centre = part.CoordToParent((leafMins + leafMaxs) * 0.5);
+  float side = (centre[0] - leaf.Hinge[0]) * across[0] + (centre[2] - leaf.Hinge[2]) * across[2];
+  if (Math.AbsFloat(side) < 0.1)
+  {
+   centre = frameEntity.CoordToParent((mins + maxs) * 0.5);
+   side = (centre[0] - leaf.Hinge[0]) * across[0] + (centre[2] - leaf.Hinge[2]) * across[2];
+  }
+  if (side < 0) across = across * -1;
+  leaf.Along = across;
+  leaf.LeafSpan = Math.Clamp(Math.Max(leafMaxs[0] - leafMins[0], leafMaxs[2] - leafMins[2]), 0.5, 1.8);
+  vector worldMins, worldMaxs; part.GetWorldBounds(worldMins, worldMaxs);
+  leaf.FloorY = worldMins[1];
+  m_DoorLeaves.Insert(leaf);
  }
 
  protected bool SeesOpening(vector eye, EXPG_BuildingOpening opening)
@@ -363,6 +684,8 @@ class EXPG_BuildingPlan
    normal[1] = 0;
    if (normal.Length() < 0.1) continue;
    normal.Normalize();
+   opening.Side = Vector(normal[2], 0, -normal[0]);
+   opening.HalfWidth = Math.Clamp(0.5 * Math.Max(maxs[0] - mins[0], maxs[2] - mins[2]), 0.3, 1.5);
    bool front = Enclosed(opening.Position + normal * 1.2);
    bool back = Enclosed(opening.Position - normal * 1.2);
    if (front == back) continue;
@@ -435,19 +758,6 @@ class EXPG_BuildingPlan
    if (GetGame().GetWorld().TraceMove(wall, null) < 0.999 && IsBuilding(wall.TraceEnt)) walls++;
   }
   return walls >= 3;
- }
-
- // Patrols use only short graph edges entirely inside the house. The extra
- // margin includes allowed path drift; entrance/porch nodes remain graph roots
- // for reachability but never become patrol destinations or shortcuts.
- bool InteriorEdge(vector from, vector to)
- {
-  float distance = vector.Distance(from, to);
-  if (distance > 1.2) return false;
-  int steps = Math.Max(1, Math.Ceil(distance / 0.2));
-  for (int step = 0; step <= steps; step++)
-   if (!InteriorPoint(vector.Lerp(from, to, step * 1.0 / steps), 0.4)) return false;
-  return true;
  }
 
  bool Inside(vector point, float margin = 0)
@@ -691,14 +1001,17 @@ class EXPG_BuildingPlan
    else if (m_Phase == 1) { LinkOne(); }
    else if (m_Phase == 2) { MarkReachable(); ClassifyDoors(); m_Phase = 3; m_Node = 0; }
    else if (m_Phase == 3) { ScoreOne(); }
-   else { SelectSlots(); Done = true; }
+   else if (m_Phase == 4) { SelectSlots(); BuildWalk(); m_Phase = 5; }
+   else if (m_Phase == 5) { RoamStep(); }
+   else { WatchStep(); }
   }
  }
 
  // Analysis progress from 0 to 1 for the Game Master's hint: sampling counts
- // 45 %, linking 20 %, scoring 35 % of the bar, each by its own position
- // (columns or nodes done of the total), so the value never decreases. It stays
- // below 1 until the plan is done (with or without an error).
+ // 45 %, linking 20 %, scoring 30 %, patrol stops and their watch directions the
+ // last 4 % of the bar, each by its own position (columns, nodes or stops done of
+ // the total), so the value never decreases. It stays below 1 until the plan is
+ // done (with or without an error).
  float Progress()
  {
   if (Done) return 1;
@@ -717,10 +1030,14 @@ class EXPG_BuildingPlan
   if (m_Phase == 2) return 0.65;
   if (m_Phase == 3)
   {
-   if (nodes < 1) return 0.99;
-   return 0.65 + 0.34 * Math.Min(1, m_Node * 1.0 / nodes);
+   if (nodes < 1) return 0.95;
+   return 0.65 + 0.3 * Math.Min(1, m_Node * 1.0 / nodes);
   }
-  return 0.99;
+  if (m_Phase == 4) return 0.95;
+  if (m_Phase == 5) return 0.95 + 0.02 * Math.Min(1, RoamStops.Count() * 1.0 / MAX_ROAM);
+  float stops = RoamStops.Count();
+  if (stops < 1) return 0.99;
+  return 0.97 + 0.02 * Math.Min(1, m_WatchCursor * 1.0 / stops);
  }
 
  protected void SampleColumn()
@@ -850,10 +1167,15 @@ class EXPG_BuildingPlan
  {
   if (m_Node >= Nodes.Count()) { m_Phase = 4; return; }
   EXPG_BuildingNode node = Nodes[m_Node++];
+  // Nodes x leaves of scalar math; walking through stays allowed.
+  node.DoorBlock = InAnyDoorZone(node.Position);
   if (!node.Reachable || node.Stair) { return; }
   node.Look = vector.FromYaw(Angles[1]);
   vector eye = node.Position + "0 1.5 0";
   node.Enclosed = node.Interior && Enclosed(eye);
+  // In a door's swing or doorway: never a post, entrance post, patrol stop or
+  // watch point (a guard there blocked the front door in a live test).
+  if (node.DoorBlock) { return; }
   if (node.Entrance) { node.Score = SCORE_ENTRANCE; }
   foreach (int link : node.Links)
   {
@@ -868,8 +1190,10 @@ class EXPG_BuildingPlan
    return;
   }
   // Watch a window from 0.4-3 m (the nearest window wins; SelectSlots takes the
-  // nearest watcher of each window first), or an outer door from 1.5-2.5 m on
-  // its room side. A window outranks a door; interior doors are not watched.
+  // nearest watcher of each window first), or an outer door from 2-4 m on its room
+  // side, at least 1.2 m deep and outside every door zone (above), facing the
+  // doorway; a spot in line with the doorway ranks 1 m behind a diagonal one.
+  // A window outranks a door; interior doors are not watched.
   // Only sampled nodes qualify: each already passed floor, standing-body
   // clearance, ceiling, interior and entrance-reachability checks, so no position
   // is synthesized. 0.4 m from the pane centre is about a body against a thin
@@ -880,20 +1204,22 @@ class EXPG_BuildingPlan
    float horizontal = delta[0] * delta[0] + delta[2] * delta[2];
    if (Math.AbsFloat(delta[1]) > 0.75) continue;
    int score = SCORE_WINDOW;
+   float rank = Math.Sqrt(horizontal);
    if (opening.Door)
    {
-    if (!opening.Exterior || horizontal < 2.25 || horizontal > 6.25) continue;
+    if (!opening.Exterior || horizontal < 4 || horizontal > 16) continue;
     vector inward = node.Position - opening.Position;
     inward[1] = 0;
-    if (vector.Dot(inward, opening.Inward) < 0.5) continue;
+    if (vector.Dot(inward, opening.Inward) < 1.2) continue;
+    if (Math.AbsFloat(vector.Dot(inward, opening.Side)) <= opening.HalfWidth + 0.5) rank += 1.0;
     score = SCORE_DOOR;
    }
    else if (horizontal < 0.16 || horizontal > 9) continue;
-   if (node.Score > score || (node.Score == score && horizontal >= node.Range * node.Range)) continue;
+   if (node.Score > score || (node.Score == score && rank >= node.Range)) continue;
    if (!SeesOpening(eye, opening)) continue;
    node.Score = score;
    node.Watch = index;
-   node.Range = Math.Sqrt(horizontal);
+   node.Range = rank;
    node.Opening = OPENING_WINDOW;
    if (opening.Door) node.Opening = OPENING_DOOR;
    // Level gaze: at close range the opening's centre is often well above or below
@@ -927,10 +1253,12 @@ class EXPG_BuildingPlan
  }
 
  // At most MAX_SLOTS places; greedy spacing over a bounded graph avoids a large
- // solver. Kinds in priority order: sentinels, windows, outer doors, entrance
- // approaches, stair watch, patrol nodes. Each kind is taken first WIDE_SPACING
- // apart with one watcher per window or door, then POST_SPACING apart with up to
- // two. A fresh squad takes Slots in this order, so it spreads over every floor.
+ // solver. Fixed kinds in priority order: sentinels, windows, outer doors,
+ // entrance approaches, stair watch. Each kind is taken first WIDE_SPACING apart
+ // with one watcher per window or door, then POST_SPACING apart with up to two.
+ // Patrol starts (interior roam stops) are appended after the last phase
+ // (AppendPatrolStarts). A fresh squad takes Slots in this order, so it spreads
+ // over every floor.
  protected void SelectSlots()
  {
   RequireEnclosure();
@@ -947,7 +1275,6 @@ class EXPG_BuildingPlan
   priorities.Insert(SCORE_DOOR);
   priorities.Insert(SCORE_ENTRANCE);
   priorities.Insert(SCORE_STAIRS);
-  priorities.Insert(0);
   array<int> pool = {};
   foreach (int priority : priorities)
   {
@@ -955,7 +1282,210 @@ class EXPG_BuildingPlan
    PickSlots(pool, wide, openingUse, 1, wide, dense);
    PickSlots(pool, dense, openingUse, 2, wide, dense);
   }
+ }
+
+ // Indoor walking floor, its connected areas, the alarm windows and watch points,
+ // and the roam stop candidates (phase 4, one bounded pass over the nodes).
+ protected void BuildWalk()
+ {
+  foreach (EXPG_BuildingNode clear : Nodes)
+  {
+   clear.IndoorWalk = clear.Reachable && clear.Interior && !clear.Stair;
+   clear.WalkGroup = -1;
+   clear.RoamStop = false;
+  }
+  // Indoor staircases and squeezed doorway nodes; entrance steps touch outdoors.
+  array<bool> seen = {};
+  for (int n = 0; n < Nodes.Count(); n++) { seen.Insert(false); }
+  array<int> flight = {};
+  for (int start = 0; start < Nodes.Count(); start++)
+  {
+   if (seen[start] || !Nodes[start].Stair || !Nodes[start].Reachable) continue;
+   flight.Clear();
+   flight.Insert(start);
+   seen[start] = true;
+   bool indoor = true;
+   for (int cursor = 0; cursor < flight.Count(); cursor++)
+   {
+    foreach (int next : Nodes[flight[cursor]].Links)
+    {
+     EXPG_BuildingNode neighbour = Nodes[next];
+     if (!neighbour.Stair)
+     {
+      if (!neighbour.IndoorWalk) indoor = false;
+      continue;
+     }
+     if (seen[next] || !neighbour.Reachable) continue;
+     seen[next] = true;
+     flight.Insert(next);
+    }
+   }
+   if (!indoor) continue;
+   foreach (int tread : flight) { Nodes[tread].IndoorWalk = true; }
+  }
+  int groups = 0;
+  array<int> queue = {};
+  for (int seed = 0; seed < Nodes.Count(); seed++)
+  {
+   if (!Nodes[seed].IndoorWalk || Nodes[seed].WalkGroup >= 0) continue;
+   queue.Clear();
+   queue.Insert(seed);
+   Nodes[seed].WalkGroup = groups;
+   for (int head = 0; head < queue.Count(); head++)
+   {
+    foreach (int link : Nodes[queue[head]].Links)
+    {
+     if (!Nodes[link].IndoorWalk || Nodes[link].WalkGroup >= 0) continue;
+     Nodes[link].WalkGroup = groups;
+     queue.Insert(link);
+    }
+   }
+   groups++;
+  }
+  m_GroupStops.Clear();
+  for (int g = 0; g < groups; g++) { m_GroupStops.Insert(0); }
+  RoamStops.Clear();
+  WindowNodes.Clear();
+  WatchNodes.Clear();
+  m_RoamCandidates.Clear();
+  m_RoamGap.Clear();
+  m_RoamSeen.Clear();
+  foreach (int index, EXPG_BuildingNode candidate : Nodes)
+  {
+   if (!candidate.IndoorWalk || !candidate.Interior || candidate.Stair || candidate.DoorBlock) continue;
+   if (candidate.Score == SCORE_WINDOW)
+   {
+    if (WindowNodes.Count() < MAX_ALERT_NODES) WindowNodes.Insert(index);
+   }
+   else if (candidate.Score >= SCORE_STAIRS && WatchNodes.Count() < MAX_ALERT_NODES) WatchNodes.Insert(index);
+   float gap = 1000000;
+   foreach (int slot : Slots) { gap = Math.Min(gap, FloorGap(candidate.Position, Nodes[slot].Position)); }
+   if (gap < POST_SPACING * POST_SPACING) continue;
+   m_RoamCandidates.Insert(index);
+   m_RoamGap.Insert(gap);
+   m_RoamSeen.Insert(0);
+  }
+  m_RoamFull.Clear();
+  for (int s = 0; s < StoreyCount(); s++) { m_RoamFull.Insert(false); }
+  m_RoamCursor = 0;
+  m_RoamBest = -1;
+  m_RoamBestGap = -1;
+  m_RoamStorey = 0;
+  m_WatchCursor = 0;
+ }
+
+ // Squared horizontal distance on about the same floor (as Crowded); far otherwise.
+ static float FloorGap(vector a, vector b)
+ {
+  if (Math.AbsFloat(a[1] - b[1]) >= 2.0) return 1000000;
+  return vector.DistanceSqXZ(a, b);
+ }
+
+ // Phase 5, bounded work per operation (256 candidates): one pass over the
+ // candidates for one storey picks the one farthest from every slot and stop
+ // (at least POST_SPACING); storeys take turns. A storey with no such candidate
+ // stays full (gaps only shrink). At most MAX_ROAM stops.
+ protected void RoamStep()
+ {
+  int storeys = m_RoamFull.Count();
+  if (storeys < 1 || RoamStops.Count() >= MAX_ROAM || m_RoamCandidates.IsEmpty() || !m_RoamFull.Contains(false)) { FinishRoam(); return; }
+  if (m_RoamFull[m_RoamStorey]) { m_RoamStorey = (m_RoamStorey + 1) % storeys; return; }
+  int end = Math.Min(m_RoamCursor + 256, m_RoamCandidates.Count());
+  while (m_RoamCursor < end)
+  {
+   int at = m_RoamCursor;
+   m_RoamCursor++;
+   EXPG_BuildingNode node = Nodes[m_RoamCandidates[at]];
+   if (node.RoamStop || node.Storey != m_RoamStorey) continue;
+   float gap = m_RoamGap[at];
+   for (int s = m_RoamSeen[at]; s < RoamStops.Count(); s++) { gap = Math.Min(gap, FloorGap(node.Position, Nodes[RoamStops[s]].Position)); }
+   m_RoamSeen[at] = RoamStops.Count();
+   m_RoamGap[at] = gap;
+   if (gap < POST_SPACING * POST_SPACING || gap <= m_RoamBestGap) continue;
+   m_RoamBestGap = gap;
+   m_RoamBest = m_RoamCandidates[at];
+  }
+  if (m_RoamCursor < m_RoamCandidates.Count()) return;
+  if (m_RoamBest >= 0)
+  {
+   Nodes[m_RoamBest].RoamStop = true;
+   RoamStops.Insert(m_RoamBest);
+  }
+  else m_RoamFull[m_RoamStorey] = true;
+  m_RoamStorey = (m_RoamStorey + 1) % storeys;
+  m_RoamCursor = 0;
+  m_RoamBest = -1;
+  m_RoamBestGap = -1;
+ }
+
+ protected void FinishRoam()
+ {
+  for (int g = 0; g < m_GroupStops.Count(); g++) { m_GroupStops[g] = 0; }
+  foreach (int stop : RoamStops)
+  {
+   int group = Nodes[stop].WalkGroup;
+   if (group >= 0 && group < m_GroupStops.Count()) m_GroupStops[group] = m_GroupStops[group] + 1;
+  }
+  m_RoamCandidates.Clear();
+  m_RoamGap.Clear();
+  m_RoamSeen.Clear();
+  m_WatchCursor = 0;
+  m_Phase = 6;
+ }
+
+ // Phase 6: one stop's watch direction per operation, then the patrol starts.
+ protected void WatchStep()
+ {
+  if (m_WatchCursor < RoamStops.Count())
+  {
+   EXPG_BuildingNode stop = Nodes[RoamStops[m_WatchCursor]];
+   m_WatchCursor++;
+   stop.WatchLook = LongestView(stop.Position + "0 1.5 0");
+   return;
+  }
+  AppendPatrolStarts();
   if (Slots.IsEmpty()) { Error = "No connected, clear indoor positions were found"; }
+  Done = true;
+ }
+
+ // The longest of eight building-aligned rays at eye height that stays inside the
+ // building, at most 15 m: a patroller at a stop faces a hallway or doorway.
+ protected vector LongestView(vector eye)
+ {
+  vector best = vector.FromYaw(Angles[1]);
+  float longest = -1;
+  for (int bearing = 0; bearing < 8; bearing++)
+  {
+   vector direction = vector.FromYaw(bearing * 45 + Angles[1]);
+   TraceParam ray = new TraceParam();
+   ray.Start = eye;
+   ray.End = eye + direction * 15;
+   ray.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+   float reach = GetGame().GetWorld().TraceMove(ray, null) * 15;
+   if (reach <= longest || !Inside(eye + direction * reach)) continue;
+   longest = reach;
+   best = direction;
+  }
+  return best;
+ }
+
+ // Patrol starts for a building's first squad, in roam stop order (spread over
+ // the storeys), under the free-room rule (KeepFree): no fixed post, never in a
+ // door zone, 1.5 m from every slot.
+ protected void AppendPatrolStarts()
+ {
+  array<int> used = {};
+  for (int g = 0; g < m_GroupStops.Count(); g++) { used.Insert(0); }
+  foreach (int stop : RoamStops)
+  {
+   if (Slots.Count() >= MAX_SLOTS) break;
+   int group = Nodes[stop].WalkGroup;
+   if (group < 0 || group >= used.Count()) continue;
+   if (m_GroupStops[group] - used[group] - 1 < KeepFree(group)) continue;
+   used[group] = used[group] + 1;
+   Slots.Insert(stop);
+   FixedSlots.Insert(false);
+  }
  }
 
  // Posts closer than spacing on about the same floor (under 2 m apart in height).
@@ -1015,14 +1545,15 @@ class EXPG_BuildingPlan
   }
  }
 
- // Indoor candidates of one priority; an opening's nearest watcher comes first.
+ // Indoor candidates of one priority outside every door zone; an opening's
+ // nearest watcher comes first.
  protected void Pool(int priority, notnull array<int> pool)
  {
   pool.Clear();
   array<int> keys = {};
   foreach (int index, EXPG_BuildingNode node : Nodes)
   {
-   if (!node.Reachable || !node.Interior || node.Stair || node.Score != priority) continue;
+   if (!node.Reachable || !node.Interior || node.Stair || node.DoorBlock || node.Score != priority) continue;
    int centimetres = Math.Round(node.Range * 100);
    if (centimetres > 100000) centimetres = 100000;
    keys.Insert(centimetres * 10000 + index);

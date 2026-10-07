@@ -46,21 +46,35 @@ class EAD_Policy
 }
 
 // No repeated vehicle family in a pass. Four old-car paints occupy one family slot.
+// A pass holds the catalog's wrecks of the zone's vehicle types in catalog order. Both
+// keeps the original order and random draws, so existing seeds give the same layouts.
 class EAD_WreckBag
 {
  protected ref array<int> m_Assets = {};
+ protected int m_Types;
+ void EAD_WreckBag(int types)
+ {
+  m_Types = types;
+ }
  int Next(EAD_Random random)
  {
-  if (m_Assets.IsEmpty())
-  {
-   m_Assets.Insert(2); m_Assets.Insert(3);
-   for (int asset = 8; asset <= 25; asset++) m_Assets.Insert(asset);
-   m_Assets.Insert(26 + Math.Min(3, Math.Floor(random.Next() * 4)));
-   m_Assets.Insert(30);
-  }
+  if (m_Assets.IsEmpty()) Fill(random, m_Types);
+  // A modded catalog without a wreck of this type falls back to every wreck.
+  if (m_Assets.IsEmpty()) Fill(random, EAD_Catalog.BOTH);
+  if (m_Assets.IsEmpty()) return -1;
   int index = Math.Min(m_Assets.Count() - 1, Math.Floor(random.Next() * m_Assets.Count()));
   int selected = m_Assets[index];
   m_Assets.RemoveOrdered(index);
   return selected;
+ }
+ protected void Fill(EAD_Random random, int types)
+ {
+  for (int asset = 0; asset < EAD_Catalog.COUNT; asset++)
+  {
+   if (!EAD_Catalog.IsWreck(asset) || !EAD_Catalog.Allowed(asset, types)) continue;
+   int variants = EAD_Catalog.Variants(asset);
+   if (variants == 1) m_Assets.Insert(asset);
+   else if (variants > 1) m_Assets.Insert(asset + Math.Min(variants - 1, Math.Floor(random.Next() * variants)));
+  }
  }
 }

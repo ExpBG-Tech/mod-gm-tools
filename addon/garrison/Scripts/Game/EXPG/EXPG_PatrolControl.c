@@ -1,10 +1,15 @@
-// Source candidate: native callback timing/containment acceptance is NOT RUN.
-// Request one adjacent verified edge. Keep IDLE until the actual native path is
-// inspected. The movement-input guard is supplemental; native testing must prove
-// it runs before AI translation, including stairs, impulses and low server FPS.
+// Interior patrol. Source candidate: native callback timing/containment acceptance
+// is NOT RUN. A patroller dwells 10-30 s at a claimed stop, then walks to another
+// free stop of the same indoor area; on alarm the garrison sends him to a free
+// window or watch point (EXPG_GarrisonManager.ServiceAlert). Keep IDLE until the
+// actual native path is inspected: every path point must stay on the indoor floor.
+// The movement-input guard is supplemental; native testing must prove it runs
+// before AI translation, including stairs, impulses and low server FPS.
 class EXPG_PatrolSpeedSetting : SCR_AICharacterMovementSpeedSettingBase
 {
 	bool Blocked = true;
+	// Walk on patrol, run to an alarm post.
+	EMovementType MaxSpeed = EMovementType.WALK;
 
 	static EXPG_PatrolSpeedSetting Create()
 	{
@@ -17,11 +22,12 @@ class EXPG_PatrolSpeedSetting : SCR_AICharacterMovementSpeedSettingBase
 	override EMovementType GetSpeed(EMovementType desiredSpeed)
 	{
 		if (Blocked) { return EMovementType.IDLE; }
-		return Math.ClampInt(desiredSpeed, EMovementType.IDLE, EMovementType.WALK);
+		return MaxSpeed;
 	}
 }
 
 // Logical route only; the Full adapter owns the actor's exact world transform.
+// NodeIndex is the claimed stop; Target stays -1 (walks are never resumed).
 class EXPG_PatrolState
 {
 	int NodeIndex;
@@ -33,6 +39,10 @@ class EXPG_PatrolState
 
 class EXPG_PatrolControl
 {
+	static const int STATE_DWELL = 0;
+	static const int STATE_LEG = 1;
+	static const int STATE_ALERT_MOVE = 2;
+	static const int STATE_HOLD = 3;
 	protected SCR_ChimeraCharacter m_Actor;
 	protected AIAgent m_Agent;
 	protected AIGroup m_Group;
@@ -43,33 +53,50 @@ class EXPG_PatrolControl
 	protected ref EXPG_PatrolSpeedSetting m_Speed;
 	protected ref SCR_AIMoveIndividuallyBehavior m_Move;
 	protected ref EXPG_BuildingPlan m_Plan;
-	protected int m_Node;
-	protected int m_Target = -1;
-	protected int m_Choice;
-	protected float m_RetryAt;
-	protected float m_EdgeDeadline;
-	protected vector m_From;
-	protected vector m_To;
-	protected EMovementType m_PreviousSpeed;
+	// The single claim: current stop, or destination while walking.
+	protected int m_Node = -1;
+	// The stop a patrol leg started from, and whether the walk is already a
+	// walk back to it after a failed leg (at most one per leg).
+	protected int m_From = -1;
+	protected bool m_Backtrack;
+	protected int m_State;
+	// Holding (or running to) a window during an alarm.
+	protected bool m_Window;
+	// Cache sleep pending: no new walks (EXPG_GarrisonManager.PatrolsSettled).
+	protected bool m_Settle;
 	protected bool m_Reserved;
-	protected bool m_ResumeTarget;
+	// World time in milliseconds.
+	protected float m_DwellUntil;
+	protected float m_MoveDeadline;
+	protected float m_RetryAt;
+	// Metres per second for the projected step of the input guard.
+	protected float m_StepRate = 3.0;
+	protected vector m_Dest;
+	protected vector m_Look;
+	protected EMovementType m_PreviousSpeed;
+	// Last inspected native path (count, middle and end point) and its verdict.
+	protected int m_PathCount = -1;
+	protected vector m_PathEnd;
+	protected vector m_PathMid;
+	protected bool m_PathOk;
 	protected ref array<vector> m_Path = {};
+	protected ref array<int> m_Visited = {};
+	protected ref array<int> m_Skipped = {};
+	protected ref array<float> m_SkipUntil = {};
 
 	bool Start(SCR_ChimeraCharacter actor, EXPG_BuildingPlan plan, int initialNode, EXPG_PatrolState saved = null)
 	{
 		Release();
 		if (!Replication.IsServer() || !actor || !plan || !plan.Done || plan.Error != string.Empty || !plan.Valid()) { return false; }
-		if (initialNode < 0 || initialNode >= plan.Nodes.Count() || !plan.Nodes[initialNode].Reachable || !plan.Nodes[initialNode].Interior || plan.Nodes[initialNode].Links.IsEmpty()) { return false; }
-		if (saved)
-		{
-			if (saved.NodeIndex != initialNode) { return false; }
-			if (saved.Target >= 0)
-			{
-				if (saved.Target >= plan.Nodes.Count() || !plan.Nodes[initialNode].Links.Contains(saved.Target) || !plan.Nodes[saved.Target].Reachable || !plan.Nodes[saved.Target].Interior || !plan.InteriorEdge(saved.From, saved.To) || !InEdgeCorridor(actor.GetOrigin(), saved.From, saved.To)) { return false; }
-			}
-			else if (vector.DistanceSq(actor.GetOrigin(), plan.Nodes[initialNode].Position) > 0.09) { return false; }
-		}
-		else if (vector.DistanceSq(actor.GetOrigin(), plan.Nodes[initialNode].Position) > 0.09) { return false; }
+		if (initialNode < 0 || initialNode >= plan.Nodes.Count() || !plan.Nodes[initialNode].Reachable) { return false; }
+		if (saved && saved.NodeIndex != initialNode) { return false; }
+		// Placed or restored on his stop. One who stopped short of it claims the
+		// nearest free stop where he stands instead; nobody is teleported.
+		int claim = initialNode;
+		vector origin = actor.GetOrigin();
+		vector stop = plan.Nodes[initialNode].Position;
+		if (vector.DistanceXZ(origin, stop) > 1.5 || Math.AbsFloat(origin[1] - stop[1]) > 1.0) { claim = plan.NearestNode(origin, 1.0, true); }
+		if (claim < 0) { return false; }
 		AIControlComponent control = actor.GetAIControlComponent();
 		if (!control || !control.GetAIAgent()) { return false; }
 		m_Actor = actor;
@@ -80,45 +107,39 @@ class EXPG_PatrolControl
 		m_Movement = AICharacterMovementComponent.Cast(actor.FindComponent(AICharacterMovementComponent));
 		m_Controller = SCR_CharacterControllerComponent.Cast(actor.GetCharacterController());
 		m_Plan = plan;
-		m_Node = initialNode;
-		m_Choice = 0;
 		m_RetryAt = 0;
-		m_ResumeTarget = false;
-		if (saved)
-		{
-			m_Target = saved.Target;
-			m_Choice = saved.Choice;
-			m_From = saved.From;
-			m_To = saved.To;
-			m_ResumeTarget = saved.Target >= 0;
-		}
 		if (!IsOwnedActor() || !m_Utility.m_CombatMoveState || m_Utility.m_OwnerEntity != actor || !m_Settings || !m_Movement || m_Utility.EXPG_GetPostControl() || m_Utility.EXPG_GetPatrolControl() || m_Controller.EXPG_GetPatrolControl())
 		{
 			Release();
 			return false;
 		}
-		m_PreviousSpeed = m_Movement.GetMovementTypeWanted();
-		bool reserved;
-		if (m_Target >= 0) { reserved = m_Plan.TryReserveEdge(actor, m_Node, m_Target); }
-		else { reserved = m_Plan.ReserveNode(actor, initialNode); }
-		if (!reserved) { Release(); return false; }
+		// The checked claim first; a plain reservation keeps a restored survivor
+		// whose stop a passer-by briefly overlaps (otherwise the squad is released).
+		if (!m_Plan.TryClaimStop(actor, claim) && !m_Plan.ReserveNode(actor, claim)) { Release(); return false; }
 		m_Reserved = true;
+		m_Node = claim;
+		m_State = STATE_DWELL;
+		m_Look = m_Plan.Nodes[claim].WatchLook;
+		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + Math.RandomFloat(10000, 30000);
+		m_PreviousSpeed = m_Movement.GetMovementTypeWanted();
 		m_Speed = EXPG_PatrolSpeedSetting.Create();
 		if (!m_Settings.AddCharacterSetting(m_Speed, false, false)) { Release(); return false; }
 		m_Utility.EXPG_SetPatrolControl(this);
 		m_Controller.EXPG_SetPatrolControl(this);
+		HoldForPath();
 		return Tick();
 	}
 
+	// The claimed stop only (Target -1): Full restore wakes him there.
 	EXPG_PatrolState CaptureState()
 	{
-		if (!IsOwnedActor()) { return null; }
+		if (!IsOwnedActor() || m_Node < 0) { return null; }
 		EXPG_PatrolState saved = new EXPG_PatrolState();
 		saved.NodeIndex = m_Node;
-		saved.Target = m_Target;
-		saved.Choice = m_Choice;
-		saved.From = m_From;
-		saved.To = m_To;
+		saved.Target = -1;
+		saved.Choice = m_State;
+		saved.From = m_Actor.GetOrigin();
+		saved.To = m_Plan.Nodes[m_Node].Position;
 		return saved;
 	}
 
@@ -135,71 +156,207 @@ class EXPG_PatrolControl
 	bool Tick()
 	{
 		if (!m_Speed || !IsOwnedActor()) { Release(); return false; }
-		if (m_Controller.IsUnconscious()) { Block(); return true; }
+		if (m_Controller.IsUnconscious())
+		{
+			if (m_Move) { Block(); }
+			return true;
+		}
 		float now = GetGame().GetWorld().GetWorldTime();
-		if (m_Target >= 0 && !InCorridor(m_Actor.GetOrigin())) { Block(); return true; }
-		if (m_Move && vector.DistanceSq(m_Actor.GetOrigin(), m_To) <= 0.0225)
+		if (m_Move)
 		{
-			m_Node = m_Target;
-			Block();
-			m_Target = -1;
+			if (AtPoint(m_Dest)) { Arrive(now); }
+			else if (now > m_MoveDeadline || !m_Plan.Inside(m_Actor.GetOrigin(), 0.25)) { Fail(now); }
+			else { InspectCurrentPath(); }
+			return true;
 		}
-		if (m_Move && now > m_EdgeDeadline) { Block(); }
-		if (m_Move) { InspectCurrentPath(); return true; }
-		if (now < m_RetryAt) { return true; }
-		m_RetryAt = now + 2000;
-		array<int> links = m_Plan.Nodes[m_Node].Links;
-		if (links.IsEmpty()) { return true; }
-		int next = m_Target;
-		// A stopped actor mid-edge retains that whole edge and retries only its
-		// destination. It cannot cut diagonally to another neighbor of the old node.
-		if (next < 0 || (!m_ResumeTarget && AtNode(m_Node)))
-		{
-			next = links[m_Choice % links.Count()];
-			m_Choice++;
-		}
-		vector from = m_Actor.GetOrigin();
-		vector to = m_Plan.Nodes[next].Position;
-		if (!m_Plan.Nodes[next].Reachable || !m_Plan.Nodes[next].Interior || !m_Plan.InteriorEdge(from, to) || !m_Plan.ClearBody(from, to, m_Actor, null, true)) { return true; }
-		if (!m_Plan.TryReserveEdge(m_Actor, m_Node, next)) { return true; }
-		m_Target = next;
-		if (!m_ResumeTarget) { m_From = from; }
-		m_To = to;
-		m_ResumeTarget = false;
-		m_Speed.Blocked = true;
-		m_Movement.SetMovementTypeWanted(EMovementType.IDLE);
-		m_EdgeDeadline = now + 10000;
-		m_Move = new SCR_AIMoveIndividuallyBehavior(m_Utility, null, m_To, radius: 0.1);
-		m_Utility.AddAction(m_Move);
+		LookOut();
+		if (m_State != STATE_DWELL || m_Settle || now < m_DwellUntil) { return true; }
+		StartLeg(now);
 		return true;
+	}
+
+	// A free stop of the same indoor area (EXPG_BuildingPlan.ClaimRoamStop), not
+	// one of the last three visited nor one that failed in the last two minutes.
+	protected void StartLeg(float now)
+	{
+		array<int> avoid = {};
+		for (int i = m_Skipped.Count() - 1; i >= 0; i--)
+		{
+			if (now >= m_SkipUntil[i])
+			{
+				m_Skipped.RemoveOrdered(i);
+				m_SkipUntil.RemoveOrdered(i);
+				continue;
+			}
+			avoid.Insert(m_Skipped[i]);
+		}
+		array<int> recent = {};
+		recent.Copy(avoid);
+		recent.InsertAll(m_Visited);
+		int destination = m_Plan.ClaimRoamStop(m_Actor, m_Node, recent);
+		// A small area: revisiting is better than standing still.
+		if (destination < 0) { destination = m_Plan.ClaimRoamStop(m_Actor, m_Node, avoid); }
+		if (destination < 0)
+		{
+			m_DwellUntil = now + Math.RandomFloat(10000, 30000);
+			return;
+		}
+		int hops = m_Plan.Hops(destination);
+		m_From = m_Node;
+		m_Backtrack = false;
+		m_Node = destination;
+		BeginMove(m_Plan.Nodes[destination].Position, EMovementType.WALK, SCR_AIActionBase.PRIORITY_LEVEL_NORMAL, Math.Max(15000, hops * 1500));
+		m_State = STATE_LEG;
+	}
+
+	// Patrol legs walk at normal priority. Alarm moves run at player level, above
+	// the native combat behaviours that would otherwise pre-empt them.
+	protected void BeginMove(vector destination, EMovementType speed, float level, float duration)
+	{
+		StopMoving();
+		m_Dest = destination;
+		m_Speed.MaxSpeed = speed;
+		m_StepRate = 3.0;
+		if (speed == EMovementType.RUN) { m_StepRate = 5.0; }
+		m_MoveDeadline = GetGame().GetWorld().GetWorldTime() + duration;
+		m_Move = new SCR_AIMoveIndividuallyBehavior(m_Utility, null, destination, SCR_AIActionBase.PRIORITY_BEHAVIOR_MOVE_INDIVIDUALLY, level, null, 0.25);
+		m_Utility.AddAction(m_Move);
+	}
+
+	protected void Arrive(float now)
+	{
+		StopMoving();
+		if (m_State == STATE_ALERT_MOVE)
+		{
+			m_State = STATE_HOLD;
+			return;
+		}
+		m_State = STATE_DWELL;
+		m_DwellUntil = now + Math.RandomFloat(10000, 30000);
+		m_Visited.Insert(m_Node);
+		if (m_Visited.Count() > 3) { m_Visited.RemoveOrdered(0); }
+		m_Look = m_Plan.Nodes[m_Node].WatchLook;
+	}
+
+	// The walk left the building, lost its path or ran out of time: stop where he
+	// is, keep a claim near him and try another destination later.
+	protected void Fail(float now)
+	{
+		int failed = m_Node;
+		Block();
+		if (m_State == STATE_ALERT_MOVE || m_State == STATE_HOLD)
+		{
+			m_State = STATE_HOLD;
+			m_Window = false;
+			m_RetryAt = now;
+			return;
+		}
+		m_Skipped.Insert(failed);
+		m_SkipUntil.Insert(now + 120000);
+		// Stopped short between stops: he stands on a stop, never in a hallway
+		// beside another guard. Once per leg he steps onto the free stop claimed
+		// near him, or else walks back to the stop the leg started from.
+		if (!m_Backtrack && m_Actor && !AtPoint(m_Plan.Nodes[m_Node].Position))
+		{
+			int target = m_Node;
+			if (m_Node == failed)
+			{
+				target = -1;
+				if (m_From >= 0 && m_From != failed && m_Plan.TryClaimStop(m_Actor, m_From)) { target = m_From; }
+			}
+			if (target >= 0)
+			{
+				m_Node = target;
+				m_Backtrack = true;
+				BeginMove(m_Plan.Nodes[target].Position, EMovementType.WALK, SCR_AIActionBase.PRIORITY_LEVEL_NORMAL, 15000);
+				m_State = STATE_LEG;
+				return;
+			}
+		}
+		m_State = STATE_DWELL;
+		m_DwellUntil = now + Math.RandomFloat(5000, 10000);
+		m_Look = m_Plan.Nodes[m_Node].WatchLook;
+	}
+
+	// Native looking stays free in combat; at rest he watches his hallway or post.
+	protected void LookOut()
+	{
+		if (vector.DistanceSq(m_Look, vector.Zero) < 0.01) { return; }
+		SCR_AIBehaviorBase behavior = m_Utility.GetCurrentBehavior();
+		if (behavior && behavior.GetCause() == SCR_EAIBehaviorCause.SAFE) { m_Utility.LookAt(m_Actor.GetOrigin() + Vector(0, 1.5, 0) + m_Look * 20.0, 2.0); }
 	}
 
 	// Called from the script character input callback before accepting translation,
 	// with shared Tick as secondary polling. Engine movement classes cannot be modded.
+	// A new native path (its count, middle or end point changed) is inspected once:
+	// every point after the first and the line between points (0.5 m samples, at
+	// most 128) must stay on the indoor floor, and no point may pass a parked post.
+	// The path's end need not match the stop, so native avoidance and the door
+	// step-aside keep working. Until a path is admitted the cap holds him.
 	bool InspectCurrentPath()
 	{
-		if (!m_Move || !m_Speed || !IsOwnedActor() || !InCorridor(m_Actor.GetOrigin())) { Block(); return false; }
-		if (m_Controller.IsUnconscious()) { Block(); return false; }
+		if (!m_Move || !m_Speed || !IsOwnedActor()) { StopMoving(); return false; }
+		if (m_Controller.IsUnconscious()) { StopMoving(); return false; }
 		m_Path.Clear();
 		m_Movement.GetCurrentPath(m_Path);
-		// An absent/previous path can remain while the queued behavior starts.
-		// Keep IDLE and wait for its real candidate instead of canceling it early.
-		if (m_Path.IsEmpty() || vector.DistanceSq(m_Path[m_Path.Count() - 1], m_To) > 0.09)
+		int count = m_Path.Count();
+		if (count == 0)
 		{
 			HoldForPath();
 			return false;
 		}
-		if (m_Path.Count() > 64) { Block(); return false; }
-		foreach (vector point : m_Path)
+		vector end = m_Path[count - 1];
+		vector middle = m_Path[count / 2];
+		if (count != m_PathCount || vector.DistanceSq(end, m_PathEnd) > 0.01 || vector.DistanceSq(middle, m_PathMid) > 0.01)
 		{
-			if (!InCorridor(point)) { Block(); return false; }
+			m_PathCount = count;
+			m_PathEnd = end;
+			m_PathMid = middle;
+			m_PathOk = PathInside();
+		}
+		if (!m_PathOk)
+		{
+			// A path to another place can linger until ours is planned: hold and
+			// wait for it (the deadline bounds the wait); ours failing ends the walk.
+			if (vector.DistanceXZ(end, m_Dest) > 1.0)
+			{
+				HoldForPath();
+				return false;
+			}
+			Fail(GetGame().GetWorld().GetWorldTime());
+			return false;
 		}
 		if (m_Speed.Blocked)
 		{
 			m_Speed.Blocked = false;
-			m_Movement.SetMovementTypeWanted(EMovementType.WALK);
-			// Admitted interior edge: remove only this patrol's native cap.
+			m_Movement.SetMovementTypeWanted(m_Speed.MaxSpeed);
+			// Admitted indoor path: remove only this patrol's native cap.
 			m_Actor.SetSpeedLimit(this, 1);
+		}
+		return true;
+	}
+
+	// Line samples within 1 m of where he stands are not checked: one who drifted
+	// off the floor (a door frame) must be able to walk back onto it.
+	protected bool PathInside()
+	{
+		if (m_Path.Count() > 64) { return false; }
+		vector here = m_Path[0];
+		if (m_Actor) { here = m_Actor.GetOrigin(); }
+		int samples = 0;
+		for (int i = 1; i < m_Path.Count(); i++)
+		{
+			vector point = m_Path[i];
+			if (!m_Plan.Contained(point) || m_Plan.NearParked(point, 0.6)) { return false; }
+			vector previous = m_Path[i - 1];
+			int steps = Math.Ceil(vector.DistanceXZ(previous, point) / 0.5);
+			for (int s = 1; s < steps && samples < 128; s++)
+			{
+				samples++;
+				vector sample = vector.Lerp(previous, point, s * 1.0 / steps);
+				if (vector.DistanceXZ(sample, here) <= 1.0 && m_Plan.Inside(sample, 0.25)) { continue; }
+				if (!m_Plan.Contained(sample)) { return false; }
+			}
 		}
 		return true;
 	}
@@ -214,72 +371,200 @@ class EXPG_PatrolControl
 		if (m_Actor && m_Speed) { m_Actor.SetSpeedLimit(this, 0, true); }
 	}
 
-	protected void Block()
+	protected void StopMoving()
 	{
 		HoldForPath();
-		if (m_Move) { m_Move.Fail(); m_Move = null; }
-		if (m_Reserved)
-		{
-			int node = m_Target;
-			if (!AtNode(node)) { node = m_Node; }
-			if (AtNode(node) && m_Plan.ReserveNode(m_Actor, node))
-			{
-				m_Node = node;
-				m_Target = -1;
-			}
-		}
+		// The native action lives in the agent's utility: never touch it once the
+		// soldier or his utility is gone (a deleted actor, world teardown).
+		if (m_Move && m_Actor && m_Utility && !m_Actor.IsDeleted()) { m_Move.Fail(); }
+		m_Move = null;
+		m_PathOk = false;
+		m_PathCount = -1;
 	}
 
-	void InvalidatePath() { Block(); }
-
-	protected bool AtNode(int node)
+	// Stop now and keep a claim near him: the nearest free stop within 1 m when
+	// one is claimable, otherwise the claim he holds.
+	protected void Block()
 	{
-		return m_Actor && m_Plan && node >= 0 && node < m_Plan.Nodes.Count() && m_Plan.Nodes[node].Reachable && vector.DistanceSq(m_Actor.GetOrigin(), m_Plan.Nodes[node].Position) <= 0.0225;
+		StopMoving();
+		if (!m_Reserved || !m_Actor || !m_Plan) { return; }
+		int nearest = m_Plan.NearestNode(m_Actor.GetOrigin(), 1.0, true);
+		if (nearest >= 0 && nearest != m_Node && m_Plan.TryClaimStop(m_Actor, nearest)) { m_Node = nearest; }
 	}
 
-	// Bounded existing-path inspection and scalar checks; no traces or world scans.
+	void InvalidatePath()
+	{
+		if (m_Move) { Fail(GetGame().GetWorld().GetWorldTime()); }
+	}
+
+	protected bool AtPoint(vector point)
+	{
+		if (!m_Actor) { return false; }
+		vector origin = m_Actor.GetOrigin();
+		return vector.DistanceXZ(origin, point) <= 0.35 && Math.AbsFloat(origin[1] - point[1]) <= 0.8;
+	}
+
+	// Bounded existing-path inspection and O(1) floor lookups; no traces or world
+	// scans. Zero input whenever he is not walking (dwelling or holding).
 	bool AllowInput(float dt, vector localDirection, out float inputScale)
 	{
 		inputScale = 1;
 		if (!m_Speed || !IsOwnedActor()) { Release(); return true; }
-		if (m_Controller.IsUnconscious()) { Block(); return false; }
-		if (m_Target < 0 || dt <= 0 || dt > 0.25) { return false; }
+		if (m_Controller.IsUnconscious()) { StopMoving(); return false; }
+		if (!m_Move || dt <= 0 || dt > 0.25) { return false; }
+		float now = GetGame().GetWorld().GetWorldTime();
 		// Arrival is checked before projection, even between shared scheduler ticks.
-		if (AtNode(m_Target)) { Block(); return false; }
+		if (AtPoint(m_Dest))
+		{
+			Arrive(now);
+			return false;
+		}
 		if (!InspectCurrentPath()) { return false; }
 		vector pos = m_Actor.GetOrigin();
 		vector direction = m_Actor.VectorToParent(localDirection);
 		if (vector.DistanceSq(direction, vector.Zero) > 0.01) { direction.Normalize(); }
 		// Reduce the actual requested input along with the candidate horizon; simply
 		// clipping the checked point would leave unsafe full-speed input unchanged.
-		// Verify input scaling, WALK speed and braking in the native fixture.
-		float step = 3.0 * dt;
-		inputScale = Math.Min(1.0, vector.DistanceXZ(pos, m_To) / step);
+		// Verify input scaling, walk/run speed and braking in the native fixture.
+		float step = m_StepRate * dt;
+		inputScale = Math.Min(1.0, vector.DistanceXZ(pos, m_Dest) / step);
 		vector projected = pos + direction * (step * inputScale);
 		vector inertial = pos + m_Controller.GetVelocity() * dt;
-		if (!InCorridor(pos) || !InCorridor(projected) || !InCorridor(inertial)) { Block(); return false; }
+		// The next step and the momentum must stay on the indoor floor; where he
+		// stands only inside the building. One who drifted off the floor (a door
+		// frame, native avoidance) may step anywhere inside the building along his
+		// admitted path, which leads back onto the floor.
+		bool drifted = !m_Plan.Contained(pos);
+		bool stepOk = m_Plan.Contained(projected) || (drifted && m_Plan.Inside(projected, 0.25));
+		bool driftOk = m_Plan.Contained(inertial) || (drifted && m_Plan.Inside(inertial, 0.25));
+		if (!m_Plan.Inside(pos, 0.25) || !stepOk || !driftOk)
+		{
+			Fail(now);
+			return false;
+		}
 		return true;
 	}
 
-	bool InCorridor(vector point)
+	// Alarm: claim a window or watch point and run there (player level), then hold
+	// it like a post. False when the stop cannot be claimed.
+	bool Alert(int node, vector look, bool window, int hops)
 	{
-		return m_Target >= 0 && m_Plan && m_Plan.Inside(point, 0.25) && InEdgeCorridor(point, m_From, m_To);
+		if (!m_Speed || !IsOwnedActor() || node < 0 || node >= m_Plan.Nodes.Count()) { return false; }
+		if (node != m_Node && !m_Plan.TryClaimStop(m_Actor, node)) { return false; }
+		StopMoving();
+		m_Node = node;
+		m_Look = look;
+		m_Window = window;
+		m_RetryAt = GetGame().GetWorld().GetWorldTime() + 5000;
+		m_State = STATE_HOLD;
+		if (AtPoint(m_Plan.Nodes[node].Position)) { return true; }
+		BeginMove(m_Plan.Nodes[node].Position, EMovementType.RUN, SCR_AIActionBase.PRIORITY_LEVEL_PLAYER, Math.Max(10000, hops * 1000));
+		m_State = STATE_ALERT_MOVE;
+		return true;
 	}
 
-	static bool InEdgeCorridor(vector point, vector from, vector to)
+	// Alarm with no free window or watch point: hold the stop he has (spaced from
+	// every other claim); a walk under way ends at its claimed stop first.
+	void HoldHere()
 	{
-		vector flat = to - from;
-		flat[1] = 0;
-		float lengthSq = vector.Dot(flat, flat);
-		if (lengthSq < 0.0001) { return false; }
-		float t = Math.Clamp(vector.Dot(point - from, flat) / lengthSq, 0, 1);
-		vector nearest = vector.Lerp(from, to, t);
-		return vector.DistanceXZ(point, nearest) <= 0.15 && Math.AbsFloat(point[1] - nearest[1]) <= 0.35;
+		if (!m_Speed || !m_Plan || m_Node < 0) { return; }
+		m_Window = false;
+		m_RetryAt = GetGame().GetWorld().GetWorldTime() + 5000;
+		if (m_Move)
+		{
+			m_State = STATE_ALERT_MOVE;
+			return;
+		}
+		m_State = STATE_HOLD;
+		m_Look = m_Plan.Nodes[m_Node].WatchLook;
+	}
+
+	// Combat calmed down: back to patrol from the stop he holds.
+	void Calm()
+	{
+		if (!m_Speed || !m_Plan || m_Node < 0) { return; }
+		m_Window = false;
+		if (m_Move)
+		{
+			m_State = STATE_LEG;
+			return;
+		}
+		m_State = STATE_DWELL;
+		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + Math.RandomFloat(10000, 30000);
+		m_Look = m_Plan.Nodes[m_Node].WatchLook;
+	}
+
+	// Woken from Simulation caching: the dwell that ran out while he was paused
+	// starts again, so a restored patroller first stands at his stop.
+	void RestartDwell()
+	{
+		if (m_State != STATE_DWELL || m_Move) { return; }
+		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + Math.RandomFloat(10000, 30000);
+	}
+
+	// Cache sleep pending: finish the walk under way, start no new one.
+	void SetSettle(bool settle)
+	{
+		m_Settle = settle;
+	}
+
+	// The sleep waited 20 s: stop where he is, at a stop near him.
+	void ForceSettle()
+	{
+		if (m_Move) { Block(); }
+		m_State = STATE_DWELL;
+		m_Window = false;
+		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + 10000;
+	}
+
+	bool Settled()
+	{
+		return m_State == STATE_DWELL && !m_Move;
+	}
+
+	bool InAlert()
+	{
+		return m_State == STATE_ALERT_MOVE || m_State == STATE_HOLD;
+	}
+
+	bool HoldsWindow()
+	{
+		return m_Window && InAlert();
+	}
+
+	bool RetryDue()
+	{
+		return GetGame().GetWorld().GetWorldTime() >= m_RetryAt;
+	}
+
+	void DelayRetry(float seconds)
+	{
+		m_RetryAt = GetGame().GetWorld().GetWorldTime() + seconds * 1000;
+	}
+
+	bool IsMoving()
+	{
+		return m_Move != null;
+	}
+
+	int ClaimedNode()
+	{
+		return m_Node;
+	}
+
+	int PatrolPhase()
+	{
+		return m_State;
+	}
+
+	SCR_ChimeraCharacter GetActor()
+	{
+		return m_Actor;
 	}
 
 	void Release()
 	{
-		Block();
+		StopMoving();
 		if (m_Actor) { m_Actor.SetSpeedLimit(this, 1); }
 		if (m_Reserved && m_Plan) { m_Plan.ReleaseReservation(m_Actor); }
 		m_Reserved = false;
@@ -296,10 +581,18 @@ class EXPG_PatrolControl
 		m_Agent = null;
 		m_Group = null;
 		m_Plan = null;
-		m_Target = -1;
+		m_Node = -1;
+		m_State = STATE_DWELL;
+		m_Window = false;
 	}
 
-	void ~EXPG_PatrolControl() { Release(); }
+	// A destructor may run during world teardown, after the native agent and its
+	// actions are gone (a Fail() there crashed the server): drop the action unseen.
+	void ~EXPG_PatrolControl()
+	{
+		m_Move = null;
+		Release();
+	}
 }
 
 modded class SCR_CharacterControllerComponent

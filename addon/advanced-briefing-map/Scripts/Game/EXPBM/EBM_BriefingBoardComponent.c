@@ -4,10 +4,19 @@ class EBM_BriefingBoardComponentClass : ScriptComponentClass {}
 // Server-authoritative board. One briefer holds the lock; their client streams the
 // visible map frame, their own static markers and their drawn lines. Every client
 // with a UI renders that state into the board mesh's $rendertarget material.
+// The board is drawn upright into its own canvas (EBM_Canvas) and handed to the mesh's
+// render target (RTTexture0) turned to match the screen surface's UV rectangle, because
+// both supported meshes map the texture a quarter turn round (WallMap_01 and the Heine
+// projector screen). Roads, buildings, names and contours come from the game's own map
+// renderer (see EBM_MapEntity.c); the world map image stays underneath as the fallback.
 class EBM_BriefingBoardComponent : ScriptComponent
 {
  static const ResourceName LAYOUT = "{636C657BF826EDAA}UI/layouts/EXPBM/EBM_BoardRT.layout";
+ static const ResourceName ENGINE_MAP_LAYOUT = "{F4540CBAD6301389}UI/layouts/EXPBM/EBM_EngineMap.layout";
  static const ResourceName LINE_LAYOUT = "{E8850FCD9219C411}UI/layouts/Map/MapDrawLine.layout";
+ static const ResourceName DEFAULT_MAP_CONFIG = "{1B8AC767E06A0ACD}Configs/Map/MapFullscreen.conf";
+ // A new map widget is laid out a frame later (vanilla waits SCR_MapEntity.FRAME_DELAY); give up after this many frames.
+ static const int ENGINE_MAP_RETRIES = 10;
  // Per marker: type, config id, owner id, flags, world x, world y, rotation, color entry, icon entry.
  static const int MARKER_FIELDS = 9;
  static const int MAX_MARKERS = 48;
@@ -19,10 +28,27 @@ class EBM_BriefingBoardComponent : ScriptComponent
 
  [Attribute("2", UIWidgets.Slider, "Scale applied when the board entity is unscaled (1 = keep model size)", "1 4 0.1")]
  protected float m_fBoardScale;
- [Attribute("1024", UIWidgets.EditBox, "Render target width in layout units")]
- protected int m_iRtWidth;
- [Attribute("720", UIWidgets.EditBox, "Render target height in layout units")]
- protected int m_iRtHeight;
+ [Attribute("1024", UIWidgets.EditBox, "Square render target size in layout units")]
+ protected int m_iRtSize;
+ // The screen surface's UV rectangle in the render target (defaults: Heine projector screen, slot tela1).
+ [Attribute("0.0505", UIWidgets.EditBox, "Screen surface: lowest texture U (render target x) of its UVs")]
+ protected float m_fScreenUMin;
+ [Attribute("0.6223", UIWidgets.EditBox, "Screen surface: highest texture U (render target x) of its UVs")]
+ protected float m_fScreenUMax;
+ [Attribute("0.0087", UIWidgets.EditBox, "Screen surface: lowest texture V (render target y) of its UVs")]
+ protected float m_fScreenVMin;
+ [Attribute("0.9912", UIWidgets.EditBox, "Screen surface: highest texture V (render target y) of its UVs")]
+ protected float m_fScreenVMax;
+ [Attribute("-90", UIWidgets.EditBox, "Turn (degrees, clockwise) of the board picture inside the render target so it reads upright on the mesh: -90 projector screen, 90 WallMap_01, 0 unturned UVs")]
+ protected float m_fScreenRotation;
+ [Attribute("1", UIWidgets.CheckBox, "Draw the board in its own canvas and hand it to the render target turned; off draws it straight into the UV rectangle without turning (diagnostic fallback)")]
+ protected bool m_bCanvasHandoff;
+ [Attribute("15", UIWidgets.EditBox, "Board canvas frame rate limit (0 = unlimited)")]
+ protected int m_iCanvasMaxFps;
+ [Attribute("1", UIWidgets.CheckBox, "Draw roads, buildings, names and contours with the game's own map renderer (one board per client at a time, only while the player's own map is closed; otherwise the plain map image)")]
+ protected bool m_bUseEngineMap;
+ [Attribute("1080", UIWidgets.EditBox, "Map detail layer: the one a briefer screen this many pixels high would show for the same view")]
+ protected float m_fLayerReferenceHeight;
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Map image override; empty uses the world map entity's satellite background image", "edds")]
  protected ResourceName m_sMapImage;
  [Attribute("60", UIWidgets.EditBox, "Clients render the board within this camera distance (m)")]
@@ -47,9 +73,23 @@ class EBM_BriefingBoardComponent : ScriptComponent
  protected float m_fLastUpdateMs;
  protected bool m_bWatchdog;
 
- // Client rendering.
+ // Client rendering. Board canvas size in layout units (the screen's UV rectangle, upright).
+ protected int m_iRtWidth = 1006;
+ protected int m_iRtHeight = 586;
  protected Widget m_wRoot;
  protected RTTextureWidget m_wRT;
+ protected RTTextureWidget m_wCanvas;
+ protected ImageWidget m_wScreen;
+ protected Widget m_wContent;
+ protected Widget m_wEngineMapSlot;
+ protected CanvasWidget m_wEngineMap;
+ protected ref MapConfiguration m_EngineMapConfig;
+ protected bool m_bEngineMapLayersReady;
+ protected bool m_bEngineMapFailed;
+ protected int m_iEngineMapRetries;
+ protected bool m_bMapHooks;
+ // The native map entity has one zoom, pan and layer: only one board per client drives it.
+ protected static EBM_BriefingBoardComponent s_EngineMapOwner;
  protected Widget m_wMarkerLayer;
  protected Widget m_wLineLayer;
  protected ImageWidget m_wMap;
@@ -260,6 +300,11 @@ class EBM_BriefingBoardComponent : ScriptComponent
   {
    DestroyBoardWidgets();
   }
+  else if (m_wRoot && !m_wEngineMap && !s_EngineMapOwner && EngineMapAllowed())
+  {
+   // Another board gave the native map back (deleted, out of range): take it over.
+   EBM_OnStateRpl();
+  }
  }
 
  protected ResourceName ResolveMapImage()
@@ -283,32 +328,105 @@ class EBM_BriefingBoardComponent : ScriptComponent
   m_wRoot = workspace.CreateWidgets(LAYOUT);
   if (!m_wRoot) return;
   m_wRT = RTTextureWidget.Cast(m_wRoot.FindAnyWidget("RTTexture0"));
+  m_wCanvas = RTTextureWidget.Cast(m_wRoot.FindAnyWidget("EBM_Canvas"));
+  m_wScreen = ImageWidget.Cast(m_wRoot.FindAnyWidget("EBM_Screen"));
+  m_wContent = m_wRoot.FindAnyWidget("EBM_Content");
+  m_wEngineMapSlot = m_wRoot.FindAnyWidget("EBM_EngineMapSlot");
   m_wMarkerLayer = m_wRoot.FindAnyWidget("EBM_Markers");
   m_wLineLayer = m_wRoot.FindAnyWidget("EBM_Lines");
   m_wMap = ImageWidget.Cast(m_wRoot.FindAnyWidget("EBM_Map"));
   m_wTitle = TextWidget.Cast(m_wRoot.FindAnyWidget("EBM_Title"));
-  if (!m_wRT || !m_wMarkerLayer || !m_wLineLayer || !m_wMap)
+  if (!m_wRT || !m_wCanvas || !m_wScreen || !m_wContent || !m_wMarkerLayer || !m_wLineLayer || !m_wMap)
   {
    DestroyBoardWidgets();
    return;
   }
-  FrameSlot.SetSize(m_wRoot, m_iRtWidth, m_iRtHeight);
-  FrameSlot.SetSize(m_wRT, m_iRtWidth, m_iRtHeight);
+  LayoutScreen();
   ResourceName image = ResolveMapImage();
   m_bMapImageLoaded = false;
   if (!image.IsEmpty()) m_bMapImageLoaded = m_wMap.LoadImageTexture(0, image);
   m_wMap.SetVisible(m_bMapImageLoaded);
   m_sMarkerSignature = string.Empty;
   m_wRT.SetRenderTarget(GetOwner());
+  SCR_MapEntity.GetOnMapInit().Insert(EBM_OnLocalMapInit);
+  SCR_MapEntity.GetOnMapClose().Insert(EBM_OnLocalMapClose);
+  m_bMapHooks = true;
+ }
+
+ // The mesh samples the render target through the screen's UV rectangle, which may be
+ // turned (projector: shown a quarter turn clockwise; WallMap_01: anticlockwise). The board
+ // canvas keeps the rectangle's upright size and is placed over it pre-turned the other way.
+ protected void LayoutScreen()
+ {
+  int size = m_iRtSize;
+  if (size < 64)
+   size = 64;
+  float spanU = Math.AbsFloat(m_fScreenUMax - m_fScreenUMin) * size;
+  float spanV = Math.AbsFloat(m_fScreenVMax - m_fScreenVMin) * size;
+  float centerX = (m_fScreenUMin + m_fScreenUMax) * 0.5 * size;
+  float centerY = (m_fScreenVMin + m_fScreenVMax) * 0.5 * size;
+  bool quarterTurn = m_bCanvasHandoff && Math.AbsFloat(Math.AbsFloat(m_fScreenRotation) - 90) < 1;
+  if (quarterTurn)
+  {
+   m_iRtWidth = Math.Round(spanV);
+   m_iRtHeight = Math.Round(spanU);
+  }
+  else
+  {
+   m_iRtWidth = Math.Round(spanU);
+   m_iRtHeight = Math.Round(spanV);
+  }
+  if (m_iRtWidth < 16)
+   m_iRtWidth = 16;
+  if (m_iRtHeight < 16)
+   m_iRtHeight = 16;
+  FrameSlot.SetSize(m_wRoot, size, size);
+  FrameSlot.SetSize(m_wRT, size, size);
+  FrameSlot.SetSize(m_wCanvas, m_iRtWidth, m_iRtHeight);
+  float left = centerX - m_iRtWidth * 0.5;
+  float top = centerY - m_iRtHeight * 0.5;
+  if (!m_bCanvasHandoff)
+  {
+   // Diagnostic fallback: the board straight into the UV rectangle, not turned.
+   m_wScreen.SetVisible(false);
+   m_wRT.AddChild(m_wContent);
+   FrameSlot.SetAnchorMin(m_wContent, 0, 0);
+   FrameSlot.SetAnchorMax(m_wContent, 0, 0);
+   FrameSlot.SetAlignment(m_wContent, 0, 0);
+   FrameSlot.SetPos(m_wContent, left, top);
+   FrameSlot.SetSize(m_wContent, m_iRtWidth, m_iRtHeight);
+   return;
+  }
+  if (m_iCanvasMaxFps > 0)
+   m_wCanvas.SetMaxFPS(m_iCanvasMaxFps);
+  m_wScreen.SetImageTexture(0, m_wCanvas);
+  m_wScreen.SetImage(0);
+  m_wScreen.SetSize(m_iRtWidth, m_iRtHeight);
+  m_wScreen.SetPivot(0.5, 0.5);
+  m_wScreen.SetRotation(m_fScreenRotation);
+  FrameSlot.SetPos(m_wScreen, left, top);
  }
 
  protected void DestroyBoardWidgets()
  {
+  ReleaseEngineMap();
+  if (m_bMapHooks)
+  {
+   SCR_MapEntity.GetOnMapInit().Remove(EBM_OnLocalMapInit);
+   SCR_MapEntity.GetOnMapClose().Remove(EBM_OnLocalMapClose);
+   m_bMapHooks = false;
+  }
   IEntity owner = GetOwner();
   if (m_wRT && owner && !owner.IsDeleted()) m_wRT.RemoveRenderTarget(owner);
   if (m_wRoot) m_wRoot.RemoveFromHierarchy();
   m_wRoot = null;
   m_wRT = null;
+  m_wCanvas = null;
+  m_wScreen = null;
+  m_wContent = null;
+  m_wEngineMapSlot = null;
+  m_EngineMapConfig = null;
+  m_bEngineMapFailed = false;
   m_wMarkerLayer = null;
   m_wLineLayer = null;
   m_wMap = null;
@@ -365,8 +483,164 @@ class EBM_BriefingBoardComponent : ScriptComponent
    FrameSlot.SetPos(m_wMap, left, top);
    m_wMap.SetSize(mapWidth * m_fScale, mapHeight * m_fScale);
   }
+  UpdateEngineMap();
   RedrawLines();
   RedrawMarkers();
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Game map renderer (roads, buildings, names, contours)
+ //------------------------------------------------------------------------------------------------
+ protected bool EngineMapAllowed()
+ {
+  if (!m_bUseEngineMap || m_bEngineMapFailed || !m_wEngineMapSlot)
+   return false;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity || mapEntity.IsOpen())
+   return false;
+  return mapEntity.GetMapSizeX() > 0 && mapEntity.GetMapSizeY() > 0;
+ }
+
+ protected static ResourceName ResolveMapConfig()
+ {
+  BaseGameMode gameMode = GetGame().GetGameMode();
+  if (gameMode)
+  {
+   SCR_MapConfigComponent configComponent = SCR_MapConfigComponent.Cast(gameMode.FindComponent(SCR_MapConfigComponent));
+   if (configComponent && !configComponent.GetGadgetMapConfig().IsEmpty())
+    return configComponent.GetGadgetMapConfig();
+  }
+  return DEFAULT_MAP_CONFIG;
+ }
+
+ // Draws the native map into this board's map widget with the same transform as ToBoard
+ // (scale and centre), styled by the scenario's gadget map config. The map widget only
+ // exists while this board drives the native map, so it never competes with a map the
+ // player opens; the plain map image under it stays as the fallback.
+ protected void UpdateEngineMap()
+ {
+  if (!EngineMapAllowed() || (s_EngineMapOwner && s_EngineMapOwner != this))
+  {
+   ReleaseEngineMap();
+   return;
+  }
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!m_EngineMapConfig)
+   m_EngineMapConfig = mapEntity.EBM_CreateBoardConfig(ResolveMapConfig(), m_wRoot);
+  if (!m_wEngineMap && m_EngineMapConfig)
+  {
+   WorkspaceWidget workspace = GetGame().GetWorkspace();
+   Widget created;
+   if (workspace)
+    created = workspace.CreateWidgets(ENGINE_MAP_LAYOUT, m_wEngineMapSlot);
+   m_wEngineMap = CanvasWidget.Cast(created);
+   if (created && !m_wEngineMap)
+    created.RemoveFromHierarchy();
+   DisableCursor(m_wEngineMap);
+  }
+  if (!m_wEngineMap || !m_EngineMapConfig)
+  {
+   Print("EXPBG Briefing: the board cannot create its map view; showing the plain map image", LogLevel.WARNING);
+   m_bEngineMapFailed = true;
+   ReleaseEngineMap();
+   return;
+  }
+  s_EngineMapOwner = this;
+  if (!m_bEngineMapLayersReady)
+  {
+   mapEntity.EBM_InitBoardLayers(m_EngineMapConfig);
+   m_bEngineMapLayersReady = true;
+  }
+  m_wEngineMap.SetSizeInUnits(Vector(mapEntity.GetMapSizeX(), mapEntity.GetMapSizeY(), 0));
+  float screenWidth, screenHeight;
+  m_wEngineMap.GetScreenSize(screenWidth, screenHeight);
+  float widgetPixelPerUnit = m_wEngineMap.PixelPerUnit();
+  if (screenWidth <= 0 || screenHeight <= 0 || widgetPixelPerUnit <= 0)
+  {
+   m_iEngineMapRetries++;
+   if (m_iEngineMapRetries <= ENGINE_MAP_RETRIES)
+   {
+    EBM_OnStateRpl();
+    return;
+   }
+   Print("EXPBG Briefing: the board's map view never got a size; showing the plain map image", LogLevel.WARNING);
+   m_bEngineMapFailed = true;
+   ReleaseEngineMap();
+   return;
+  }
+  m_iEngineMapRetries = 0;
+  // ToBoard in the map widget's own pixels: screen = k * board units, k = widget width / canvas width.
+  float pixelsPerMeter = m_fScale * screenWidth / m_iRtWidth;
+  vector offset = mapEntity.Offset();
+  // As SCR_MapEntity.SetZoom, and the inverse of SCR_MapEntity.WorldToScreen for the pan.
+  mapEntity.ZoomChange(pixelsPerMeter / widgetPixelPerUnit);
+  float panX = screenWidth * 0.5 - (m_fCenterX - offset[0]) * pixelsPerMeter;
+  float panY = screenHeight * 0.5 - (mapEntity.GetMapSizeY() - m_fCenterY + offset[2]) * pixelsPerMeter;
+  mapEntity.PosChange(panX, panY);
+  float halfWidth = m_iRtWidth * 0.5 / m_fScale;
+  float halfHeight = m_iRtHeight * 0.5 / m_fScale;
+  mapEntity.SetFrame(Vector(m_fCenterX - halfWidth, 0, m_fCenterY - halfHeight), Vector(m_fCenterX + halfWidth, 0, m_fCenterY + halfHeight));
+  SelectEngineMapLayer(mapEntity, m_fLayerReferenceHeight / (halfHeight * 2));
+  mapEntity.EnableGrid(true);
+  mapEntity.EnableVisualisation(true);
+  mapEntity.EBM_MarkNativeDirty();
+ }
+
+ // The detail layer a briefer screen would get for this frame (vanilla AssignViewLayer rule:
+ // the first layer whose ceiling the zoom reaches).
+ protected static void SelectEngineMapLayer(SCR_MapEntity mapEntity, float pixelsPerMeter)
+ {
+  int count = mapEntity.LayerCount();
+  if (count <= 0)
+   return;
+  int chosen = count - 1;
+  for (int i = 0; i < count; i++)
+  {
+   MapLayer mapLayer = mapEntity.GetLayer(i);
+   if (mapLayer && pixelsPerMeter >= mapLayer.GetCeiling())
+   {
+    chosen = i;
+    break;
+   }
+  }
+  if (mapEntity.GetLayerIndex() != chosen)
+   mapEntity.SetLayer(chosen);
+ }
+
+ // Removes this board's map widget; the board that drove the native map switches its
+ // drawing off again unless a map of the player is open (that map owns it then).
+ protected void ReleaseEngineMap()
+ {
+  if (m_wEngineMap)
+   m_wEngineMap.RemoveFromHierarchy();
+  m_wEngineMap = null;
+  m_iEngineMapRetries = 0;
+  m_bEngineMapLayersReady = false;
+  if (s_EngineMapOwner != this)
+   return;
+  s_EngineMapOwner = null;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (mapEntity && !mapEntity.IsOpen())
+   mapEntity.EnableVisualisation(false);
+ }
+
+ // A map of the player opens (gadget, editor, deploy screen): give the native map back at
+ // once. Vanilla re-initialises the layers and switches drawing on once that map is ready.
+ protected void EBM_OnLocalMapInit(MapConfiguration config)
+ {
+  bool wasDriving = s_EngineMapOwner == this;
+  ReleaseEngineMap();
+  if (!wasDriving)
+   return;
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (mapEntity)
+   mapEntity.EnableVisualisation(false);
+ }
+
+ // Queued, so the board takes the native map back after CloseMap has finished.
+ protected void EBM_OnLocalMapClose(MapConfiguration config)
+ {
+  EBM_OnStateRpl();
  }
 
  protected void UpdateTitle()

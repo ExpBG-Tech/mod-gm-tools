@@ -233,7 +233,7 @@ modded class EXPG_GarrisonRecord
    if (control && control.GetAIAgent()) parentGroup = control.GetAIAgent().GetParentGroup();
    PrintFormat("[EXPG RELEASE ACTOR] member=%1 position=%2 characterGroup=%3 agentGroup=%4 dead=%5 wasPlayer=%6 post=%7", member.CacheMember.Id, actor.GetOrigin(), actor.GetCharacterGroup(), parentGroup, member.CacheMember.Dead, member.CacheMember.WasPlayer, member.Post != null);
    PrintFormat("[EXPG RELEASE LIFE] member=%1 controllerDead=%2 damageDestroyed=%3 life=%4 health=%5", member.CacheMember.Id, actor.GetCharacterController().IsDead(), actor.GetDamageManager().IsDestroyed(), actor.GetCharacterController().GetLifeState(), actor.GetDamageManager().GetHealthScaled());
-   vector postPoint = Plan.Nodes[member.NodeIndex].Position;
+   vector postPoint = member.PostPoint();
    TraceParam floorTrace = new TraceParam();
    floorTrace.Start = postPoint + "0 0.2 0"; floorTrace.End = postPoint - "0 0.4 0";
    floorTrace.Flags = TraceFlags.WORLD | TraceFlags.ENTS; floorTrace.Exclude = actor;
@@ -626,7 +626,7 @@ class EXPG_GarrisonGameplay : GenericEntity
     EXPG_GameplayActor saved = new EXPG_GameplayActor(); saved.Actor = member.CacheMember.Entity;
     saved.Member = member.CacheMember;
     if (!Check(saved.Actor != null, "original actor exists")) { Finish("missing actor"); return; }
-    saved.Id = saved.Actor.GetID(); saved.Fixed = member.Fixed; saved.Post = Record.Plan.Nodes[member.NodeIndex].Position;
+    saved.Id = saved.Actor.GetID(); saved.Fixed = member.Fixed; saved.Post = member.PostPoint();
     saved.Presentation = saved.Actor.GetFlags() & (EntityFlags.VISIBLE | EntityFlags.TRACEABLE);
     if (!Check((saved.Presentation & EntityFlags.VISIBLE) != 0 && !saved.Actor.EBG_IsSimulationCached(), "original actor initially visible and uncached")) { Finish("initial presentation"); return; }
     if (saved.Fixed) FixedCount++;

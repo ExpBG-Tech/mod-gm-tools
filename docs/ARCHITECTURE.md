@@ -34,11 +34,12 @@ another independent garrison that shares the building's plan.
 
 Prefer authored sentinel positions, then physically checked interior positions:
 window watchers (the nearest clear position 0.4-3 m from each window), then
-positions 1.5-2.5 m inside outer doors (a door with an enclosed room on one side
-only; interior doors are not watched), then entrance approaches and stair ends,
-then patrol nodes. Each kind is taken one per window or door and 2.5 m apart
-first, then 1.5 m apart; storeys take turns and each post goes where it is
-farthest from the posts already chosen, so a squad spreads over every floor.
+positions 2-4 m from outer doors and at least 1.2 m deep on the room side (a
+door with an enclosed room on one side only; interior doors are not watched),
+diagonal to the doorway first, facing it, then entrance approaches and stair
+ends, then patrol starts. Each fixed kind is taken one per window or door and
+2.5 m apart first, then 1.5 m apart; storeys take turns and each post goes where
+it is farthest from the posts already chosen, so a squad spreads over every floor.
 Every accepted position must be on
 the building floor, have character clearance and a connected entrance route.
 Nearby navmesh alone does not prove entrance connectivity. Reject uncertain
@@ -54,22 +55,83 @@ The grid checks eight neighbors, including diagonals around furniture, with the
 same body sweep and intermediate floor checks on each connection. Stair treads
 and ramps, where the floor itself steps and a body fits above step height, are
 transit-only nodes; neighbouring stair nodes link up to 45 degrees when the floor
-between them climbs in steps of at most 0.3 m. Patrols require
-interior endpoints and a short interior segment; reachable exterior entrance
+between them climbs in steps of at most 0.3 m. Patrols stop only at interior
+roam stops and walk only on the indoor floor; reachable exterior entrance
 nodes establish access but cannot become patrol destinations.
 Cancellation and unsupported buildings create no orphaned squads or reservations.
 
+Every door leaf of the building has one keep-out zone (`InDoorZone`): its swing
+disc, leaf width plus 0.6 m around the native hinge on both sides, and the
+doorway passage, 0.3 m beyond the leaf and 1.5 m deep on each side, on the
+leaf's floor. No fixed post, entrance post, added building position, position
+around the building, patrol stop, alarm window or watch point lies in a zone;
+walking through stays allowed. A guard on a post cannot step aside for a door.
+
+Overflow soldiers patrol inside. An added squad takes free fixed posts, then
+patrol starts under the free-room rule, then extra window, door, entrance and
+stair positions that keep 1.5 m from every roam stop, then places on rings 1 m
+to 24.75 m around the walls, then its spawn point. Indoor walking nodes are enclosed interior
+nodes plus stair and aside nodes whose stair-connected group touches only such
+nodes; their connected areas are walk groups. Up to 96 roam stops (not stairs,
+not door zones, 1.5 m from every fixed slot and from each other, farthest first,
+storeys taking turns) each face the longest indoor view (a hallway or doorway).
+A patroller's single claim (his stop, or his destination while walking) keeps
+1.5 m from every other claim, post and parked post of a Full-cached garrison;
+the first claimant wins. Patrollers join a walk group only while at least
+max(2, a third) of its stops stay free. A patroller dwells 10-30 s, then walks
+(walk speed, normal priority) to a free stop of his walk group 5-20 steps away,
+mostly on his storey. The native path is admitted only when every point and the
+line between points stays on the indoor floor (within 0.7 m of an indoor
+walking node) and clear of parked posts; each input frame re-checks the next
+step and the momentum with O(1) lookups. A failed walk stops at a nearby stop
+and skips that destination for two minutes.
+
+Alarm: per-guard threat state reaching ALERTED (`SCR_AIThreatSystem` invoker)
+and the squad's filtered enemy detection (`SCR_AIGroupPerception`) only raise a
+flag; the shared scheduler polls at most 32 threat states per garrison and
+keeps one alarm per building. While it is under 60 s old, at most two
+patrollers per garrison and Tick claim the best of three free windows (steps,
+then facing the known threat), else a free door or stairs watch point within
+12 steps, else hold their stop, and run there at player priority to hold it
+like a post; holders without a window retry every 5 s. Posts freed by
+casualties are claimable during an alarm (body clearance permitting). After
+60 s without an alarm one holder every 3-8 s returns to patrol.
+
 Fixed guards stay at their assigned position, retaining aim, shooting, rotation
-and stance changes. Overflow patrols use verified interior routes; native paths
-that leave the building are not acceptable. Explicit fresh editor spawns may
+and stance changes. Overflow patrols walk between claimed interior stops; native
+paths that leave the building are not acceptable. Dwelling and holding
+patrollers are capped like posts (combat moves become stance changes). Explicit fresh editor spawns may
 trim initial surplus to the safe capacity, preserving the leader. A transaction
 tracks exact native-spawned actor identities before editor callbacks; foreign
 additions, removals or same-count substitutions invalidate it. Revalidation
 precedes each deletion; the ordinary adoption path never authorizes trimming.
 Zero safe positions still produce an honest refusal.
 Force Move ends garrison enforcement once; ordinary simulation resumption is not
-a GM order. Destruction invalidates posts and releases survivors to normal AI.
-Player possession, transfers and deletion also release affected ownership safely.
+a GM order. One guard's problem never releases the others; it is handled for that
+guard alone. A guard displaced more than 0.5 m (ragdoll, unconsciousness, blast,
+push, carry, a Game Master move) holds where he comes to rest once still when the
+spot is plausible (`EXPG_GarrisonMember.Plausible`: within 6 m of the post he was
+given; for a building post on the indoor floor, inside the walls, with a floor
+under him; for a post outside on walkable ground at about its height): his post
+becomes that spot (`EXPG_GarrisonMember.Anchor`: the nearest free standing node
+within 0.5 m keeps a reservation, otherwise an off-plan post). Any other spot (the
+roof, the yard, far away) never becomes a post: once he is conscious and still he
+is teleported back to his post. He is never released for it. Placement moves each
+soldier with the editor's transform, which lands a frame or more later: a guard is
+bound only once he stands on his post or stop (within 1 m), the move is sent again
+every second (five times, then every 5 s), and nobody is anchored on the way.
+Binding accepts a guard within 1.5 m of his post and anchors one farther away (if
+plausible) or whose node another guard holds. A possessed guard
+is free while the player has him and holds where he is left; a living guard in
+another squad is forgotten; a deleted guard (or one a Full restore did not
+recreate) is dead and never respawned; a lost control is rebound for that guard;
+a floor lost under a post only holds caching. A patroller whose control cannot
+start for 10 s becomes a fixed guard where he stands. A whole garrison is released
+only through `RequestRelease(reason)`: Force Move, the Release attribute, Unit
+Caching regroup or Prepare for Save, a deleted squad, a moved or replaced
+building, no surviving guard, or a refused initialization. `FinishRelease` logs
+`[EXPG Garrison] group=... released (reason)` and the group status keeps
+`Released: reason`, which the Game Master's status attribute still shows.
 Each fixed post owns a native character maximum-speed limit in addition to its
 AI setting. The character combines limits from all sources; release removes only
 the post's entry. Player input releases the post in the first controller callback.
@@ -81,7 +143,16 @@ One shared bounded scheduler; no per-soldier timers or repeated world scanning.
 Each building record retains roster identity, local post transforms, route state,
 cache lifecycle and release intent. Defaults: wake 300 m, sleep 400 m, adjustable
 per garrison; these are starting values, not measured optimal distances.
-Active combat or player possession prevents sleeping. Exactly one cache owner
+Active combat, a building alarm under 60 s old or player possession prevents
+sleeping. When sleep is due but held (a guard Unit Caching cannot suspend, such
+as an unconscious, bleeding, possessed or once-possessed one; a guard not under
+garrison control; a lost floor; a soldier who is not a guard; an alarm), the
+status and the server log say `Cache held: <reason>` once caching has been held
+for 30 s (when it would have slept; a changed reason at most every 10 s); Full
+refusals name the guard or the squad reason. Sleep also waits (silently) until every patroller dwells at his stop;
+after 20 s a walker stops at a stop near him. Full captures a patroller's claimed
+stop only; he wakes there as a patroller (within 1.5 m, or the nearest free stop
+within 1 m). Simulation keeps his control and claim. Exactly one cache owner
 may manage a garrison, including overlapping Optimizer zones.
 
 Version 0.0.1 supports Off, Simulation and Full (default), using each garrison's
@@ -91,8 +162,12 @@ or recreated. Equipment and casualty state remain on the retained actors.
 Full reuses Optimizer's standalone `EBG_PrefabFullCache` transaction, retaining
 the original native group and shared logical survivor records. Only current
 survivors are captured; recreated actors use prefab-default kits and health.
-Post identity and patrol route state survive actor replacement. New actors receive
-an owned LOD hold, then their controls before native AI release. Actual spawn
+Post identity and patrol route state survive actor replacement, including a
+guard's anchored or off-plan post. New actors receive an owned LOD hold, then
+their controls before native AI release. The wake stays gated by binding the
+controls; a survivor whose restored spot fails the floor or body check is
+accepted where he stands after 10 s, and a survivor that was not recreated counts
+as dead. Actual spawn
 timing, world-transform parity and client behavior require native acceptance.
 Partial deletion/restoration retains its recovery transaction; a previously
 created slot or retained original is never spawned again after external removal.
@@ -150,3 +225,50 @@ not only the first blocker met), which stays protected. A record with nothing
 owned left settles and costs O(members) per tick; a casualty whose body is gone
 and who has nothing left to delete no longer counts as mature, so a younger
 casualty waits on the O(members) corpse-age hold without player-distance scans.
+
+## Time and Weather
+
+`addon/time-weather` (`EXPTW`, `ETW_` classes, log prefix `[ETW]`). Two
+always-relevant Systems entities; all state changes run on the server.
+
+Weather Transition. One transition per session (`ETW_WeatherRunner`, statics with
+a weak reference to the world's `TimeAndWeatherManagerEntity`, so nothing leaks
+into the next mission). Clouds only change through the weather state machine: the
+queue after the current node is cleared, one node to the target is enqueued with
+a transition duration in in-game hours equal to the requested real minutes at the
+current day length, and `RequestStateTransition()` starts it smoothly (vanilla
+uses `RequestStateTransitionImmediately`, which is instant). That call starts the
+head of the queue, so a pending automatic node still queued ahead of ours is
+dropped first (never the current node or one that is transitioning); a request
+heading elsewhere is logged. A refused request is retried with the time left. Rain, fog and wind use the replicated overrides,
+stepped every 0.5 s from their live values along an ease-in-out curve. Wind
+direction turns the short way round. A value left to the weather that is
+overridden now blends to the target state's typical value and is released at the
+end. At the end, clouds that have not arrived within 30 s of grace are set through
+our own immediate node (counted, logged). The vanilla looping flag and the
+automated-wind flag are kept in step through two `modded TimeAndWeatherManagerEntity`
+methods, without forcing the state. A new request replaces the running one from
+the live values. A cloud blend still running completes at once to the nearer
+weather unless it already goes to the same target.
+
+Foreign changes. The runner never calls `ForceWeatherTo`, so every call
+(Scenario Properties weather or automated weather, mission load, other mods)
+stops the transition and releases the overrides it set. The vanilla delayed wind
+setters drop only the wind channels. Smoothing of Scenario Properties weather
+replaces the instant `ForceWeatherTo` in `SCR_WeatherInstantEditorAttribute.WriteVariable`
+with a transition over the newest smoothing module's duration. It applies only to
+interactive writes (item, manager, player above 0) and starts one call-queue tick
+later, after the rest of the Save. Previews and restores stay vanilla.
+
+Time Skip. `ETW_TimeSkip.Start` refuses overlap and empty skips, then sends one
+reliable broadcast RPC from the module: the host runs the handler itself, and a
+dedicated server ignores it (`System.IsConsoleApp`). Clients draw their own
+layout at the workspace root (Z order 10000, no cursor or focus), timed by the
+local world clock. At fade-out plus half the hold, the server completes a running
+weather transition, then sets date (Gregorian rollover in `ETW_TimeMath`) and
+time with `immediateChange`. Calls carry a serial. Joiners during a fade see the
+normal view.
+
+Persistence. Module settings and the skip text use entity serializers
+(`etwVersion` 1). The clock is saved by vanilla persistence. A running
+transition is not saved; CDF Compat support is a separate addon change.

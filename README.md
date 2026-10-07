@@ -17,10 +17,11 @@ modules into a single Workshop item and engine project
 | No Game Master Budget | `addon/no-gm-budget` | Rebuilt here; same behaviour as Disable Game Master Budgets by ceo_of_bacon (no code reused) |
 | Unit Scripts | `addon/unit-scripts` | Developed here |
 | Unit Dialog | `addon/unit-dialog` | Developed here |
-| Advanced Briefing Map | `addon/advanced-briefing-map` | Developed here |
+| Advanced Briefing Map | `addon/advanced-briefing-map` | Developed here; projector screen model from Structures For GM byHeine (APL-SA) |
 | AI Surrender | `addon/ai-surrender` | Developed here |
 | AI Global Skills | `addon/ai-global-skills` | Developed here |
 | Ambient Unrest | `addon/ambient-unrest` | Developed here |
+| Time and Weather | `addon/time-weather` | Developed here |
 
 Exact source commits and former Workshop IDs are recorded in
 [`tools/pack.json`](tools/pack.json). Module folders keep the original class
@@ -59,19 +60,25 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   itself once the structure analysis is done; until then a hint shows its
   progress, and EXPBG Add Garrison on the same building again stops waiting.
   One squad takes reachable fixed guard posts and patrols
-  indoors: window posts first, then just inside the outer doors, spread over
+  indoors: window posts first, then 2-4 m inside the outer doors, spread over
   every floor the stairs reach and at least 1.5 m apart, never on porches or
-  entrance steps. A freshly spawned squad larger than the safe capacity is trimmed;
+  entrance steps and never in a door's swing or doorway, so every door still
+  opens. Soldiers beyond the posts patrol inside: they walk between free
+  indoor stops, watch a hallway or door for 10-30 s at each and never bunch up;
+  when a firefight starts each takes the nearest free window (or watches a door
+  or stairs nearby) and returns to patrol a minute after it calms down.
+  A freshly spawned squad larger than the safe capacity is trimmed;
   existing squads and casualties are never refilled. Add Garrison again on the
   same building, as often as needed, to add squads: each deploys in full as its
-  own garrison on free posts first, then elsewhere in and around the building.
+  own garrison on free posts first, then patrolling inside while there is room,
+  then on other watch positions inside, then close around the building.
   Caching offers Off,
   Simulation and Full (default) with per-garrison wake/sleep distances. Full
   recreates survivors at their captured world transforms with their posts in the
   original group, using prefab-default kits and health. Force Move releases the
   garrison. Use Unit Caching **Prepare for Save** before saving; assignments are
   mission-only.
-- **Unit Caching**: AI Cache Zones and the EXPBG UNIT CACHING CONTROLLER.
+- **Unit Caching**: AI Cache Zones and the UNIT CACHING CONTROLLER.
   Simulation pauses existing AI; Full removes supported groups and restores only
   survivors. With Group cleanup on, each AI casualty's body (with everything it
   carries) and its dropped weapon are deleted together once it reaches the Minimum corpse age and no player has come within
@@ -84,14 +91,21 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   module on the GM map) and a notice after saving the zone say why groups are
   not enrolled or not caching.
 - **Intel Items**: placeable intel with GM-authored title and text, plus server
-  racks whose intel players download onto an EXPBG USB Drive (timed, 3 m range,
+  racks whose intel players download onto a USB Drive (timed, 3 m range,
   readable by hovering the drive). Rack and drive text are not yet saved by CDF.
 - **Ambient Civilians**: civilian population module and exclusion zones.
 - **Ambient Destruction**: permanent building damage, rubble and road wrecks.
-- **Ambient Sounds**: war ambience, radios, crowds and emergency-alert TVs, plus
-  28 placeable EXPBG Sound modules from Vinny - Sounds (radio chatter, Hanoi
-  Hannah, firefights, shelling, jets, drone, market, prayer, traffic and sound
-  effects); new modules start OFF.
+  Each zone's "Vehicle types" setting picks its wrecks: Civilian (cars, vans,
+  buses, civilian trucks), Military (armour, military trucks and jeeps) or Both
+  (the default, as before). Changing it regenerates that zone's scenery and is
+  saved with the zone.
+- **Ambient Sounds**: war ambience, crowds, emergency-alert TVs and three
+  radios: Radio Black (civilian), Radio AN/GRC-160 and Radio R123M (military).
+  A radio's Recording offers radio chatter and broadcasts only (static, Apache,
+  US battlefield, Russian, Chinese and Arab chatter, Hanoi Hannah, or Random per
+  language). Plus 28 placeable "Sound: ..." modules from Vinny - Sounds (radio
+  chatter, Hanoi Hannah, firefights, shelling, jets, drone, market, prayer,
+  traffic and sound effects). New modules start OFF.
 - **Persistent Battlefield**: body/wreck lifetime rules, reconnect retention
   and spawn weapon safety. It overrides the vanilla `Character_Base` prefab and
   systems config. Bodies owned by Unit Caching cleanup are removed by that
@@ -110,18 +124,42 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   mission-only.
 - **Unit Dialog**: GM-authored speaker name and up to ten dialog lines on AI
   units; players read them with "Speak to <Name>" (Continue, Restart, End).
-- **Advanced Briefing Map**: a briefing board that shows one player's map view,
-  markers and drawn lines live to everyone nearby while they brief.
-- **AI Surrender**: place "EXPBG AI Surrender" from Systems; broken AI squads
+- **Advanced Briefing Map**: "Briefing Projector Screen" (Systems), a projector
+  screen (model from Structures For GM byHeine) that shows one player's map
+  view, markers and drawn lines live to everyone nearby while they brief
+  ("EXPBG: Brief on map"). The map is drawn by the game's own map renderer
+  (roads, buildings, names, contours, grid) on one screen per player while that
+  player's own map is closed, otherwise from the world map image. The picture
+  is on the side the roller case sticks out to. The older wall-map "Briefing
+  Board" stays for existing saves but is no longer in the Game Master list.
+- **AI Surrender**: place "AI Surrender" from Systems; broken AI squads
   may surrender (weapons dropped, sitting), and players interrogate prisoners
   ("Interrogate" on the prisoner's face, clear of medical actions) for a nearby
-  squad's position or identity intel.
-- **AI Global Skills**: place "EXPBG AI Global Skills" from Systems for per-faction
+  squad's position or identity intel. "Interrogation: reveal intel items (%)"
+  (default 30) is rolled once with his first answer: he also points out up to
+  three unclaimed EXPBG Intel Items within the reveal search radius (loose, in a
+  crate or vehicle, or on a body; not carried by a player), each marked on the
+  interrogator's map. "Commander: grenade suicide instead of
+  surrender (%)" (default 0, off) gives a breaking squad's leader that chance to
+  kill himself with a fragmentation grenade at his feet instead of surrendering.
+  The blast also hurts anyone nearby; the rest of the squad surrenders as usual.
+  "Commander must carry a grenade" (default ON) uses one of his own grenades,
+  and a leader without one surrenders; OFF gives him a vanilla M67 (US) or
+  RGD-5 (other sides). Per squad and per soldier: the "EXPBG Surrender & Intel"
+  tab of an AI squad's or AI soldier's Edit properties sets the surrender chance
+  and the reveal squad, identity and reveal intel items chances (0-100%, default
+  "Use module setting"). The soldier's value wins over his squad's, the squad's
+  over the module; a set surrender chance is exact (no random factor). The
+  module's casualty threshold still decides when a squad breaks. A prisoner
+  keeps the interrogation values his squad had when he surrendered; his own can
+  be changed while he is a prisoner. The values survive caching and saves.
+- **AI Global Skills**: place "AI Global Skills" from Systems for per-faction
   AI skill and aim with Rifleman, MG/LMG, Marksman and Leader overrides (modded
   factions detected at runtime), rules of engagement (Return Fire Only, Fire on
-  Sight, Warning Shots First; per group with "EXPBG ROE" in the group's Group
-  tab) and AI ammunition (unlimited or N refills). Everything starts on vanilla.
-- **Ambient Unrest**: "EXPBG Civil Protest Zone", a static crowd of 10-15
+  Sight, Warning Shots First; per squad and per soldier in the "EXPBG Rules of
+  Engagement" tab of their Edit properties, soldier over squad over module) and
+  AI ammunition (unlimited or N refills). Everything starts on vanilla.
+- **Ambient Unrest**: "Civil Protest Zone", a static crowd of 10-15
   unarmed protesting civilians with crowd audio from Ambient Sounds; the "Crowd
   sound" setting picks Angry crowd, Rioting crowd or Alternate (the default,
   switching between the two on every loop). Protesters turn to face a player
@@ -129,6 +167,29 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   is within the "Wake distance" (default 300 m; Game Masters count by their
   character); farther away the zone sleeps and brings the same civilians back
   when a player returns.
+- **Time and Weather**: two Systems modules.
+  - "Weather Transition" blends the weather to a target (preset buttons like
+    Scenario Properties, plus optional rain, fog, wind speed and direction) over
+    1-120 real minutes (default 10) instead of switching at once. Changing any
+    of its settings and pressing Save starts the transition from the current
+    weather; a new one takes over smoothly from the values reached. Clouds use
+    the game's own weather blend; rain, fog and wind move every half second.
+    Afterwards the weather holds (default) or runs automatically again. The
+    Action setting offers Start again, Stop here and hold, and Return to
+    automatic weather. A read-only progress row shows the status.
+  - While a Weather Transition module exists, a weather picked in Scenario
+    Properties also blends over its transition time ("Smooth Scenario
+    Properties weather", ON by default). Changing the weather or wind in
+    Scenario Properties during a transition stops it, or stops it moving the
+    wind.
+  - "Time Skip": choose "Skip time now" and every screen (players, and Game
+    Masters unless switched off) fades to black, shows "6 hours later" (editable
+    text with {hours}, {minutes}, {time} and {date}) and the new time, the clock
+    moves forward with the date rolling over, and the screens fade back in.
+    Defaults: 6 h, fades 2/3/2 s. One skip at a time; a running weather
+    transition completes under the black screen.
+  - Module settings are saved with native mission saves. A running transition
+    is not: after loading, the weather reached so far stays.
 
 ## CDF Game Master Save
 
@@ -172,3 +233,5 @@ audio and assets keep their notices in the module `Credits`, `Licenses` and
 Workshop item uses a Custom license: `INTERNAL USE ONLY - DO NOT RE-DISTRIBUTE OR RE-UPLOAD`.
 
 Vinny - Sounds by Vinuesa (Workshop 61D358A07E15C5FE, APL-SA)
+
+Projector Screen model from Structures For GM byHeine by Heine.CRV (Workshop 628EDA2ABC937159, APL-SA)

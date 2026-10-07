@@ -248,4 +248,33 @@ modded class SCR_AIGroup
 
 		return false;
 	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Soldier ROE (EGS_UnitRoe.c): hold fire until this group is endangered.
+	EAIGroupCombatMode EGS_ReturnFireMode()
+	{
+		SCR_AIGroupUtilityComponent utility = GetGroupUtilityComponent();
+		if (!utility || utility.EGS_IsEndangered())
+			return EAIGroupCombatMode.FIRE_AT_WILL;
+
+		return EAIGroupCombatMode.HOLD_FIRE;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Soldier ROE "Exempt (vanilla)": the mode this group would have without EXPBG.
+	EAIGroupCombatMode EGS_VanillaMode()
+	{
+		SCR_AIGroupUtilityComponent utility = GetGroupUtilityComponent();
+		if (!utility)
+			return EAIGroupCombatMode.FIRE_AT_WILL;
+
+		EAIGroupCombatMode mode = utility.GetCombatModeExternal();
+		if (m_bEGS_RoeTouched)
+			mode = m_eEGS_OriginalMode;
+
+		if (mode == EAIGroupCombatMode.RETURN_FIRE)
+			return EGS_ReturnFireMode();
+
+		return mode;
+	}
 }

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{BA12B7D0299CAA31}EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_BaseMap.edds"
+ Configurations {
+  EDDSResourceClass PC {}
+  EDDSResourceClass HEADLESS : PC {}
+ }
+}

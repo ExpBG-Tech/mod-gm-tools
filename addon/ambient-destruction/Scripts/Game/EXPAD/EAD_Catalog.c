@@ -4,6 +4,57 @@ class EAD_Catalog
  static bool IsWreck(int asset) { return asset == 2 || asset == 3 || (asset >= 8 && asset <= 30); }
  static bool IsSeated(int asset) { return asset == 4 || asset == 6 || (asset >= 31 && asset <= 33); }
  static bool IsLitter(int asset) { return asset >= 36 && asset <= 40; }
+ // Vehicle category of each wreck for the zone setting "Vehicle types" (key 12). Kept as
+ // data beside the prefab list: a modded catalog that adds wrecks also overrides Category.
+ // An uncategorised wreck (-1) appears only in Both zones.
+ static const int CIVILIAN = 0;
+ static const int MILITARY = 1;
+ static const int BOTH = 2;
+ static int Category(int asset)
+ {
+  switch (asset)
+  {
+   case 2: return MILITARY; // BRDM-2 scout car
+   case 3: return MILITARY; // UAZ-452 van, a Soviet army vehicle (ambiguous: also a civilian van)
+   case 8: return CIVILIAN; // S105 saloon
+   case 9: return MILITARY; // M923A1 cargo truck
+   case 10: return MILITARY; // BMP-1
+   case 11: return MILITARY; // BTR-70
+   case 12: return MILITARY; // M113
+   case 13: return MILITARY; // M151A2 jeep
+   case 14: return MILITARY; // M998 HMMWV
+   case 15: return MILITARY; // T-62
+   case 16: return MILITARY; // UAZ-469 jeep (ambiguous: civilian variants exist)
+   case 17: return MILITARY; // Ural-4320 truck
+   case 18: return CIVILIAN; // kei truck ("Afghan truck")
+   case 19: return CIVILIAN; // police car (ambiguous: law enforcement, not military)
+   case 20: return CIVILIAN; // Zuk minivan
+   case 21: return CIVILIAN; // taxi
+   case 22: return CIVILIAN; // ambulance (ambiguous: civilian emergency van)
+   case 23: return CIVILIAN; // rusty civilian pickup ("Afghan pickup")
+   case 24: return CIVILIAN; // Lada
+   case 25: return CIVILIAN; // car
+   case 26: return CIVILIAN; // old car, blue
+   case 27: return CIVILIAN; // old car, white
+   case 28: return CIVILIAN; // old car, green
+   case 29: return CIVILIAN; // old car, red
+   case 30: return CIVILIAN; // bus
+  }
+  return -1;
+ }
+ // Civilian or Military needs that category; Both (any other value) admits every wreck.
+ static bool Allowed(int asset, int types)
+ {
+  if (types != CIVILIAN && types != MILITARY) return true;
+  return Category(asset) == types;
+ }
+ // Wreck bag slots per family: the four old-car paints 26-29 share asset 26's slot.
+ static int Variants(int asset)
+ {
+  if (asset == 26) return 4;
+  if (asset >= 27 && asset <= 29) return 0;
+  return 1;
+ }
 
  static ResourceName Prefab(int asset)
  {

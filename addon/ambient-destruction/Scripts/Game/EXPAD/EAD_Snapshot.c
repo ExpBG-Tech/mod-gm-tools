@@ -15,9 +15,11 @@ class EAD_Snapshot
  {
   return Finite(value[0]) && Finite(value[1]) && Finite(value[2]);
  }
+ // Zone settings 0-12; schema 3 added key 12 (vehicle types).
+ static const int SETTING_COUNT = 13;
  static bool ValidSettings(array<int> values)
  {
-  if (!values || values.Count() != 12 || values[11] < 0 || values[11] > 2) return false;
+  if (!values || values.Count() != SETTING_COUNT || values[11] < 0 || values[11] > 2 || values[12] < 0 || values[12] > 2) return false;
   if (values[0] < 25 || values[0] > 1000 || values[7] < 1 || values[7] > 1000000) return false;
   for (int i = 1; i <= 4; i++) { if (values[i] < 0 || values[i] > 100) return false; }
   return values[5] >= 100 && values[5] <= 3000 && values[6] > values[5] && values[6] <= 4000 && values[8] >= 0 && values[8] <= 1 && values[9] >= 0 && values[9] <= 2 && values[10] >= 0 && values[10] <= 1;
@@ -36,7 +38,7 @@ class EAD_Snapshot
  {
   if (!Replication.IsServer() || Loading || !zone || !zone.CanCapture()) return false;
   EAD_ZoneSnapshot data = new EAD_ZoneSnapshot();
-  for (int key = 0; key < 12; key++) data.Settings.Insert(zone.GetSetting(key));
+  for (int key = 0; key < SETTING_COUNT; key++) data.Settings.Insert(zone.GetSetting(key));
   if (!ValidSettings(data.Settings)) return false;
   data.Origin = zone.GetOrigin(); data.Generated = zone.HasSavedLayout();
   if (data.Generated)
@@ -50,7 +52,7 @@ class EAD_Snapshot
  static string EncodeZone(EAD_ZoneSnapshot data)
  {
   JsonSaveContext ctx = new JsonSaveContext();
-  ctx.WriteValue("schema", 2); ctx.WriteValue("catalog", EAD_Catalog.COUNT);
+  ctx.WriteValue("schema", 3); ctx.WriteValue("catalog", EAD_Catalog.COUNT);
   ctx.WriteValue("world", GetGame().GetWorldFile());
   ctx.WriteValue("settings", data.Settings); ctx.WriteValue("origin", data.Origin);
   int count = data.Records.Count();
@@ -71,12 +73,17 @@ class EAD_Snapshot
   JsonLoadContext ctx = new JsonLoadContext();
   int schema, catalog, count; string world;
   EAD_ZoneSnapshot data = new EAD_ZoneSnapshot();
-  if (!ctx.LoadFromString(payload) || !ctx.ReadValue("schema", schema) || (schema != 1 && schema != 2) || !ctx.ReadValue("catalog", catalog) || catalog != EAD_Catalog.COUNT) return null;
+  if (!ctx.LoadFromString(payload) || !ctx.ReadValue("schema", schema) || schema < 1 || schema > 3 || !ctx.ReadValue("catalog", catalog) || catalog != EAD_Catalog.COUNT) return null;
   if (!ctx.ReadValue("world", world) || world != GetGame().GetWorldFile() || !ctx.ReadValue("settings", data.Settings)) return null;
   if (schema == 1)
   {
    if (data.Settings.Count() != 11) return null;
    data.Settings.Insert(2); // Old layouts retain their records and mixed-body setting.
+  }
+  if (schema < 3)
+  {
+   if (data.Settings.Count() != 12) return null;
+   data.Settings.Insert(EAD_Catalog.BOTH); // Saved before vehicle types: every wreck, as generated.
   }
   if (!ValidSettings(data.Settings)) return null;
   if (!ctx.ReadValue("origin", data.Origin) || !FiniteVector(data.Origin) || !ctx.ReadValue("generated", data.Generated) || !ctx.ReadValue("count", count) || count < 0 || count > 170 || (schema == 1 && count > 32)) return null;

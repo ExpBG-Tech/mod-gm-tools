@@ -1,7 +1,8 @@
-// One-shot group timer of the warning-shot sequence.
+// One-shot timer of a warning-shot sequence: a group's, or a soldier's own (m_Combat).
 class EGS_GroupTimer
 {
 	SCR_AIGroup m_Group;
+	SCR_AICombatComponent m_Combat;
 	int m_iKind;
 	int m_iToken;
 	float m_fDue;
@@ -18,6 +19,7 @@ class EGS_Manager
 	static const int QUEUED_PER_TICK = 24;
 	static const int TIMERS_PER_TICK = 32;
 	static const int MAX_PENDING_GROUPS = 512;
+	static const int MAX_OVERRIDE_UNITS = 2048;
 
 	static const int TIMER_WARNING_END = 1;
 	static const int TIMER_LETHAL = 2;
@@ -51,6 +53,9 @@ class EGS_Manager
 	protected static ref array<SCR_AIGroup> s_aOverrideGroups = {};
 	protected static ref array<UUID> s_aPendingIds = {};
 	protected static ref array<int> s_aPendingRoe = {};
+	protected static ref array<SCR_ChimeraCharacter> s_aOverrideUnits = {};
+	protected static ref array<UUID> s_aPendingUnitIds = {};
+	protected static ref array<int> s_aPendingUnitRoe = {};
 
 	//------------------------------------------------------------------------------------------------
 	//! Reset all scheduler state when a new world starts.
@@ -80,6 +85,9 @@ class EGS_Manager
 		s_aOverrideGroups.Clear();
 		s_aPendingIds.Clear();
 		s_aPendingRoe.Clear();
+		s_aOverrideUnits.Clear();
+		s_aPendingUnitIds.Clear();
+		s_aPendingUnitRoe.Clear();
 		return true;
 	}
 
@@ -221,6 +229,43 @@ class EGS_Manager
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! Server: per-soldier override (EXPBG Rules of Engagement tab, cache wake, mission save
+	//! or session load); applied to him at once. Logged once per soldier and change.
+	static void SetUnitRoe(SCR_ChimeraCharacter soldier, int value)
+	{
+		if (!soldier || !Replication.IsServer() || !Ensure())
+			return;
+
+		int previous = soldier.EGS_GetRoeOverride();
+		soldier.EGS_SetRoeOverride(value);
+		int current = soldier.EGS_GetRoeOverride();
+		int index = s_aOverrideUnits.Find(soldier);
+		if (current == EGS_Settings.GROUP_ROE_DEFAULT)
+		{
+			if (index >= 0)
+				s_aOverrideUnits.Remove(index);
+		}
+		else if (index < 0)
+		{
+			for (int i = s_aOverrideUnits.Count() - 1; i >= 0; i--)
+			{
+				if (!s_aOverrideUnits[i] || s_aOverrideUnits[i].EGS_GetRoeOverride() == EGS_Settings.GROUP_ROE_DEFAULT)
+					s_aOverrideUnits.Remove(i);
+			}
+
+			if (s_aOverrideUnits.Count() < MAX_OVERRIDE_UNITS)
+				s_aOverrideUnits.Insert(soldier);
+			else
+				Print("[EXPBG AI SKILLS] soldier ROE registry full: this override works but is not in native saves", LogLevel.WARNING);
+		}
+
+		if (current != previous)
+			PrintFormat("[EXPBG AI SKILLS] unit=%1 roeOverride=%2", soldier, current);
+
+		ApplyUnit(soldier);
+	}
+
+	//------------------------------------------------------------------------------------------------
 	static SCR_AIGroup ResolveGroup(SCR_EditableEntityComponent editable)
 	{
 		if (!editable)
@@ -248,6 +293,22 @@ class EGS_Manager
 
 		EGS_GroupTimer timer = new EGS_GroupTimer();
 		timer.m_Group = group;
+		timer.m_iKind = kind;
+		timer.m_iToken = token;
+		timer.m_fDue = Now() + delaySeconds;
+		s_aTimers.Insert(timer);
+		EnsureTick();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! One-shot timer of a soldier's own warning sequence (EGS_UnitRoe.c).
+	static void ScheduleUnit(SCR_AICombatComponent combat, int kind, float delaySeconds, int token)
+	{
+		if (!combat || !Ensure())
+			return;
+
+		EGS_GroupTimer timer = new EGS_GroupTimer();
+		timer.m_Combat = combat;
 		timer.m_iKind = kind;
 		timer.m_iToken = token;
 		timer.m_fDue = Now() + delaySeconds;
@@ -352,7 +413,7 @@ class EGS_Manager
 		ProcessTimers();
 		ProcessPendingOverrides();
 
-		if (s_aSweep.IsEmpty() && s_aGroups.IsEmpty() && s_aUnits.IsEmpty() && s_aTimers.IsEmpty() && s_aPendingIds.IsEmpty() && !s_bPublish && !s_bFullRefresh)
+		if (s_aSweep.IsEmpty() && s_aGroups.IsEmpty() && s_aUnits.IsEmpty() && s_aTimers.IsEmpty() && s_aPendingIds.IsEmpty() && s_aPendingUnitIds.IsEmpty() && !s_bPublish && !s_bFullRefresh)
 			StopTick();
 	}
 
@@ -398,6 +459,7 @@ class EGS_Manager
 		bool dead = controller && controller.IsDead();
 		if (!IsActive() || dead || IsPlayerControlled(character))
 		{
+			combat.EGS_SetUnitRoe(EGS_UnitRoe.FOLLOW);
 			if (combat.EGS_HasProfile())
 				combat.EGS_ResetProfile();
 
@@ -423,6 +485,13 @@ class EGS_Manager
 
 		combat.EGS_SetProfile(EGS_Settings.SkillFromIndex(skill), EGS_Settings.PerceptionFromIndex(skill), EGS_Settings.AimErrorScaleFromIndex(aim));
 		combat.EGS_SetAmmoPolicy(EGS_Settings.GetAmmoMode(), EGS_Settings.GetRefills());
+		// Soldier override > squad override > module default (EGS_UnitRoe.c); FOLLOW leaves
+		// him to his squad's combat mode.
+		int unitOverride = EGS_Settings.GROUP_ROE_DEFAULT;
+		if (scripted)
+			unitOverride = scripted.EGS_GetRoeOverride();
+
+		combat.EGS_SetUnitRoe(EGS_UnitRoe.Effective(unitOverride));
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -458,7 +527,7 @@ class EGS_Manager
 		for (int i = s_aTimers.Count() - 1; i >= 0 && budget > 0; i--)
 		{
 			EGS_GroupTimer timer = s_aTimers[i];
-			if (!timer || !timer.m_Group)
+			if (!timer || (!timer.m_Group && !timer.m_Combat))
 			{
 				s_aTimers.Remove(i);
 				continue;
@@ -469,7 +538,10 @@ class EGS_Manager
 
 			s_aTimers.Remove(i);
 			budget--;
-			timer.m_Group.EGS_OnTimer(timer.m_iKind, timer.m_iToken);
+			if (timer.m_Group)
+				timer.m_Group.EGS_OnTimer(timer.m_iKind, timer.m_iToken);
+			else
+				timer.m_Combat.EGS_OnUnitTimer(timer.m_iKind, timer.m_iToken);
 		}
 	}
 
@@ -477,7 +549,7 @@ class EGS_Manager
 	//! Group overrides from a mission save bind to their groups by persistence id.
 	protected static void ProcessPendingOverrides()
 	{
-		if (s_aPendingIds.IsEmpty())
+		if (s_aPendingIds.IsEmpty() && s_aPendingUnitIds.IsEmpty())
 			return;
 
 		float now = Now();
@@ -501,11 +573,28 @@ class EGS_Manager
 			SetGroupRoe(group, value);
 		}
 
-		if (now >= s_fPendingUntil && !s_aPendingIds.IsEmpty())
+		for (int j = s_aPendingUnitIds.Count() - 1; j >= 0; j--)
 		{
-			PrintFormat("[EXPBG AI SKILLS] %1 saved group ROE overrides had no matching group", s_aPendingIds.Count());
+			SCR_ChimeraCharacter soldier;
+			if (persistence)
+				soldier = SCR_ChimeraCharacter.Cast(persistence.FindById(s_aPendingUnitIds[j]));
+
+			if (!soldier)
+				continue;
+
+			int unitValue = s_aPendingUnitRoe[j];
+			s_aPendingUnitIds.Remove(j);
+			s_aPendingUnitRoe.Remove(j);
+			SetUnitRoe(soldier, unitValue);
+		}
+
+		if (now >= s_fPendingUntil && (!s_aPendingIds.IsEmpty() || !s_aPendingUnitIds.IsEmpty()))
+		{
+			PrintFormat("[EXPBG AI SKILLS] %1 saved group and %2 saved soldier ROE overrides had no match", s_aPendingIds.Count(), s_aPendingUnitIds.Count());
 			s_aPendingIds.Clear();
 			s_aPendingRoe.Clear();
+			s_aPendingUnitIds.Clear();
+			s_aPendingUnitRoe.Clear();
 		}
 	}
 
@@ -556,6 +645,61 @@ class EGS_Manager
 
 			s_aPendingIds.Insert(ids[i]);
 			s_aPendingRoe.Insert(Math.ClampInt(roe[i], EGS_Settings.GROUP_ROE_DEFAULT, EGS_Settings.GROUP_ROE_EXEMPT));
+		}
+
+		s_fPendingUntil = Now() + PENDING_BIND_S;
+		s_fNextPendingTry = 0;
+		EnsureTick();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Mission save: per-soldier overrides keyed by persistence id (bounded).
+	static void ExportUnitOverrides(notnull array<UUID> outIds, notnull array<int> outRoe)
+	{
+		outIds.Clear();
+		outRoe.Clear();
+		if (!Ensure())
+			return;
+
+		PersistenceSystem persistence = PersistenceSystem.GetInstance();
+		if (!persistence)
+			return;
+
+		for (int i = s_aOverrideUnits.Count() - 1; i >= 0; i--)
+		{
+			SCR_ChimeraCharacter soldier = s_aOverrideUnits[i];
+			if (!soldier || soldier.EGS_GetRoeOverride() == EGS_Settings.GROUP_ROE_DEFAULT)
+			{
+				s_aOverrideUnits.Remove(i);
+				continue;
+			}
+
+			UUID id = persistence.GetId(soldier);
+			if (id.IsNull() || outIds.Count() >= MAX_OVERRIDE_UNITS)
+				continue;
+
+			outIds.Insert(id);
+			outRoe.Insert(soldier.EGS_GetRoeOverride());
+		}
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Mission load: soldier overrides bind to their soldiers by persistence id (retried).
+	static void ImportUnitOverrides(notnull array<UUID> ids, notnull array<int> roe)
+	{
+		if (!Ensure())
+			return;
+
+		s_aPendingUnitIds.Clear();
+		s_aPendingUnitRoe.Clear();
+		int count = Math.MinInt(Math.MinInt(ids.Count(), roe.Count()), MAX_OVERRIDE_UNITS);
+		for (int i = 0; i < count; i++)
+		{
+			if (ids[i].IsNull() || roe[i] == EGS_Settings.GROUP_ROE_DEFAULT)
+				continue;
+
+			s_aPendingUnitIds.Insert(ids[i]);
+			s_aPendingUnitRoe.Insert(Math.ClampInt(roe[i], EGS_Settings.GROUP_ROE_DEFAULT, EGS_Settings.GROUP_ROE_EXEMPT));
 		}
 
 		s_fPendingUntil = Now() + PENDING_BIND_S;

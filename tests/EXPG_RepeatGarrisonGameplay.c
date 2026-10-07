@@ -1,6 +1,6 @@
 // TEST ONLY. Repeated EXPBG Add Garrison on one building (0.1.5 report: Add Garrison
 // did nothing once the building had a garrison; "This building already has a garrison").
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RepeatGarrisonGameplay.c -ExpectResult '\[EXPG REPEAT RESULT\] checks=[1-9]\d* failures=0 adds=[3-8] guards=[1-9]\d* capacity=[1-9]\d* posts=[1-9]\d* building=\d+ around=[1-9]\d* spawn=0 reason=completed' -TimeoutSeconds 480 -OrchestratorSlotGranted
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RepeatGarrisonGameplay.c -ExpectResult '\[EXPG REPEAT RESULT\] checks=[1-9]\d* failures=0 adds=[3-8] guards=[1-9]\d* capacity=[1-9]\d* posts=[1-9]\d* building=\d+ roam=\d+ around=[1-9]\d* spawn=0 reason=completed' -TimeoutSeconds 480 -OrchestratorSlotGranted
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed.
 // Same generated GM_Eden world, house and US fire team as the default fixture, through
 // the production calls the editor makes after its picker: CanFit, then the fresh roster
@@ -8,7 +8,8 @@
 // at least three adds were made and some soldiers had to stand around the building (at
 // most eight adds); the third add waits until the first garrison is Full-cached. Every
 // add must be accepted and fully placed (free posts first), earlier garrisons stay
-// untouched, posts never overlap. Then every garrison sleeps (the third in Simulation,
+// untouched, posts never overlap; overflow soldiers may patrol inside (kind 4, not
+// fixed) before any stands around the house. Then every garrison sleeps (the third in Simulation,
 // the rest Full), the second wakes alone while the others stay cached, then all wake on
 // their posts, and Force Move releases the second garrison alone. No players, no GM UI,
 // no save/load. Server log: one "[EXPG Garrison] group=... added to building ..." line
@@ -95,6 +96,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   int posts = 0;
   int building = 0;
   int around = 0;
+  int roam = 0;
   int spawn = 0;
   foreach (EXPG_RepeatAdd add : Adds)
   {
@@ -105,10 +107,11 @@ class EXPG_GarrisonGameplay : GenericEntity
     if (member.PostKind == EXPG_Placement.PLANNED) posts++;
     else if (member.PostKind == EXPG_Placement.BUILDING) building++;
     else if (member.PostKind == EXPG_Placement.AROUND) around++;
+    else if (member.PostKind == EXPG_Placement.ROAM) roam++;
     else spawn++;
    }
   }
-  string placedAt = string.Format("posts=%1 building=%2 around=%3 spawn=%4", posts, building, around, spawn);
+  string placedAt = string.Format("posts=%1 building=%2 roam=%3 around=%4 spawn=%5", posts, building, roam, around, spawn);
   PrintFormat("[EXPG REPEAT RESULT] checks=%1 failures=%2 adds=%3 guards=%4 capacity=%5 %6 reason=%7", Checks, Failures, Adds.Count(), guards, Capacity, placedAt, reason);
   GetGame().RequestClose();
  }
@@ -166,7 +169,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
    bool alive = !member.CacheMember.Dead && actor && actor.GetCharacterGroup() == add.Group && !EXPG_GarrisonManager.IsDeadActor(actor);
    bool bound = (member.Fixed && member.Post) || (!member.Fixed && member.Patrol);
-   // The post control's own tolerance: EXPG_PostControl.Tick releases a guard pushed more than 1.5 m.
+   // Bind tolerance: a guard knocked off his post holds where he came to rest (his post moves to him).
    bool onPost = alive && (!member.Fixed || vector.DistanceSq(actor.GetOrigin(), member.PostPoint()) <= 2.25);
    if (alive && bound && onPost) continue;
    if (report) PrintFormat("[EXPG REPEAT HELD] group=%1 member=%2 alive=%3 bound=%4 onPost=%5 kind=%6 post=%7 actor=%8", add.Group, member.CacheMember.Id, alive, bound, onPost, member.PostKind, member.PostPoint(), EXPG_RepeatOrigin(actor));
@@ -213,7 +216,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   EXPG_GarrisonRecord record = add.Record;
   int number = index + 1;
   if (!Check(Active(add) && record.Members.Count() == SQUAD && add.Group.GetAgentsCount() == SQUAD, string.Format("add %1: all %2 soldiers placed in their own group, none trimmed", number, SQUAD))) return false;
-  array<int> kinds = {0, 0, 0, 0};
+  array<int> kinds = {0, 0, 0, 0, 0};
   foreach (EXPG_GarrisonMember member : record.Members)
   {
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
@@ -223,8 +226,9 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (member.PostKind == EXPG_Placement.PLANNED) valid = member.NodeIndex >= 0 && Plan.Slots.Contains(member.NodeIndex);
    else if (member.PostKind == EXPG_Placement.BUILDING) valid = member.NodeIndex >= 0 && !Plan.Slots.Contains(member.NodeIndex) && Plan.Nodes[member.NodeIndex].Reachable && Plan.Inside(post, 0.25) && Plan.Supported(post, 0.2, actor);
    else if (member.PostKind == EXPG_Placement.AROUND) valid = member.NodeIndex < 0 && !Plan.Inside(post) && Plan.GroundSupported(post, 0.2, actor) && vector.DistanceXZ(post, Plan.Origin) < 60;
-   if (!Check(valid && (index == 0 || member.Fixed), string.Format("add %1 member %2: valid kind %3 post", number, member.CacheMember.Id, member.PostKind))) return false;
-   if (index == 0 && !Check(member.PostKind == EXPG_Placement.PLANNED, "the sole garrison uses the planned building posts")) return false;
+   else if (member.PostKind == EXPG_Placement.ROAM) valid = !member.Fixed && member.NodeIndex >= 0 && Plan.Nodes[member.NodeIndex].IndoorWalk && !Plan.Nodes[member.NodeIndex].DoorBlock && Plan.Inside(post, 0.25);
+   if (!Check(valid && (member.Fixed == (member.PostKind != EXPG_Placement.ROAM)), string.Format("add %1 member %2: valid kind %3 post", number, member.CacheMember.Id, member.PostKind))) return false;
+   if (index == 0 && !Check(member.PostKind == EXPG_Placement.PLANNED || member.PostKind == EXPG_Placement.ROAM, "the sole garrison uses the planned building posts and patrol starts")) return false;
    kinds[member.PostKind] = kinds[member.PostKind] + 1;
    // An added post never overlaps a fixed post of any garrison on the building.
    if (index > 0)
@@ -243,7 +247,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    add.Posts.Insert(post);
    add.FixedPosts.Insert(member.Fixed);
   }
-  PrintFormat("[EXPG REPEAT ADD] add=%1 placed=%2 posts=%3 building=%4 around=%5 spawn=%6", number, record.Members.Count(), kinds[0], kinds[1], kinds[2], kinds[3]);
+  PrintFormat("[EXPG REPEAT ADD] add=%1 placed=%2 posts=%3 building=%4 around=%5 spawn=%6 roam=%7", number, record.Members.Count(), kinds[0], kinds[1], kinds[2], kinds[3], kinds[4]);
   for (int earlier = 0; earlier < index; earlier++)
   {
    if (!Check(Untouched(Adds[earlier]), string.Format("add %1 left garrison %2 untouched", number, earlier + 1))) return false;

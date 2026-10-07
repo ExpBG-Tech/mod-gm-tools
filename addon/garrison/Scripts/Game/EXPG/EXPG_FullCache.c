@@ -95,8 +95,9 @@ class EXPG_FullCache : EBG_PrefabFullCache
    CharacterControllerComponent controller;
    if (actor) { controller = actor.GetCharacterController(); }
    if (EXPG_GarrisonManager.IsDeadActor(actor)) { member.Dead = true; }
+   // Possession is that guard's matter only; the others wake on their posts.
    if (actor && (actor.EBG_WasPlayerControlled() || (controller && controller.IsPlayerControlled())))
-   { member.WasPlayer = true; m_Owner.ReleaseRequested = true; }
+   { member.WasPlayer = true; }
    if (member.Dead || member.WasPlayer)
    {
     ReleaseMemberControl(member);
@@ -112,7 +113,7 @@ class EXPG_FullCache : EBG_PrefabFullCache
    {
     // External transfer owns this actor. Retire this restore slot permanently;
     // do not steal it back, fake a death, or use failure as permission to respawn.
-    m_Owner.ReleaseRequested = true;
+    // The garrison forgets that guard alone (ForgetLeavers); nobody is released.
     ReleaseMemberControl(member);
     ReleaseHold(member, true);
     EBG_CacheCleanup.Get().ForgetPrefabMember(m_Record, member);

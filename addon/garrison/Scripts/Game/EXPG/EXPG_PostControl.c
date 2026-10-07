@@ -32,11 +32,17 @@ class EXPG_PostControl
 	protected EMovementType m_PreviousMovement;
 	protected vector m_Position;
 	protected vector m_LookDirection;
+	// Knocked off his spot (blast, ragdoll, push, carry, a Game Master move): his
+	// post became where he came to rest; the manager copies it once (TakeMoved).
+	protected bool m_Moved;
+	// Displaced more than 0.5 m: hold where he came to rest. Bind within 1.5 m.
+	static const float DRIFT_SQ = 0.25;
+	static const float BIND_SQ = 2.25;
 
 	bool Bind(SCR_ChimeraCharacter actor, vector position, vector lookDirection)
 	{
 		Release();
-		if (!Replication.IsServer() || !actor || vector.DistanceSq(position, actor.GetOrigin()) > 1.0)
+		if (!Replication.IsServer() || !actor || vector.DistanceSq(position, actor.GetOrigin()) > BIND_SQ)
 		{
 			return false;
 		}
@@ -65,6 +71,13 @@ class EXPG_PostControl
 		m_Movement = movement;
 		m_Controller = controller;
 		m_Position = position;
+		// Bound off his post (a restore, a re-bind after a carry): he holds where he
+		// stands and is never snapped back.
+		if (vector.DistanceSq(position, actor.GetOrigin()) > DRIFT_SQ)
+		{
+			m_Position = actor.GetOrigin();
+			m_Moved = true;
+		}
 		m_LookDirection = lookDirection;
 		if (vector.DistanceSq(lookDirection, vector.Zero) > 0.01)
 		{
@@ -120,20 +133,60 @@ class EXPG_PostControl
 			Release();
 			return false;
 		}
-		// Displacement is a failed post, never permission to snap a guard back.
-		if (vector.DistanceSq(m_Position, m_Actor.GetOrigin()) > 2.25)
-		{
-			Release();
-			return false;
-		}
-		if (m_Actor.GetCharacterController().IsUnconscious()) { return true; }
+		m_Actor.SetSpeedLimit(this, 0, true);
 		m_Movement.SetMovementTypeWanted(EMovementType.IDLE);
+		if (m_Controller.IsUnconscious() || Ragdolled())
+		{
+			return true;
+		}
+		// Displacement (blast, ragdoll, push, carry, a Game Master move) is never a
+		// release and never a snap back: once he is still, his post is where he came
+		// to rest. Only a lost ownership ends this control.
+		if (vector.DistanceSq(m_Position, m_Actor.GetOrigin()) > DRIFT_SQ && Still())
+		{
+			m_Position = m_Actor.GetOrigin();
+			m_Moved = true;
+		}
 		SCR_AIBehaviorBase behavior = m_Utility.GetCurrentBehavior();
 		if (behavior && behavior.GetCause() == SCR_EAIBehaviorCause.SAFE && vector.DistanceSq(m_LookDirection, vector.Zero) > 0.01)
 		{
 			m_Utility.LookAt(m_Position + Vector(0, 1.5, 0) + m_LookDirection * 20.0, 2.0);
 		}
 		return true;
+	}
+
+	protected bool Ragdolled()
+	{
+		CharacterAnimationComponent animator = m_Controller.GetAnimationComponent();
+		if (!animator)
+		{
+			return false;
+		}
+		return animator.IsRagdollActive();
+	}
+
+	// Below 0.2 m/s: he came to rest (not falling, sliding or being carried along).
+	protected bool Still()
+	{
+		return vector.DistanceSq(m_Controller.GetVelocity(), vector.Zero) < 0.04;
+	}
+
+	// The manager copies a changed post (where he came to rest) once per change.
+	bool TakeMoved(out vector anchor)
+	{
+		anchor = m_Position;
+		bool moved = m_Moved;
+		m_Moved = false;
+		return moved;
+	}
+
+	// The manager refused his resting spot and sends him back (a teleport that lands
+	// later): hold this post again. A move still pending shows up as a new
+	// displacement, which the manager ignores while he is being sent back.
+	void Return(vector position)
+	{
+		m_Position = position;
+		m_Moved = false;
 	}
 
 	void Release()
@@ -167,6 +220,7 @@ class EXPG_PostControl
 		m_Group = null;
 		m_Agent = null;
 		m_Actor = null;
+		m_Moved = false;
 	}
 
 	void ~EXPG_PostControl()

@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{F4540CBAD6301389}UI/layouts/EXPBM/EBM_EngineMap.layout"
+ Configurations {
+  LayoutResourceClass PC {}
+  LayoutResourceClass HEADLESS : PC {}
+ }
+}

@@ -161,20 +161,21 @@ class ESR_InterrogationPoint : GenericEntity
   return controller && controller.GetLifeState() == ECharacterLifeState.ALIVE && !controller.IsUnconscious();
  }
 
- // Server: deliver the answer to the interrogating player only. Transient by design.
- void SendResult(int playerId, int outcome, int count, int distance, int bearing, int attemptsLeft)
+ // Server: deliver the answer to the interrogating player only. Transient by design. The
+ // intel items he pointed out travel as two parallel lists (25 m distance, compass sector).
+ void SendResult(int playerId, int outcome, int count, int distance, int bearing, int attemptsLeft, notnull array<int> intelDistances, notnull array<int> intelBearings)
  {
   if (!Replication.IsServer() || playerId <= 0) return;
-  Rpc(RpcDo_Result, playerId, outcome, count, distance, bearing, attemptsLeft);
+  Rpc(RpcDo_Result, playerId, outcome, count, distance, bearing, attemptsLeft, intelDistances, intelBearings);
   // A listen-server host does not receive its own broadcast.
-  RpcDo_Result(playerId, outcome, count, distance, bearing, attemptsLeft);
+  RpcDo_Result(playerId, outcome, count, distance, bearing, attemptsLeft, intelDistances, intelBearings);
  }
 
  [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]
- protected void RpcDo_Result(int playerId, int outcome, int count, int distance, int bearing, int attemptsLeft)
+ protected void RpcDo_Result(int playerId, int outcome, int count, int distance, int bearing, int attemptsLeft, array<int> intelDistances, array<int> intelBearings)
  {
   if (System.IsConsoleApp() || SCR_PlayerController.GetLocalPlayerId() != playerId) return;
-  ESR_ResultDialog.Open(TITLE, Describe(outcome, count, distance, bearing, attemptsLeft));
+  ESR_ResultDialog.Open(TITLE, Describe(outcome, count, distance, bearing, attemptsLeft, intelDistances, intelBearings));
  }
 
  protected static string Localize(string value)
@@ -229,12 +230,41 @@ class ESR_InterrogationPoint : GenericEntity
   return text;
  }
 
- string Describe(int outcome, int count, int distance, int bearing, int attemptsLeft)
+ // One intel place as he gives it: "about 75 m north-east", or "a few metres north" when it
+ // rounds to 0 m.
+ protected static string IntelPlace(int distance, int bearing)
  {
+  if (distance <= 0) return "a few metres " + Compass(bearing);
+  return string.Format("about %1 m %2", distance, Compass(bearing));
+ }
+
+ // "He also points out 2 intel items: about 75 m north-east, about 150 m south." Empty
+ // without intel items.
+ static string IntelText(array<int> intelDistances, array<int> intelBearings)
+ {
+  if (!intelDistances || !intelBearings) return string.Empty;
+  int count = intelDistances.Count();
+  if (intelBearings.Count() < count) count = intelBearings.Count();
+  if (count <= 0) return string.Empty;
+  string places;
+  for (int i = 0; i < count; i++)
+  {
+   if (i > 0) places += ", ";
+   places += IntelPlace(intelDistances[i], intelBearings[i]);
+  }
+  if (count == 1) return "He also points out an intel item: " + places + ". It is marked on your map.";
+  return string.Format("He also points out %1 intel items: %2. Each is marked on your map.", count, places);
+ }
+
+ string Describe(int outcome, int count, int distance, int bearing, int attemptsLeft, array<int> intelDistances = null, array<int> intelBearings = null)
+ {
+  // Only an answer carries intel items (the server rolls them with his first answer).
+  string intel = IntelText(intelDistances, intelBearings);
+  if (!intel.IsEmpty()) intel = "\n\n" + intel;
   if (outcome == ESR_SurrenderManager.OUTCOME_REVEAL)
-   return string.Format("He gives up his comrades: a squad of %1 soldiers about %2 m %3 of here.\n\nThe position is marked on your map. Delete the marker from the map once it is stale.", count, distance, Compass(bearing));
-  if (outcome == ESR_SurrenderManager.OUTCOME_IDENTITY) return IdentityText();
-  if (outcome == ESR_SurrenderManager.OUTCOME_NO_SQUAD) return "He insists there is nobody else out here.\n\n" + IdentityText();
+   return string.Format("He gives up his comrades: a squad of %1 soldiers about %2 m %3 of here.\n\nThe position is marked on your map. Delete the marker from the map once it is stale.", count, distance, Compass(bearing)) + intel;
+  if (outcome == ESR_SurrenderManager.OUTCOME_IDENTITY) return IdentityText() + intel;
+  if (outcome == ESR_SurrenderManager.OUTCOME_NO_SQUAD) return "He insists there is nobody else out here.\n\n" + IdentityText() + intel;
   if (outcome == ESR_SurrenderManager.OUTCOME_SILENT) return "He stares at the ground. He has nothing more to say.";
   if (attemptsLeft <= 0) return "He refuses to talk. He will not say anything more.";
   return string.Format("He refuses to talk. (%1 more attempts)", attemptsLeft);

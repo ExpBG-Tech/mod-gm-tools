@@ -194,7 +194,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
    bool alive = !member.CacheMember.Dead && actor && actor.GetCharacterGroup() == Group && !EXPG_GarrisonManager.IsDeadActor(actor);
    bool bound = (member.Fixed && member.Post) || (!member.Fixed && member.Patrol);
-   // The post control's own tolerance: EXPG_PostControl.Tick releases a guard pushed more than 1.5 m.
+   // Bind tolerance: a guard knocked off his post holds where he came to rest (his post moves to him).
    bool onPost = alive && (!member.Fixed || vector.DistanceSq(actor.GetOrigin(), member.PostPoint()) <= 2.25);
    if (alive && bound && onPost) continue;
    if (report) PrintFormat("[EXPG CDF FALLBACK HELD] group=%1 member=%2 alive=%3 bound=%4 onPost=%5 kind=%6 post=%7 actor=%8", Group, member.CacheMember.Id, alive, bound, onPost, member.PostKind, member.PostPoint(), EXPG_Origin(actor));

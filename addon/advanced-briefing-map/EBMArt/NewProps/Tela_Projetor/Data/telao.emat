@@ -1,0 +1,6 @@
+MatPBRBasic {
+ Color 0.956 0.956 0.956 1
+ BCRMap "{BA12B7D0299CAA31}EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_BaseMap.edds"
+ OpacityMap "{BA12B7D0299CAA31}EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_BaseMap.edds"
+ NMOMap "{2A5B82A0A46DD9FD}EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_Normal.edds"
+}

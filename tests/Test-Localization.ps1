@@ -2,7 +2,9 @@
 # Portable guard: the Game Master entity browser search (WidgetManager.SearchLocalized)
 # only finds editable entities whose Name is a string-table key. Every editable entity
 # UI info in the pack must name itself with a '#' key, and every pack key used by a
-# resource must exist with the same text in its source table and runtime table.
+# resource must exist with the same text in its source table and runtime table. Entity
+# names never start with EXPBG (the EXPBG trait label in EditableEntityCore.conf is not
+# an entity name and is out of scope).
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $addon = Join-Path $repo 'addon'
@@ -73,8 +75,11 @@ foreach ($file in Get-ChildItem -LiteralPath $addon -Recurse -File -Include '*.e
   $name = [regex]::Match($own.ToString(), '(?m)^\s*Name\s+"([^"]*)"')
   if (!$name.Success) { continue }
   if (!$name.Groups[1].Value.StartsWith('#')) { throw "Editable entity Name is plain text (invisible to Game Master search): $relative" }
+  # The EXPBG badge and trait label already brand pack entities in the browser: names carry no prefix.
+  $display = $keys[$name.Groups[1].Value.Substring(1)]
+  if ($display -match '^\s*EXPBG') { throw "Editable entity name starts with EXPBG (#$($name.Groups[1].Value.Substring(1)) = '$display'): $relative" }
   $checked++
  }
 }
 if ($checked -lt 50) { throw "Expected the pack's editable entity UI infos, found $checked." }
-"PASS: $checked editable entity names are string-table keys; $($keys.Count) keys agree across $($tables.Count) source and runtime tables."
+"PASS: $checked editable entity names are string-table keys without an EXPBG prefix; $($keys.Count) keys agree across $($tables.Count) source and runtime tables."

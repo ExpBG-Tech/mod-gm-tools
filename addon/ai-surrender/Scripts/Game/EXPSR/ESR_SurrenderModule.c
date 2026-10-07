@@ -21,6 +21,8 @@ class ESR_SurrenderModule : GenericEntity
  protected int m_iReveal;
  [Attribute("40", UIWidgets.Slider, "Interrogation: identity (%)", "0 100 5", category: "EXPBG AI Surrender"), RplProp()]
  protected int m_iIdentity;
+ [Attribute("30", UIWidgets.Slider, "Interrogation: reveal intel items (%)", "0 100 5", category: "EXPBG AI Surrender"), RplProp()]
+ protected int m_iIntel;
  [Attribute("1000", UIWidgets.Slider, "Reveal search radius (m)", "100 3000 50", category: "EXPBG AI Surrender"), RplProp()]
  protected int m_iRadius;
  [Attribute("3", UIWidgets.Slider, "Interrogation attempts", "1 5 1", category: "EXPBG AI Surrender"), RplProp()]
@@ -29,6 +31,10 @@ class ESR_SurrenderModule : GenericEntity
  protected int m_iLifetime;
  [Attribute("0", UIWidgets.CheckBox, "Diagnostics", category: "EXPBG AI Surrender"), RplProp()]
  protected bool m_bDiagnostics;
+ [Attribute("0", UIWidgets.Slider, "Commander: grenade suicide instead of surrender (%)", "0 100 5", category: "EXPBG AI Surrender"), RplProp()]
+ protected int m_iGrenade;
+ [Attribute("1", UIWidgets.CheckBox, "Commander must carry a grenade", category: "EXPBG AI Surrender"), RplProp()]
+ protected bool m_bGrenadeCarry;
  [RplProp()]
  protected int m_iPrisoners;
 
@@ -82,6 +88,9 @@ class ESR_SurrenderModule : GenericEntity
   if (key == ESR_Settings.ATTEMPTS) return m_iAttempts;
   if (key == ESR_Settings.LIFETIME) return m_iLifetime;
   if (key == ESR_Settings.DIAGNOSTICS) return ESR_Settings.FromBool(m_bDiagnostics);
+  if (key == ESR_Settings.GRENADE) return m_iGrenade;
+  if (key == ESR_Settings.GRENADE_CARRY) return ESR_Settings.FromBool(m_bGrenadeCarry);
+  if (key == ESR_Settings.INTEL) return m_iIntel;
   return 0;
  }
 
@@ -97,10 +106,12 @@ class ESR_SurrenderModule : GenericEntity
   ESR_SurrenderManager.Trace(string.Format("setting %1 = %2", key, ESR_Settings.Get(key)));
  }
 
- // Server only: complete set from a native or CDF mission load.
+ // Server only: complete set from a native or CDF mission load. A save from before the
+ // commander settings holds the first ten values, one from before the intel setting the
+ // first twelve; the rest take their defaults.
  bool RestoreSettings(notnull array<int> values)
  {
-  if (!Replication.IsServer() || values.Count() != ESR_Settings.COUNT) return false;
+  if (!Replication.IsServer() || values.Count() < ESR_Settings.COUNT_V1 || values.Count() > ESR_Settings.COUNT) return false;
   ESR_Settings.Adopt(values);
   MirrorAll();
   ESR_SurrenderManager.Refresh();
@@ -120,9 +131,13 @@ class ESR_SurrenderModule : GenericEntity
   int radius = ESR_Settings.Get(ESR_Settings.RADIUS);
   int attempts = ESR_Settings.Get(ESR_Settings.ATTEMPTS);
   int lifetime = ESR_Settings.Get(ESR_Settings.LIFETIME);
-  if (m_bEnabled == enabled && m_bDiagnostics == diagnostics && m_iChance == chance && m_iThreshold == threshold && m_iRandom == spread && m_iReveal == reveal && m_iIdentity == identity && m_iRadius == radius && m_iAttempts == attempts && m_iLifetime == lifetime) return;
+  int grenade = ESR_Settings.Get(ESR_Settings.GRENADE);
+  bool grenadeCarry = ESR_Settings.Get(ESR_Settings.GRENADE_CARRY) != 0;
+  int intel = ESR_Settings.Get(ESR_Settings.INTEL);
+  if (m_bEnabled == enabled && m_bDiagnostics == diagnostics && m_iChance == chance && m_iThreshold == threshold && m_iRandom == spread && m_iReveal == reveal && m_iIdentity == identity && m_iRadius == radius && m_iAttempts == attempts && m_iLifetime == lifetime && m_iGrenade == grenade && m_bGrenadeCarry == grenadeCarry && m_iIntel == intel) return;
   m_bEnabled = enabled; m_bDiagnostics = diagnostics; m_iChance = chance; m_iThreshold = threshold; m_iRandom = spread;
   m_iReveal = reveal; m_iIdentity = identity; m_iRadius = radius; m_iAttempts = attempts; m_iLifetime = lifetime;
+  m_iGrenade = grenade; m_bGrenadeCarry = grenadeCarry; m_iIntel = intel;
   Replication.BumpMe();
  }
 
@@ -153,7 +168,9 @@ class ESR_SurrenderModule : GenericEntity
 }
 
 // Native mission saves (1.8 persistence): the base restores prefab and transform; only
-// the ten operator settings are custom data.
+// the operator settings are custom data. esrVersion 3 holds all thirteen; a version 2 save
+// (the first twelve, before the intel setting) and a version 1 save (the first ten, before
+// the commander settings) still load, the missing settings at their defaults.
 class ESR_SurrenderModuleSerializer : GenericEntitySerializer
 {
  override static typename GetTargetType() { return ESR_SurrenderModule; }
@@ -169,7 +186,7 @@ class ESR_SurrenderModuleSerializer : GenericEntitySerializer
   if (!context.StartObject("base")) return ESerializeResult.ERROR;
   ESerializeResult result = super.Serialize(entity, context);
   bool ended = context.EndObject();
-  if (!ended || result == ESerializeResult.ERROR || !context.WriteValue("esrVersion", 1) || !context.WriteValue("settings", settings)) return ESerializeResult.ERROR;
+  if (!ended || result == ESerializeResult.ERROR || !context.WriteValue("esrVersion", 3) || !context.WriteValue("settings", settings)) return ESerializeResult.ERROR;
   return ESerializeResult.OK;
  }
 
@@ -179,7 +196,10 @@ class ESR_SurrenderModuleSerializer : GenericEntitySerializer
   int version;
   array<int> settings = {};
   if (!module || !context.ReadValue("esrVersion", version) || !context.ReadValue("settings", settings)) return false;
-  if (version != 1 || settings.Count() != ESR_Settings.COUNT) return false;
+  bool savedV1 = version == 1 && settings.Count() == ESR_Settings.COUNT_V1;
+  bool savedV2 = version == 2 && settings.Count() == ESR_Settings.COUNT_V2;
+  bool savedV3 = version == 3 && settings.Count() == ESR_Settings.COUNT;
+  if (!savedV1 && !savedV2 && !savedV3) return false;
   // Native saves omit an empty base object when the prefab supplies its defaults.
   if (context.DoesObjectExist("base"))
   {

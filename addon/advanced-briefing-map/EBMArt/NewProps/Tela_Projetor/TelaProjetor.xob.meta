@@ -1,0 +1,7 @@
+MetaFileClass {
+ Name "{795B11AE8F4687D6}EBMArt/NewProps/Tela_Projetor/TelaProjetor.xob"
+ Configurations {
+  XOBResourceClass PC {}
+  XOBResourceClass HEADLESS : PC {}
+ }
+}

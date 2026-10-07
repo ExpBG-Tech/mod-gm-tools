@@ -1,0 +1,71 @@
+{
+  "description": "Third-party resources imported into addon/advanced-briefing-map (paths relative to that addon). source/source_sha256 identify the file inside the Workshop data.pak; path/guid/sha256/bytes identify the shipped file. Rows are upserted by tools/art/import_heine_assets.py; the tela1.emat row was then replaced by hand (see changes).",
+  "sources": [
+    {
+      "workshopId": "628EDA2ABC937159",
+      "name": "Structures For GM byHeine",
+      "version": "1.2.29",
+      "author": "Heine.CRV",
+      "license": "Arma Public License Share Alike (APL-SA)",
+      "pakSha256": "752cffa6c7c738d1211d83310239faa8fca42db6cf6fcb6ea089f8ff5ef9fbd3",
+      "url": "https://reforger.armaplatform.com/workshop/628EDA2ABC937159"
+    }
+  ],
+  "assets": [
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_BaseMap.edds",
+      "source_sha256": "8c0505b9ea3392f9477eb8e84676fcc2715988cdce094c3197a95b78b62eb084",
+      "path": "EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_BaseMap.edds",
+      "guid": "BA12B7D0299CAA31",
+      "sha256": "8c0505b9ea3392f9477eb8e84676fcc2715988cdce094c3197a95b78b62eb084",
+      "bytes": 451301,
+      "changes": "Texture bytes unchanged; path Models/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_BaseMap.edds -> EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_BaseMap.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_Normal.edds",
+      "source_sha256": "499c83e9b77be61cc29634d28bfe8c58e28dd0faea6ab5d4c8826d35838c618d",
+      "path": "EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_Normal.edds",
+      "guid": "2A5B82A0A46DD9FD",
+      "sha256": "499c83e9b77be61cc29634d28bfe8c58e28dd0faea6ab5d4c8826d35838c618d",
+      "bytes": 9421,
+      "changes": "Texture bytes unchanged; path Models/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_Normal.edds -> EBMArt/NewProps/Tela_Projetor/Data/pln_sunum_perdesi_Normal.edds"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/Tela_Projetor/Data/tela1.emat",
+      "source_sha256": "135f87f36e6fa9b91709266fee84e1cbfe5dfd4e1e9faccf8f5bb91031b5c76b",
+      "path": "EBMArt/NewProps/Tela_Projetor/Data/tela1.emat",
+      "guid": "787E84A9DAC0DEFC",
+      "sha256": "e35a71cb2d58a0fda6b789613ec78ff698ae1acada1eb10dc86dd02f44233c4a",
+      "bytes": 61,
+      "changes": "Replaced by an original EXPBG placeholder material without textures (the upstream screen image, a captured video-player frame, is not redistributed; EBM_BriefingProjector.et assigns the EXPBG render-target material to this \"tela1\" slot); identity kept so the compiled model reference resolves; path Models/NewProps/Tela_Projetor/Data/tela1.emat -> EBMArt/NewProps/Tela_Projetor/Data/tela1.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/Tela_Projetor/Data/telao.emat",
+      "source_sha256": "e8d2b6e4cfc24eb8da38f4b1e8c12a7fe3072f3f0cc64f7442054bc39a1dc317",
+      "path": "EBMArt/NewProps/Tela_Projetor/Data/telao.emat",
+      "guid": "A5B41CA1F3B60085",
+      "sha256": "09dd39a7ffd1a162811f8fd1a273f23d640614ec284c302d8336e4049b0349fc",
+      "bytes": 327,
+      "changes": "Resource references remapped; path Models/NewProps/Tela_Projetor/Data/telao.emat -> EBMArt/NewProps/Tela_Projetor/Data/telao.emat"
+    },
+    {
+      "sourceMod": "628EDA2ABC937159",
+      "sourceVersion": "1.2.29",
+      "source": "Models/NewProps/Tela_Projetor/TelaProjetor.xob",
+      "source_sha256": "ae67f86ed0a0229842241b12cc84987751f3084cb4cb01c0059d75c9bbd6904a",
+      "path": "EBMArt/NewProps/Tela_Projetor/TelaProjetor.xob",
+      "guid": "795B11AE8F4687D6",
+      "sha256": "f1c6d61c03d6a0f49d089eaafc52b3339ad89c7ae31ffe44fed7f7873bcd0f78",
+      "bytes": 13101,
+      "changes": "Resource references remapped (equal-length strings in the XOB HEAD chunk only; all other bytes unchanged); path Models/NewProps/Tela_Projetor/TelaProjetor.xob -> EBMArt/NewProps/Tela_Projetor/TelaProjetor.xob"
+    }
+  ]
+}

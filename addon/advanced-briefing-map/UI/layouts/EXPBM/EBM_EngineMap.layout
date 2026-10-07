@@ -1,0 +1,24 @@
+MapWidgetClass "{42514F856524FC20}" {
+ Name "EBM_EngineMap"
+ Slot FrameWidgetSlot "{F9CCF516AC8F8B5F}" {
+  Anchor 0 0 1 1
+  PositionX 0
+  OffsetLeft 0
+  PositionY 0
+  OffsetTop 0
+  SizeX 0
+  OffsetRight 0
+  SizeY 0
+  OffsetBottom 0
+  Alignment 0 0
+ }
+ "Ignore Cursor" 1
+ Color 1 1 1 1
+ SizeInUnits 1024 1024
+ OffsetPixels 0 0
+ Clear 0
+ Imagesets {
+  "{BCD5479864D1A79A}UI/Textures/Map/topographicIcons/icons_topographic_map.imageset" "{F7E8D4834A3AFF2F}UI/Imagesets/Conflict/conflict-icons-bw.imageset" "{9AF52DEEF08E7F74}UI/Imagesets/Editor/editor_icons_map.imageset"
+ }
+ TextureDashedLine "{48D3C3A42E53D202}UI/Textures/Map/lines/lineDashed.edds"
+}

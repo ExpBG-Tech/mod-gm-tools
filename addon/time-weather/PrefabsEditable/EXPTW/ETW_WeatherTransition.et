@@ -1,0 +1,24 @@
+ETW_WeatherModule {
+ ID "205604586B2915E7"
+ components {
+  SCR_EditableEntityComponent "{501FF7609EBE988F}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{C260D85876357365}" {
+    Name "#EXPBG-WeatherTransition_Name"
+    Description "#EXPBG-WeatherTransition_Description"
+    Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM 157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{4AA38C908E9E508A}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{122720608D9F9BD0}" {
+  }
+ }
+}

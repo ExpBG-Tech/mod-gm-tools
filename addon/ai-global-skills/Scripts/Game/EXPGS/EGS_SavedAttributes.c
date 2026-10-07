@@ -106,3 +106,27 @@ class EGS_SavedGroupRoeAttribute : EGS_SavedAttribute
 			EGS_Manager.SetGroupRoe(EGS_Manager.ResolveGroup(SCR_EditableEntityComponent.Cast(item)), var.GetInt());
 	}
 }
+
+//------------------------------------------------------------------------------------------------
+//! AI soldier: his own rules-of-engagement override (EGS_UnitRoe.c).
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class EGS_SavedUnitRoeAttribute : EGS_SavedAttribute
+{
+	override SCR_BaseEditorAttributeVar ReadVariable(Managed item, SCR_AttributesManagerEditorComponent manager)
+	{
+		if (manager)
+			return null;
+
+		SCR_ChimeraCharacter soldier = EGS_UnitRoe.ResolveSoldier(SCR_EditableEntityComponent.Cast(item));
+		if (!soldier || soldier.EGS_GetRoeOverride() == EGS_Settings.GROUP_ROE_DEFAULT)
+			return null;
+
+		return SCR_BaseEditorAttributeVar.CreateInt(soldier.EGS_GetRoeOverride());
+	}
+
+	override void WriteVariable(Managed item, SCR_BaseEditorAttributeVar var, SCR_AttributesManagerEditorComponent manager, int playerID)
+	{
+		if (IsSessionLoad(manager, playerID, var))
+			EGS_Manager.SetUnitRoe(EGS_UnitRoe.ResolveSoldier(SCR_EditableEntityComponent.Cast(item)), var.GetInt());
+	}
+}

@@ -12,6 +12,11 @@ GenericEntity : "{DCBC472CDA3EA9B2}Prefabs/Props/Civilian/WallMap_01.et" {
   RplComponent "{227AB1D70A562F8E}" : "{B193E926C1935A4C}Prefabs/Editor/Components/Default_RplComponent.ct" {
   }
   EBM_BriefingBoardComponent "{A3BE7E0513FB51F5}" {
+   m_fScreenUMin 0.0006
+   m_fScreenUMax 0.7458
+   m_fScreenVMin 0.0007
+   m_fScreenVMax 0.9996
+   m_fScreenRotation 90
   }
   ActionsManagerComponent "{D15C9B14BBEE6754}" {
    ActionContexts {

@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{F97CF9B77FFA8839}Configs/Systems/Persistence/Configuration/EXPTW/WeatherTransition.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

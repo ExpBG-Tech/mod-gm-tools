@@ -5,7 +5,7 @@ class ESR_Attribute : SCR_BaseValueListEditorAttribute
 {
  [Attribute("0")] protected int m_Key;
 
- // Native session saves and CDF restore the ten settings through these identities.
+ // Native session saves and CDF restore the settings through these identities.
  override bool IsSerializable() { return m_Key >= 0 && m_Key < ESR_Settings.COUNT; }
 
  override int GetEntries(notnull array<ref SCR_BaseEditorAttributeEntry> outEntries)
@@ -69,6 +69,8 @@ class ESR_RevealChanceAttribute : ESR_Attribute {}
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class ESR_IdentityChanceAttribute : ESR_Attribute {}
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ESR_IntelChanceAttribute : ESR_Attribute {}
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class ESR_RevealRadiusAttribute : ESR_Attribute {}
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class ESR_AttemptsAttribute : ESR_Attribute {}
@@ -76,6 +78,10 @@ class ESR_AttemptsAttribute : ESR_Attribute {}
 class ESR_MarkerLifetimeAttribute : ESR_Attribute {}
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class ESR_DiagnosticsAttribute : ESR_Attribute {}
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ESR_CommanderGrenadeAttribute : ESR_Attribute {}
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ESR_GrenadeCarryAttribute : ESR_Attribute {}
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class ESR_PrisonersAttribute : ESR_Attribute {}
 

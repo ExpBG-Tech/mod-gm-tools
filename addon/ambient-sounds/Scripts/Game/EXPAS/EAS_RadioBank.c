@@ -19,6 +19,7 @@ class EAS_RadioBank
    case 10: return "SOUND_EAS_RADIO_BATTLEFIELD3";
    case 11: return "SOUND_EAS_RADIO_MYSTERYRUSSIAN";
    case 12: return "SOUND_EAS_RADIO_RUSSIANCHATTER";
+   case 13: return "SOUND_EAS_RADIO_HANOIHANNAH";
   }
   return "";
  }
@@ -39,6 +40,7 @@ class EAS_RadioBank
    case 10: return 503.0139167;
    case 11: return 178.0041667;
    case 12: return 607.0160833;
+   case 13: return 107.3437642;
   }
   return 0;
  }

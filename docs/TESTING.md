@@ -1,5 +1,174 @@
 # EXPBG GM Tools validation gates
 
+## Time and Weather (Unreleased)
+
+Portable: `tests/Test-TimeWeather.ps1` (run by `tests/Test-Tools.ps1`) checks
+the following:
+
+- the pack.json registration, module files, metadata GUID references (Systems,
+  persistence, layout, fixture) and browser names without EXPBG;
+- the defaults (10 min; 6 h, fades 2/3/2 s, "{hours} hours later"), clamps and
+  the attribute list (order, keys, choices, local read-only statuses, actions
+  never saved);
+- clouds through `RequestStateTransition` with no `ForceWeatherTo` in the
+  runner, the foreign-change hooks, the Scenario Properties smoothing guard;
+- the broadcast fade RPC, the overlap refusal and the clock change at full
+  black, plus a PowerShell model of the date rollover;
+- the Enforce gotchas, ASCII/LF, and the fixture's runner command and RESULT
+  regex.
+
+Pending gates:
+
+- build.ps1 compile;
+- native fixture `tests/ETW_TimeWeatherGameplay.c` (command in
+  `tests/GAMEPLAY.md`), including the `smooth` evidence. If clouds only snap at
+  the end, the state machine route needs a fix: path through adjacent states,
+  or day auto-advance;
+- GM session:
+  - both modules in the Systems list with names and descriptions;
+  - preset buttons and their host preview;
+  - status rows refresh on reopen;
+  - Scenario Properties weather blends with the module present and is instant
+    without it;
+- dedicated server with a client:
+  - clouds, rain, fog and wind change smoothly on the client;
+  - the black screen covers the player view, the deploy menu and the GM editor
+    (Z order);
+  - text and time are readable;
+  - a player joining mid-fade sees the normal view;
+- a native save and load of both modules' settings, and a save during a
+  transition (the weather reached so far remains);
+- card art (`tools/art/New-TitleCard.ps1`, `Import-PackArt.ps1`, then `m_Image`);
+- CDF Compat support (separate repository).
+
+## Ambient Destruction: vehicle types (Unreleased)
+
+Portable: `tests/Test-VehicleCategory.ps1` (run by `tests/Test-Tools.ps1`)
+checks the following:
+
+- every wreck in `EAD_Catalog` has a category, matching the reviewed table
+  (11 military and 14 civilian assets; the four old-car paints share one bag
+  family, so each category has 11 families);
+- key 12 with default Both, replication, clamping and regeneration;
+- for Both, the wreck bag keeps the pre-setting order and random draws, so
+  existing seeds give the same layouts;
+- schema 3 snapshots with 13 settings, while schema 1/2 still read, as Both;
+- the Civilian / Military / Both spinbox after Wreck intensity;
+- the fixture's runner command and RESULT regex.
+
+Pending gates:
+
+- build.ps1 compile;
+- native fixture `tests/EAD_VehicleCategoryGameplay.c` (command in
+  `tests/GAMEPLAY.md`) and the existing `tests/EAD_RoadWrecksGameplay.c`;
+- a GM session: Military and Civilian zones show only their wrecks on a
+  dedicated-server client, and the spinbox reads back after reopening the
+  attributes;
+- a CDF save and load of a Military zone, and a CDF save from 0.1.9 (schema 2)
+  loading as Both with its wrecks unchanged.
+
+## AI Surrender: commander grenade (Unreleased)
+
+Portable: `tests/Test-CommanderGrenade.ps1` (run by `tests/Test-Tools.ps1`)
+checks the following:
+
+- keys 10/11, the 0% / ON defaults, replication, esrVersion 1 and 2 saves
+  loading, and the attribute order;
+- the leader-only roll after a successful surrender roll, the guards for
+  players, prisoners, vehicles and caches, and the vanilla `SetLive()` arming;
+- the grenade placed on the traced floor or ground in front of him (else at his
+  feet), and never set live once picked up or under a possessed leader;
+- the fixture's runner command and RESULT regex.
+
+Pending gates:
+
+- build.ps1 compile;
+- native fixture `tests/ESR_CommanderGrenadeGameplay.c` (command in
+  `tests/GAMEPLAY.md`);
+- a GM session in which a breaking squad's leader (setting at 100%) crouches,
+  places a frag and dies in the blast while his men surrender, on flat ground,
+  on a slope and on an upper building floor (the grenade lies on the surface);
+- a client view of the grenade and explosion;
+- ACE medical (the leader should be killed or downed);
+- a Garrison squad.
+
+## AI Surrender: intel items from interrogation (Unreleased)
+
+Portable: `tests/Test-IntelReveal.ps1` (run by `tests/Test-Tools.ps1`)
+checks the following:
+
+- key 12 "Interrogation: reveal intel items (%)", default 30, its own attribute
+  class after the identity chance, replication, the esrVersion 3 save (thirteen
+  values) with esrVersion 1 and 2 loading;
+- the unchanged squad/identity roll, then one intel roll per prisoner, only with
+  an answer other than a refusal;
+- the bounded pass over the Intel Items registry inside the reveal search
+  radius: spent computer items and items carried by a player or by the prisoner
+  excluded, holders' positions, nearest three;
+- markers through the squad marker's publisher (faction, owner, lifetime), the
+  dialog line with the 25 m and compass helpers, and the read-only registry in
+  `EII_IntelComponent`;
+- the fixture's runner command and RESULT regex.
+
+Pending gates:
+
+- build.ps1 compile;
+- native fixture `tests/ESR_IntelRevealGameplay.c` (command in
+  `tests/GAMEPLAY.md`) and the existing `tests/ESR_RevealGameplay.c`,
+  `tests/ESR_SurrenderGameplay.c` and `tests/ESR_CommanderGrenadeGameplay.c`;
+- a GM session: intel items placed loose, in a crate and on a body are pointed
+  out and marked for the interrogator's faction on a dedicated-server client,
+  an item in a player's inventory is not, and the marker lifetime removes the
+  intel markers;
+- a native or CDF save and load of the new setting, and an older save loading
+  with 30%.
+
+## Per-squad and per-soldier surrender, intel and ROE overrides (Unreleased)
+
+Portable: `tests/Test-SquadOverrides.ps1` (run by `tests/Test-Tools.ps1`)
+checks the following:
+
+- the "EXPBG Surrender & Intel" and "EXPBG Rules of Engagement" categories, the
+  eight AI Surrender override classes (one per slot and target) after Prisoners,
+  the squad ROE moved to the new tab and the soldier ROE beside it;
+- attribute behaviour: spinbox entries (module, then 0-100 % in steps of 5),
+  serializable, set values only in saves, writes only from the server-side
+  session-load contract or the editing Game Master, squad and soldier targets
+  kept apart;
+- resolution soldier > squad > module at decision time, the per-group cache
+  keyed on the module settings revision, the surrender roll (threshold first,
+  then each soldier's exact override; random factor only for the module chance),
+  prisoners capturing their squad's values before leaving it, interrogation and
+  intel rolls through the prisoner's effective values, diagnostics lines;
+- no replication of the new values; the native save state (DEFAULT when empty,
+  bounded, ordered binding) and its persistence config; the AI Global Skills
+  state version 2, written as version 1 without soldier overrides;
+- Unit Caching and Garrison Full caching: survivor carry, group snapshot and
+  portable snapshot keys, which old snapshots may lack;
+- the soldier's own combat mode (vanilla unless he has his own ROE in a managed
+  AI squad), his own warning-shot timers on the shared tick, bounded loops;
+- Enforce gotchas, ASCII and LF in the new files, and the fixture's runner
+  command and RESULT regex.
+
+`tests/Test-CommanderGrenade.ps1` now expects the eight override classes after
+Prisoners and the `rolled < 100` surrender roll.
+
+Pending gates:
+
+- build.ps1 compile;
+- native fixture `tests/ESR_OverrideGameplay.c` (command in
+  `tests/GAMEPLAY.md`) and the existing `tests/ESR_SurrenderGameplay.c`,
+  `tests/ESR_RevealGameplay.c`, `tests/ESR_IntelRevealGameplay.c`,
+  `tests/ESR_CommanderGrenadeGameplay.c`, `tests/ESR_SuppressGameplay.c` and
+  `tests/EUD_DialogCacheGameplay.c` (it shares the survivor carry);
+- a GM session on a dedicated-server client: both tabs appear on an AI squad
+  and an AI soldier (and not on player squads), multi-selected squads, values
+  read back after reopening, a soldier with Return Fire Only holding fire in a
+  Fire on Sight squad until fired upon, his own warning shots at a player;
+- Garrison Full and Simulation caching of a squad with overrides;
+- a native save and reload and a CDF save and load of squad and soldier
+  overrides, and a 0.1.9 save loading with none.
+
 ## Ambient Sounds: Vinny sound modules (0.1.3, GM UI)
 
 Build `local-20261005-123008-430` compiled with no script errors. Workbench play

@@ -1,0 +1,21 @@
+EXPBG Advanced Briefing Map - third-party asset credits
+
+Structures For GM byHeine 1.2.29 by Heine (Heine.CRV)
+Workshop 628EDA2ABC937159: https://reforger.armaplatform.com/workshop/628EDA2ABC937159
+License: Arma Public License Share Alike (APL-SA)
+https://www.bohemia.net/en/licenses/arma-public-license-share-alike
+
+Used: the "Prop - Projector Screen" model (TelaProjetor.xob), its frame and
+fabric material (telao.emat) and two textures, under EBMArt/NewProps/Tela_Projetor.
+Changes: resource GUIDs and paths remapped from Models/ to EBMArt/ (equal-length
+strings in the compiled model header only; geometry, collision and texture bytes
+unchanged). The upstream screen image is not included; tela1.emat is an original
+EXPBG placeholder, and the briefing projector prefab (EBM_BriefingProjector.et)
+shows the EXPBG briefing render target on that surface. Heine's prefab is not
+imported. These adaptations remain under APL-SA (attribution, noncommercial,
+Arma-only, share-alike). No endorsement by Heine.CRV or Bohemia Interactive is
+implied. Provided as-is under the license's warranty disclaimer; no additional
+restrictions are imposed on these assets.
+
+Hashes and mappings: docs/licenses/advanced-briefing-map/imported-assets.json
+in the source repository (github.com/ExpBG-Tech/mod-gm-tools).
