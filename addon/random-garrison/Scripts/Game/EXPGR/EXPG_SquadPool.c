@@ -1,15 +1,19 @@
 // Squad sources of the Random Garrison module. One validated catalog per faction and
 // world: the faction's GROUP entity catalog, entries placeable in the Game Master's
 // Edit mode, each checked by the shared squad validator (EXPG_SquadPrefab), at least
-// one prefab per tick, de-duplicated by lower-cased path and sorted by path. A
-// mission maker's explicit prefab list (the module's Squad prefabs attribute) is a
-// catalog of its own. Server only.
+// one prefab per tick, de-duplicated by lower-cased path and sorted by path. Each
+// catalog squad is classified once, as it is checked: a support squad (medical,
+// logistics, ammo, crew or essential) by the labels of the group, else by the labels
+// of all its soldiers, else by its file name (EXPG_RGRules.SupportName). A mission
+// maker's explicit prefab list (the module's Squad prefabs attribute) is a catalog of
+// its own and is never classified. Server only.
 class EXPG_SquadEntry
 {
  ResourceName Prefab;
  int Members;
  int Bucket;
- // Medical, logistics or essential squads (skipped while Exclude support squads is on).
+ // Medical, logistics, ammo, crew or essential squads (skipped while Exclude support
+ // squads is on).
  bool Support;
  // The squad's own faction (empty: any); explicit lists may mix factions.
  string FactionId;
@@ -23,10 +27,14 @@ class EXPG_SquadCatalog
  // Why there is nothing to pick from (no faction, no catalog), shown in the status.
  string Problem;
  int Rejected;
+ // Usable entries that are support squads.
+ int SupportCount;
  ref array<ref EXPG_SquadEntry> Entries = {};
  protected ref array<string> m_Paths = {};
  protected ref map<string, ResourceName> m_Prefabs = new map<string, ResourceName>();
  protected ref map<string, bool> m_Support = new map<string, bool>();
+ // Soldier verdicts while the catalog is read, by lower-cased character prefab path.
+ protected ref map<string, bool> m_MemberSupport = new map<string, bool>();
  protected int m_Cursor;
 
  int Total()
@@ -70,9 +78,7 @@ class EXPG_SquadCatalog
    if (!entry || !entry.IsEnabled()) { continue; }
    SCR_EntityCatalogEditorData editorData = SCR_EntityCatalogEditorData.Cast(entry.GetEntityDataOfType(SCR_EntityCatalogEditorData));
    if (!editorData || !editorData.IsValidInEditorMode(EEditorMode.EDIT)) { continue; }
-   bool support = entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_MEDICAL) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_LOGISTICS);
-   if (entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ESSENTIAL) || entry.HasEditableEntityLabel(EEditableEntityLabel.GROUPTYPE_ESSENTIAL)) { support = true; }
-   AddCandidate(entry.GetPrefab(), support);
+   AddCandidate(entry.GetPrefab(), SupportLabels(entry));
   }
   m_Paths.Sort();
   if (m_Paths.IsEmpty())
@@ -113,6 +119,79 @@ class EXPG_SquadCatalog
   m_Paths.Insert(path);
  }
 
+ // Support labels of a catalog entry (the group prefab's own, as the Game Master's
+ // filters read them): medical, logistics, essential (vanilla transport and guard
+ // teams), vehicle or helicopter crew. Not rearming: vanilla rifle squads, machine
+ // gun teams and AT teams carry that one.
+ protected static bool SupportLabels(SCR_EntityCatalogEntry entry)
+ {
+  if (entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_MEDICAL) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_LOGISTICS))
+  {
+   return true;
+  }
+  if (entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_ESSENTIAL) || entry.HasEditableEntityLabel(EEditableEntityLabel.GROUPTYPE_ESSENTIAL))
+  {
+   return true;
+  }
+  return entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_VEHICLE_CREW) || entry.HasEditableEntityLabel(EEditableEntityLabel.TRAIT_HELI_CREW);
+ }
+
+ // True when every soldier of the squad carries a support label: vanilla ammo teams
+ // (ammo bearers and assistants) and medical sections have none on the group. One
+ // soldier without one keeps the squad (a machine gunner beside his assistant, a
+ // rifle squad with an AT assistant).
+ protected bool SupportRoster(ResourceName prefab)
+ {
+  Resource resource = Resource.Load(prefab);
+  if (!resource || !resource.IsValid())
+  {
+   return false;
+  }
+  IEntitySource source = resource.GetResource().ToEntitySource();
+  array<ResourceName> slots = {};
+  if (!source || !source.Get("m_aUnitPrefabSlots", slots) || slots.IsEmpty())
+  {
+   return false;
+  }
+  foreach (ResourceName slot : slots)
+  {
+   if (!SupportMember(slot))
+   {
+    return false;
+   }
+  }
+  return true;
+ }
+
+ // A soldier prefab's support labels: medic, ammo bearer, vehicle or helicopter crew,
+ // logistics (drivers). Read once per character prefab while the catalog is read,
+ // from its editable component's UI info (as SCR_EditableEntityComponentClass.GetInfo
+ // does, without its call on a UI info of another class).
+ protected bool SupportMember(ResourceName soldier)
+ {
+  string path = soldier;
+  path.ToLower();
+  bool support;
+  if (m_MemberSupport.Find(path, support))
+  {
+   return support;
+  }
+  Resource resource = Resource.Load(soldier);
+  IEntityComponentSource editableSource;
+  if (resource && resource.IsValid()) { editableSource = SCR_EditableEntityComponentClass.GetEditableEntitySource(resource); }
+  BaseContainer infoSource;
+  if (editableSource) { infoSource = editableSource.GetObject("m_UIInfo"); }
+  SCR_EditableEntityUIInfo info;
+  if (infoSource) { info = SCR_EditableEntityUIInfo.Cast(BaseContainerTools.CreateInstanceFromContainer(infoSource)); }
+  if (info)
+  {
+   support = info.HasEntityLabel(EEditableEntityLabel.TRAIT_MEDICAL) || info.HasEntityLabel(EEditableEntityLabel.ROLE_MEDIC) || info.HasEntityLabel(EEditableEntityLabel.TRAIT_REARMING) || info.HasEntityLabel(EEditableEntityLabel.ROLE_AMMOBEARER);
+   if (info.HasEntityLabel(EEditableEntityLabel.TRAIT_VEHICLE_CREW) || info.HasEntityLabel(EEditableEntityLabel.TRAIT_HELI_CREW) || info.HasEntityLabel(EEditableEntityLabel.TRAIT_LOGISTICS)) { support = true; }
+  }
+  m_MemberSupport.Insert(path, support);
+  return support;
+ }
+
  // Validates candidates until the tick deadline, at least one per call. True when ready.
  bool Step(int deadline)
  {
@@ -138,7 +217,11 @@ class EXPG_SquadCatalog
    entry.Prefab = prefab;
    entry.Members = members;
    entry.Bucket = EXPG_RGRules.Bucket(members);
+   // Group labels (BeginFaction), else every soldier's labels, else the file name:
+   // once per squad and world, never per pick. Explicit lists stay as listed.
    entry.Support = m_Support.Get(path);
+   if (!Explicit && !entry.Support) { entry.Support = SupportRoster(prefab) || EXPG_RGRules.SupportName(path); }
+   if (entry.Support) { SupportCount++; }
    entry.FactionId = FactionId;
    if (Explicit) { entry.FactionId = SquadFaction(prefab); }
    Entries.Insert(entry);
@@ -148,11 +231,14 @@ class EXPG_SquadCatalog
    return false;
   }
   Ready = true;
+  m_MemberSupport.Clear();
   if (Entries.IsEmpty() && Problem.IsEmpty())
   {
    Problem = string.Format("none of the %1 squads passed the garrison checks", m_Paths.Count());
   }
-  PrintFormat("[EXPG RANDOM] squad catalog %1: %2 of %3 squads usable", Describe(), Entries.Count(), m_Paths.Count());
+  string supportText = string.Format("%1 of them support squads (skipped while Exclude support squads is on)", SupportCount);
+  if (Explicit) { supportText = "support squads not classified (explicit list)"; }
+  PrintFormat("[EXPG RANDOM] squad catalog %1: %2 of %3 squads usable, %4", Describe(), Entries.Count(), m_Paths.Count(), supportText);
   return true;
  }
 

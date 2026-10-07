@@ -1,7 +1,8 @@
 // Pure rules of the Random Garrison module, contract-tested natively by
 // tests/EXPG_RandomGarrisonTest.c: squad size buckets and presets, the building
-// target, the stable building order, the seeded shuffle, the zone token and the
-// faction key packing for attribute saves (CDF). No world access.
+// target, the stable building order, the seeded shuffle, the zone token, the
+// faction key packing for attribute saves (CDF) and the support squad file names.
+// No world access.
 class EXPG_RGRules
 {
  // Buckets by member count (never by the GROUPSIZE labels, which are often stale).
@@ -36,6 +37,27 @@ class EXPG_RGRules
    return BUCKET_SQUAD;
   }
   return BUCKET_LARGE;
+ }
+
+ // The last support check of a catalog squad (EXPG_SquadCatalog.Step), for squads of
+ // other mods that carry no support labels, on the group or on its soldiers (for
+ // example REAPER_USSR_HelicopterCrew.et, whose pilots are plain USSR characters).
+ // Only the file name counts, never the folders, in lower case. Each word names one
+ // kind of support squad: medic (medic, medics, medical), ammo and ammunition (ammo
+ // teams), suppl (supply and supplies teams), logistic (logistics), crew (vehicle and
+ // helicopter crews), pilot.
+ // None of them is part of an infantry squad's name (RifleSquad, FireTeam, Team_AT,
+ // Team_Suppress, MachineGunTeam, Sniper, Recon, Spetsnaz, KLMK, Naval_Infantry);
+ // "sup" or "supp" would hit Team_Suppress ("suppl" does not). Transport is left to
+ // its labels.
+ static bool SupportName(string prefabPath)
+ {
+  string name = prefabPath;
+  name.ToLower();
+  int cut = name.LastIndexOf("/");
+  if (cut < 0) { cut = name.LastIndexOf("}"); }
+  if (cut >= 0) { name = name.Substring(cut + 1, name.Length() - cut - 1); }
+  return name.Contains("medic") || name.Contains("ammo") || name.Contains("ammunition") || name.Contains("suppl") || name.Contains("logistic") || name.Contains("crew") || name.Contains("pilot");
  }
 
  // The Squad sizes presets: fire teams (2), fire teams and squads (6), squads (4),

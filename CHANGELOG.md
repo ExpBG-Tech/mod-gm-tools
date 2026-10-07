@@ -1,5 +1,21 @@
 # EXPBG GM Tools changelog
 
+## Unreleased
+
+- Random Garrison: "Exclude support squads" (default on) let ammo teams and
+  helicopter crews through, because only squads labelled medical, logistics or
+  essential on the group were skipped. It now also skips a squad when every
+  soldier is a medic, ammo bearer, vehicle or helicopter crewman or driver
+  (vanilla ammo teams, FIA's medical section) and, for squads of other mods
+  without such labels, when the prefab's file name says medic, ammo, ammunition,
+  supply or supplies, logistic, crew or pilot (for example
+  REAPER_USSR_HelicopterCrew). Transport and guard teams (labelled essential)
+  are skipped as before; rifle squads, machine gun, AT, sniper, recon and
+  special forces squads stay. Each
+  squad is classified once when the faction's catalog is read; the server log
+  line "squad catalog" now also counts the support squads. Saved settings are
+  unchanged.
+
 ## 0.1.14
 
 - Garrison: the "EXPBG Garrison" tab in a garrison squad's Edit properties

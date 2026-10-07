@@ -206,7 +206,10 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   squads each from the Game Master squad list of one faction, or of two with each
   building drawing one (so one building never holds both). Squad sizes go by the
   number of soldiers (fire teams, squads, large, small teams) and a squad only
-  goes where it fits the building's posts; support squads are skipped by default.
+  goes where it fits the building's posts. Support squads (medical, logistics,
+  ammo and crew squads, also those of other mods, and the essential transport
+  and guard teams) are skipped by default; a mission maker's squad list is used
+  as given.
   No building closer than 200 m (adjustable) to a player character is used. The
   seed (0: a new one each time, shown in the status) repeats a generation. Every
   squad is an ordinary EXPBG garrison with its cache mode and distances (set on

@@ -155,7 +155,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
  protected int m_iRadius;
  [Attribute("6", UIWidgets.EditBox, "Squad sizes (bucket mask): 2 fire teams 4-5, 6 fire teams and squads 4-9, 4 squads 6-9, 12 squads and large 6+, 3 small teams and fire teams 1-5, 15 any", category: "EXPBG Random Garrison")]
  protected int m_iSizes;
- [Attribute("1", UIWidgets.CheckBox, "Exclude medical, logistics and essential squads", category: "EXPBG Random Garrison")]
+ [Attribute("1", UIWidgets.CheckBox, "Exclude support squads: medical, logistics, ammo, crew and essential squads (Squad prefabs lists are used as given)", category: "EXPBG Random Garrison")]
  protected bool m_bExcludeSupport;
  [Attribute("4", UIWidgets.Slider, "Buildings to garrison", "1 32 1", category: "EXPBG Random Garrison")]
  protected int m_iBuildings;

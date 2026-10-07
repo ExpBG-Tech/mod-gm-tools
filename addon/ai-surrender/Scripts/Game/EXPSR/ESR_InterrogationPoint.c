@@ -6,9 +6,9 @@
 // that target. It sits just in front of the prisoner's face and follows his head bone on
 // every machine (seated, standing in ACE's surrender pose, moved or carried): looking at
 // his face selects Interrogate, while the medical contexts on his torso and limbs
-// (vanilla, ACE Medical) stay clear of it. Clients follow every frame tick (ten times a
-// second within 20 m of the local player, once a second farther away); a dedicated
-// server, where nobody aims an interaction cast, follows in the manager's upkeep only.
+// (vanilla, ACE Medical) stay clear of it. Every machine follows in its frame tick: ten
+// times a second within 20 m of the local player, once a second farther away. A dedicated
+// server has no local player, so it follows once a second; the manager's upkeep also moves it.
 [EntityEditorProps(category: "EXPBG/AI Surrender", description: "Runtime interrogation point of a surrendered soldier; spawned by the server")]
 class ESR_InterrogationPointClass : GenericEntityClass {}
 

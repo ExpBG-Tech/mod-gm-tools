@@ -1206,7 +1206,7 @@ class ESR_SurrenderManager
    if (controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious() || IsPlayerCharacter(prisoner.Character))
    {
     if (prisoner.AceMode && !IsPlayerCharacter(prisoner.Character)) KeepCivilian(prisoner.Character);
-    // His point still follows his face (a dedicated server has no frame follow).
+    // His point still follows his face (the point's own follow is once a second on a dedicated server).
     if (prisoner.Point) prisoner.Point.Follow();
     continue;
    }

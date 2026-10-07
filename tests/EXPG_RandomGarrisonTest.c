@@ -69,7 +69,35 @@ class EXPG_RandomGarrisonTest
   {
    return false;
   }
+  if (!SupportNames())
+  {
+   return false;
+  }
   return Usable();
+ }
+
+ // Support squad file names (the last check after the labels): support squads of
+ // other mods match; infantry squads, folders and Transport (left to its labels)
+ // never do.
+ static bool SupportNames()
+ {
+  array<string> support = {"{B10210712040A7C9}Prefabs/Groups/OPFOR/REAPER_USSR_HelicopterCrew.et", "Prefabs/Groups/OPFOR/REAPER_USSR_Pilots.et", "Prefabs/Groups/OPFOR/Group_USSR_AmmoTeam.et", "Prefabs/Groups/BLUFOR/Group_US_MedicalSection.et", "Group_RHS_RF_MSV_VKPO_S_AmmoTeam.et", "{0000000000000000}Group_X_SupplyTeam.et", "Group_X_SuppliesTeam.et", "Group_X_AmmunitionTeam.et", "Group_X_Logistics.et"};
+  foreach (string name : support)
+  {
+   if (!EXPG_RGRules.SupportName(name))
+   {
+    return false;
+   }
+  }
+  array<string> others = {"Prefabs/Groups/OPFOR/Group_USSR_RifleSquad.et", "Prefabs/Groups/OPFOR/Group_USSR_Team_Suppress.et", "Prefabs/Groups/OPFOR/Group_USSR_MachineGunTeam.et", "Prefabs/Groups/OPFOR/Group_USSR_Team_AT.et", "Prefabs/Groups/OPFOR/Spetsnaz/Group_USSR_Spetsnaz_Squad.et", "Prefabs/Groups/OPFOR/KLMK/Group_USSR_ReconTeam.et", "Prefabs/Groups/OPFOR/Naval_Infantry/Group_USSR_FireGroup_NI.et", "Prefabs/Groups/BLUFOR/Group_US_SniperTeam.et", "Prefabs/Groups/Crew/Medics/Group_X_FireTeam.et", "Group_USSR_Transport.et"};
+  foreach (string squad : others)
+  {
+   if (EXPG_RGRules.SupportName(squad))
+   {
+    return false;
+   }
+  }
+  return true;
  }
 
  // The catalog check before any analysis counts only squads a building can draw: of
