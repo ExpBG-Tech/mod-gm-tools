@@ -7,12 +7,13 @@ $function = $runner.Find({ param($node) $node -is [Management.Automation.Languag
 if (!$function) { throw 'Missing gameplay evidence verifier.' }
 # Load only the pure verifier; never execute the native runner in portable tests.
 . ([scriptblock]::Create($function.Extent.Text))
-function Evidence([int]$Trim, [int]$Count) {
+# 0.1.11: a fresh twelve-man squad on nine planned posts is never trimmed; all twelve deploy.
+function Evidence([int]$Trim, [int]$Count, [int]$Capacity = $Count) {
  $requested = 4
  if ($Trim) { $requested = 12 }
  @"
-[EXPG CAPACITY CASE] freshTrim=$Trim requested=$requested expected=$Count capacity=$Count
-[EXPG TRIM RESULT] admitted=12 before=12 retained=9 acknowledged=3 deleted=3 leaderPreserved=1 originals=1
+[EXPG CAPACITY CASE] freshTrim=$Trim requested=$requested expected=$Count capacity=$Capacity
+[EXPG TRIM RESULT] admitted=12 before=12 retained=12 acknowledged=0 deleted=0 leaderPreserved=1 originals=1
 [EXPG FULL CYCLE] cycle=1 living=$Count transformParity=1 assignments=1
 [EXPG FULL CYCLE] cycle=2 living=$($Count-1) transformParity=1 assignments=1
 [EXPG GAMEPLAY RESULT] phase=10 checks=40 failures=0 actors=$Count fixedPosts=1 reason=completed
@@ -20,15 +21,17 @@ Game destroyed
 "@
 }
 $full = Evidence 0 4
-$trim = Evidence 1 9
+$trim = Evidence 1 12 9
 if (!(Test-GameplayEvidence $full $false) -or !(Test-GameplayEvidence $trim $true)) { throw 'Valid complete case rejected.' }
 if (Test-GameplayEvidence $trim $false) { throw 'Trim case disguised as full-house pass.' }
-if (Test-GameplayEvidence (Evidence 1 4) $true) { throw 'Untrimmed roster disguised as trim coverage.' }
+if (Test-GameplayEvidence (Evidence 1 4) $true) { throw 'Four-man roster disguised as the twelve-man overflow case.' }
+if (Test-GameplayEvidence (Evidence 1 9 9) $true) { throw 'Trimmed roster (nine of twelve) accepted.' }
+if (Test-GameplayEvidence (Evidence 1 12 12) $true) { throw 'A house with room for all twelve accepted as the overflow case.' }
 if (Test-GameplayEvidence ($trim.Replace('cycle=2','cycle=3')) $true) { throw 'Missing second cycle accepted.' }
-if (Test-GameplayEvidence ($trim.Replace('living=8','living=9')) $true) { throw 'Resurrected casualty accepted.' }
+if (Test-GameplayEvidence ($trim.Replace('living=11','living=12')) $true) { throw 'Resurrected casualty accepted.' }
 if (Test-GameplayEvidence ($trim.Replace('requested=12','requested=4')) $true) { throw 'Fabricated larger roster accepted.' }
-if (Test-GameplayEvidence ($trim.Replace('acknowledged=3','acknowledged=0')) $true) { throw 'Unacknowledged deletion accepted.' }
-if (Test-GameplayEvidence ($trim.Replace('deleted=3','deleted=0')) $true) { throw 'Missing native deletion accepted.' }
+if (Test-GameplayEvidence ($trim.Replace('acknowledged=0','acknowledged=3')) $true) { throw 'A trimmed soldier accepted.' }
+if (Test-GameplayEvidence ($trim.Replace('retained=12 acknowledged=0 deleted=0','retained=9 acknowledged=3 deleted=3')) $true) { throw 'Trimming accepted.' }
 if (Test-GameplayEvidence ($trim.Replace('leaderPreserved=1','leaderPreserved=0')) $true) { throw 'Leader loss accepted.' }
 if (Test-GameplayEvidence ($trim.Replace('originals=1','originals=0')) $true) { throw 'Invented survivor roster accepted.' }
 if (Test-GameplayEvidence ($trim.Replace('transformParity=1','transformParity=0')) $true) { throw 'Wrong transforms accepted.' }
@@ -160,4 +163,4 @@ foreach ($invalid in @(
  if (Test-UnitCleanupEvidence $invalid) { throw 'Incomplete unit-cleanup proof accepted.' }
 }
 if ((Test-GameplayEvidence $cleanup $false) -or (Test-BodyClearanceEvidence $cleanup) -or (Test-UnitCleanupEvidence $full) -or (Test-UnitCleanupEvidence $body)) { throw 'Unit-cleanup and other fixture kinds accepted as one another.' }
-'PASS: complete Full/trim, body-clearance and unit-cleanup evidence required (identity-less gear, storage-less cloth-slot accessories and, with -Rhs, both RHS: Status Quo cases); wrong case, casualty, cache state, survivor deletion, partial casualty strip, parked casualties, provenance holds on identity-less riders, errors and incomplete runs rejected. No engine launched.'
+'PASS: complete Full/no-trim overflow, body-clearance and unit-cleanup evidence required (identity-less gear, storage-less cloth-slot accessories and, with -Rhs, both RHS: Status Quo cases); wrong case, casualty, cache state, survivor deletion, partial casualty strip, parked casualties, provenance holds on identity-less riders, errors and incomplete runs rejected. No engine launched.'

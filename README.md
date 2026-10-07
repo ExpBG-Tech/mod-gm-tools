@@ -67,17 +67,25 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   indoor stops, watch a hallway or door for 10-30 s at each and never bunch up;
   when a firefight starts each takes the nearest free window (or watches a door
   or stairs nearby) and returns to patrol a minute after it calms down.
-  A freshly spawned squad larger than the safe capacity is trimmed;
-  existing squads and casualties are never refilled. Add Garrison again on the
+  The whole squad always deploys and nobody is removed: soldiers beyond the
+  building's posts follow the same order as an added squad (free posts, then
+  patrolling inside, then other watch positions, then close around the
+  building, last where they spawned); casualties are never refilled. Add Garrison again on the
   same building, as often as needed, to add squads: each deploys in full as its
   own garrison on free posts first, then patrolling inside while there is room,
   then on other watch positions inside, then close around the building.
   Caching offers Off,
   Simulation and Full (default) with per-garrison wake/sleep distances. Full
   recreates survivors at their captured world transforms with their posts in the
-  original group, using prefab-default kits and health. Force Move releases the
-  garrison. Use Unit Caching **Prepare for Save** before saving; assignments are
-  mission-only.
+  squad, using prefab-default kits and health (the squad itself is recreated:
+  while Full cached a garrison has no squad in the world). Force Move releases
+  the garrison. Garrisons are saved with the mission: native saves and, with
+  EXPBG CDF Compat 0.1.6 or later, CDF saves keep every garrison (building,
+  posts and patrol stops, cache state, settings, casualties, soldier and squad
+  overrides) and loading restores them in place, Full ones still cached;
+  loadouts and wounds restore as prefab defaults. "EXPBG Release All Garrisons"
+  (right-click a garrison squad) returns every garrison to normal AI, for a
+  mission that will be saved without EXPBG GM Tools.
 - **Unit Caching**: AI Cache Zones and the UNIT CACHING CONTROLLER.
   Simulation pauses existing AI; Full removes supported groups and restores only
   survivors. With Group cleanup on, each AI casualty's body (with everything it
@@ -199,11 +207,15 @@ compatible with the pack. Use [EXPBG CDF Compat](https://reforger.armaplatform.c
 together with CDF Game Master Save instead. The guards in Unit Caching and
 Garrison check for that identity: without it, Full caching refuses new removals
 while CDF is loaded and Garrison caching stays off. With it, Unit Caching Full
-snapshots, Intel Items and Ambient Destruction are saved in CDF files. A
-garrison set to Full caches in Simulation while CDF is loaded (status
-"Simulation cached (CDF loaded)"): its soldiers stay on their posts with AI
-paused, because Full survivors cannot survive a CDF load. Simulation caching and
-restoration always work.
+snapshots, Intel Items and Ambient Destruction are saved in CDF files, and with
+EXPBG CDF Compat 0.1.6 or later garrisons too: the CDF file carries the garrison
+ledger, Full caching works under CDF, and a load with clearBeforeLoad replaces
+the scene's garrisons with the saved ones (no duplicates; an append load of a
+save with garrisons is refused). With an older EXPBG CDF Compat a garrison set
+to Full caches in Simulation while CDF is loaded (status "Simulation cached (CDF
+loaded)"), CDF saves are refused while a garrison is active and Unit Caching
+Prepare for Save releases garrisons, as in 0.1.8. Native saves always keep the
+garrisons.
 
 ## Building
 

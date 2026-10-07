@@ -227,9 +227,13 @@ class EXPG_GarrisonGameplay : GenericEntity
   spawn.Transform[3] = point;
   return spawn;
  }
+ // Durable Full (0.1.11): a Full-cached garrison has no squad until it wakes; the
+ // record recreates it and add.Group follows add.Record.Group (EOnFrame).
  bool Active(EXPG_InteriorAdd add)
  {
-  return add.Group && add.Group.EXPG_Active && add.Record && Manager.Find(add.Group) == add.Record && !add.Record.ReleaseRequested;
+  if (!add.Record || add.Record.Finished || add.Record.ReleaseRequested) return false;
+  if (add.Record.Full && !add.Record.Group) return true;
+  return add.Group && add.Group.EXPG_Active && Manager.Find(add.Group) == add.Record;
  }
  // Diagnostics: why Outside judged a spot outside.
  string OutsideWhy(vector post)
@@ -602,7 +606,12 @@ class EXPG_GarrisonGameplay : GenericEntity
  bool Awake(EXPG_GarrisonRecord record) { return !record.Full && !record.Simulation; }
  void SetCacheMode(int mode)
  {
-  foreach (EXPG_InteriorAdd add : Adds) add.Group.EXPG_SetSetting(0, mode);
+  // A Full-cached garrison has no squad to edit: the record's setting stands in for it.
+  foreach (EXPG_InteriorAdd add : Adds)
+  {
+   if (add.Record && add.Record.Group) add.Record.Group.EXPG_SetSetting(0, mode);
+   else if (add.Record) add.Record.CacheMode = mode;
+  }
  }
  bool AllAsleep(bool full)
  {
@@ -665,6 +674,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   if (Finished || Now() < Next) return;
   Next = Now() + 0.5;
+  foreach (EXPG_InteriorAdd tracked : Adds) { if (tracked.Record && tracked.Record.Group) tracked.Group = tracked.Record.Group; }
   if (Now() - Started > FIXTURE_SECONDS) { Check(false, string.Format("%1 second deadline; last phase %2", FIXTURE_SECONDS, Phase)); Finish("timeout"); return; }
   if (EXPG_GarrisonRecord.EXPG_TestRefusals > 0) { Check(false, "no garrison refused, retained as normal AI or released its survivors"); Finish("refusal"); return; }
   foreach (int i, EXPG_InteriorAdd watched : Adds)

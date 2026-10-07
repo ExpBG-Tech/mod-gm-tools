@@ -160,3 +160,59 @@ modded class EBG_PrefabFullCache
   return true;
  }
 }
+
+// Garrison ledger (EXPG_Snapshot.c): a garrison soldier's overrides travel in the
+// garrison's own save rows ("esrOverrides", only when set), read from and written back
+// into the survivor carry above, which applies them when he is respawned.
+modded class EXPG_MemberSnapshot
+{
+ protected ref array<int> m_aESR_Values;
+
+ array<int> ESR_GetValues()
+ {
+  return m_aESR_Values;
+ }
+
+ override void CaptureCarry(EBG_SurvivorCarry carry)
+ {
+  super.CaptureCarry(carry);
+  m_aESR_Values = null;
+  if (!carry || !carry.ESR_GetOverrides())
+   return;
+  m_aESR_Values = {};
+  m_aESR_Values.Copy(carry.ESR_GetOverrides());
+ }
+
+ override void FillCarry(EBG_SurvivorCarry carry)
+ {
+  super.FillCarry(carry);
+  if (carry)
+   carry.ESR_SetOverrides(m_aESR_Values);
+ }
+
+ override bool WriteExtras(SaveContext context)
+ {
+  if (!super.WriteExtras(context))
+   return false;
+  if (!m_aESR_Values)
+   return true;
+  return context.WriteValue("esrOverrides", m_aESR_Values);
+ }
+
+ override bool ReadExtras(LoadContext context)
+ {
+  if (!super.ReadExtras(context))
+   return false;
+  m_aESR_Values = null;
+  if (!context.DoesKeyExist("esrOverrides"))
+   return true;
+  array<int> values = {};
+  if (!context.ReadValue("esrOverrides", values) || values.Count() != ESR_Overrides.COUNT)
+  {
+   Print("[EXPBG SURRENDER] garrison soldier overrides unreadable: he wakes with squad or module settings", LogLevel.WARNING);
+   return true;
+  }
+  m_aESR_Values = values;
+  return true;
+ }
+}

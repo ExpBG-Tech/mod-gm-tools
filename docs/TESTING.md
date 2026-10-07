@@ -1,5 +1,32 @@
 # EXPBG GM Tools validation gates
 
+## Garrison save bridge and no trimming (Unreleased)
+
+Portable: `tests/Test-GarrisonLedger.ps1` (run by `tests/Test-Tools.ps1`) checks
+the ledger format and limits, the building identity rule, the native and CDF
+exclusion with hand-back, the native state registration (own GUIDs, merged
+GameMaster.conf), the public API and bridge handshake, the legacy-only release,
+durable Full with spawn-call AI pins and squad rebind, import by token with
+plan-first remap, no trimming, the Unit Caching eliminated-record fix, the
+override seams, the Enforce gotchas and the ledger fixture wiring.
+`tests/Test-GameplayEvidence.ps1` now requires the twelve-man `-FreshTrim` case
+to keep all twelve.
+
+Native fixtures (commands in `tests/GAMEPLAY.md`): `tests/EXPG_LedgerGameplay.c`
+(new), and the garrison fixtures adapted to durable Full (default, `-FreshTrim`,
+hold, interior, repeat, CDF fallback).
+
+Pending gates:
+
+- a cold native round trip (save, restart the server, load the save) with awake,
+  Simulation and Full garrisons;
+- live CDF save and load with EXPBG CDF Compat 0.1.6 (GM UI, dialogs), including
+  an autosave with garrisons active and no `[EBG CDF HOLD]`;
+- multiplayer: a client joining after a load sees the garrison squads and their
+  attributes;
+- Full caching of garrison squads with Game Master orders or AI settings (the
+  Simulation fallback when the squad cannot be captured).
+
 ## Time and Weather (Unreleased)
 
 Portable: `tests/Test-TimeWeather.ps1` (run by `tests/Test-Tools.ps1`) checks

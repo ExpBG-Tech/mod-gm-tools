@@ -169,3 +169,67 @@ modded class EBG_PrefabFullCache
 		return true;
 	}
 }
+
+// Garrison ledger (EXPG_Snapshot.c): a garrison soldier's ROE override travels in the
+// garrison's own save rows ("egsRoe", only when set), read from and written back into
+// the survivor carry above, which applies it when he is respawned.
+modded class EXPG_MemberSnapshot
+{
+	protected int m_iEGS_Roe;
+
+	//------------------------------------------------------------------------------------------------
+	int EGS_GetRoe()
+	{
+		return m_iEGS_Roe;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	override void CaptureCarry(EBG_SurvivorCarry carry)
+	{
+		super.CaptureCarry(carry);
+		m_iEGS_Roe = EGS_Settings.GROUP_ROE_DEFAULT;
+		if (carry)
+			m_iEGS_Roe = carry.EGS_GetRoe();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	override void FillCarry(EBG_SurvivorCarry carry)
+	{
+		super.FillCarry(carry);
+		if (carry)
+			carry.EGS_SetRoe(m_iEGS_Roe);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	override bool WriteExtras(SaveContext context)
+	{
+		if (!super.WriteExtras(context))
+			return false;
+
+		if (m_iEGS_Roe == EGS_Settings.GROUP_ROE_DEFAULT)
+			return true;
+
+		return context.WriteValue("egsRoe", m_iEGS_Roe);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	override bool ReadExtras(LoadContext context)
+	{
+		if (!super.ReadExtras(context))
+			return false;
+
+		m_iEGS_Roe = EGS_Settings.GROUP_ROE_DEFAULT;
+		if (!context.DoesKeyExist("egsRoe"))
+			return true;
+
+		int value;
+		if (!context.ReadValue("egsRoe", value))
+		{
+			Print("[EXPBG AI SKILLS] garrison soldier ROE unreadable: he wakes following his squad", LogLevel.WARNING);
+			return true;
+		}
+
+		m_iEGS_Roe = Math.ClampInt(value, EGS_Settings.GROUP_ROE_DEFAULT, EGS_Settings.GROUP_ROE_EXEMPT);
+		return true;
+	}
+}

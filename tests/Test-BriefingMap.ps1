@@ -1,11 +1,17 @@
 #requires -Version 7.0
 # Portable guard for Advanced Briefing Map (live test 2026-10-07: the map on the board
 # was turned a quarter turn and showed no roads or buildings; the user asked for the
-# Heine "Prop - Projector Screen" instead of the wall map). Checks: the imported model
+# Heine "Prop - Projector Screen" instead of the wall map). Live test of 0.1.10 the same
+# day: the projector showed a plain white screen. The two render target hand-off (board in
+# EBM_Canvas, shown through the image EBM_Screen) never got the canvas texture, so the
+# white EBM_Screen image covered the screen's UV rectangle. Checks: the imported model
 # closure and its metadata, prefab and model references, the projector and wall-map
-# screen UV/turn settings (the turned canvas must cover each screen's UV rectangle),
-# the canvas hand-off layout, the game map renderer wiring, attribution and Enforce
-# gotchas. No engine is launched; render, orientation and roads need a native check.
+# screen UV/turn settings, the single render target direct path (content over the UV
+# rectangle, every element turned so the board reads north-up), the opt-in hand-off,
+# the upright surface (a local vanilla quad with upright UVs in front of each screen, so
+# the game's own map view with roads and buildings is drawn unturned; decoded vertex data
+# below), the game map renderer wiring, the [EBM DIAG] trace, attribution and gotchas.
+# No engine is launched; render, orientation and roads need a native check.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $addonRoot = Join-Path $repo 'addon'
@@ -60,6 +66,8 @@ $vanilla = @{
  'F7E8D4834A3AFF2F' = 'UI/Imagesets/Conflict/conflict-icons-bw.imageset'
  '9AF52DEEF08E7F74' = 'UI/Imagesets/Editor/editor_icons_map.imageset'
  '48D3C3A42E53D202' = 'UI/Textures/Map/lines/lineDashed.edds'
+ '01F85A3B7D7C5EB0' = 'Assets/Structures/BuildingsParts/Doors/Door_Barracks_01/Glass_Door_Barracks_92x56.xob'
+ '406BC52002B99A15' = 'Assets/Structures/BuildingsParts/Graffiti/Graffiti_01/Graffiti_FIA_V1.xob'
  '3E7733BAC8C831F6' = 'UI/Fonts/RobotoCondensed/RobotoCondensed_Regular.fnt'
 }
 function Assert-References([string]$Text, [string]$Where) {
@@ -133,26 +141,85 @@ foreach ($case in @(
 Assert ($component -match '\[Attribute\("-90"[^\]]*\]\s+protected float m_fScreenRotation;') 'the component default turn is the projector screen'
 Assert ($component -match '\[Attribute\("2"[^\]]*\]\s+protected float m_fBoardScale;') 'the default board scale stays 2 for the wall-map board'
 Assert ($component -notmatch '\]\s+protected int m_iRtWidth;' -and $component -notmatch '\]\s+protected int m_iRtHeight;') 'canvas size is derived from the UV rectangle, not an attribute'
+Assert ($component -match '\[Attribute\("0"[^\]]*\]\s+protected bool m_bCanvasHandoff;') 'the two render target hand-off (white screen in the 0.1.10 live test) must be opt-in'
+Assert ($component -notmatch 'SetSize\(m_wRoot' -and $component -notmatch 'SetPos\(m_wRoot') 'the workspace-stretched layout root must not be sized (GUI error: Position/Size works only when min and max anchor is the same)'
+$turn = Get-Body $component 'protected\s+int\s+ScreenTurn\s*\('
+Assert ($turn.Contains('Math.AbsFloat(Math.AbsFloat(turn) - 90) < 1') -and $turn.Contains('return -1;') -and $turn.Contains('return 1;') -and $turn.Contains('return 0;')) 'the screen turn must be a quarter turn either way or none'
+$create = Get-Body $component 'protected\s+void\s+CreateBoardWidgets\s*\('
+Assert ($create.Contains('m_bHandoffActive = m_iScreenTurn != 0 && (m_bCanvasHandoff || EBM_Diagnostics.HandoffForced());')) 'the hand-off runs only when asked for and only on a turned screen'
+Assert ($create.Contains('m_wCanvas.RemoveFromHierarchy();') -and $create.Contains('m_wScreen.RemoveFromHierarchy();') -and $create.Contains('m_wSurfaceRT.RemoveFromHierarchy();')) 'unused render targets and the hand-off image must leave the hierarchy'
+Assert ($create.Contains('if (!m_bHandoffActive && !m_sSurfaceModel.IsEmpty() && !EBM_Diagnostics.DirectForced())') -and $create.Contains('m_bSurfaceActive = SpawnSurface();') -and $create -match '(?s)else if \(m_bSurfaceActive\)\s+surface = m_wSurfaceRT;') 'the upright surface is the default path; the screen itself is the fallback'
+Assert ($create.IndexOf('BindRenderTarget("bind");') -lt $create.IndexOf('BindSurfaceTarget();')) 'the screen and the surface are both bound after layout'
+Assert ($create.Contains('m_wContent = workspace.CreateWidgets(CONTENT_LAYOUT, surface);')) 'the board content is created into the render target (direct) or the canvas (hand-off)'
+Assert ($create.IndexOf('LayoutScreen();') -gt 0 -and $create.IndexOf('LayoutScreen();') -lt $create.IndexOf('BindRenderTarget("bind");')) 'the render target is bound after the board is laid out'
+$bind = Get-Body $component 'protected\s+void\s+BindRenderTarget\s*\('
+Assert ($bind.Contains('IEntity owner = GetOwner();') -and $bind.Contains('m_wRT.SetRenderTarget(owner);') -and $bind.Contains('m_BoundObject = owner.GetVObject();')) 'RTTexture0 must be bound to the board entity and remember the mesh object'
+$tick = Get-Body $component 'protected\s+void\s+ClientProximityTick\s*\('
+Assert ($tick.Contains('m_iRebinds < MAX_REBINDS && owner.GetVObject() != m_BoundObject') -and $tick.Contains('BindRenderTarget("rebind");')) 'a changed mesh object gets the render target again (bounded)'
 $layoutScreen = Get-Body $component 'protected\s+void\s+LayoutScreen\s*\('
-Assert ($layoutScreen.Contains('m_iRtWidth = Math.Round(spanV);') -and $layoutScreen.Contains('m_iRtHeight = Math.Round(spanU);')) 'a quarter turn must swap the canvas axes'
-Assert ($layoutScreen.Contains('m_wScreen.SetImageTexture(0, m_wCanvas);') -and $layoutScreen.Contains('m_wScreen.SetPivot(0.5, 0.5);') -and $layoutScreen.Contains('m_wScreen.SetRotation(m_fScreenRotation);')) 'the canvas must be shown in the render target turned about its centre'
-Assert ($layoutScreen.Contains('FrameSlot.SetSize(m_wRoot, size, size);') -and $layoutScreen.Contains('FrameSlot.SetSize(m_wRT, size, size);')) 'the render target must be square (texel aspect of both screens)'
+Assert ($layoutScreen.Contains('m_iRtWidth = Math.Round(spanV);') -and $layoutScreen.Contains('m_iRtHeight = Math.Round(spanU);')) 'a quarter turn must swap the board axes'
+Assert ($layoutScreen.Contains('FrameSlot.SetSize(m_wRT, size, size);')) 'the render target must be square (texel aspect of both screens)'
+$handoffAt = $layoutScreen.IndexOf('if (m_bHandoffActive)'); $directAt = $layoutScreen.IndexOf('m_iDrawTurn = m_iScreenTurn;'); $imageAt = $layoutScreen.IndexOf('m_wScreen.SetImageTexture(0, m_wCanvas);')
+Assert ($handoffAt -ge 0 -and $imageAt -gt $handoffAt -and $imageAt -lt $directAt) 'the canvas hand-off image is only used on the hand-off path'
+Assert ($layoutScreen.Contains('m_iDrawTurn = 0;') -and $directAt -gt 0) 'the drawing is turned on the direct path only'
+Assert ($layoutScreen.Contains('PlaceFrame(m_wContent, centerX - frameWidth * 0.5, centerY - frameHeight * 0.5, frameWidth, frameHeight);')) 'the direct path content frame must be centred on the UV rectangle'
 $toBoard = Get-Body $component 'protected\s+void\s+ToBoard\s*\('
-Assert ($toBoard.Contains('boardX = m_iRtWidth * 0.5 + (worldX - m_fCenterX) * m_fScale;') -and $toBoard.Contains('boardY = m_iRtHeight * 0.5 - (worldY - m_fCenterY) * m_fScale;')) 'ToBoard must keep east right and north up on the canvas'
+Assert ($toBoard.Contains('boardX = m_iRtWidth * 0.5 + (worldX - m_fCenterX) * m_fScale;') -and $toBoard.Contains('boardY = m_iRtHeight * 0.5 - (worldY - m_fCenterY) * m_fScale;')) 'ToBoard must keep east right and north up on the board'
+$toSurface = Get-Body $component 'protected\s+void\s+ToSurface\s*\('
+Assert ($toSurface -match '(?s)if \(m_iDrawTurn < 0\)\s+\{\s+surfaceX = boardY;\s+surfaceY = m_iRtWidth - boardX;' -and $toSurface -match '(?s)else if \(m_iDrawTurn > 0\)\s+\{\s+surfaceX = m_iRtHeight - boardY;\s+surfaceY = boardX;') 'ToSurface must turn the board a quarter against the mesh'
+Assert ((Get-Body $component 'protected\s+float\s+DrawDegrees\s*\(').Contains('return m_iDrawTurn * 90.0;')) 'the widget turn goes with ToSurface (clockwise-positive degrees)'
+# ToSurface (as in the script) must put the board's top corners where each mesh shows its
+# screen's top corners (decoded UVs): projector top edge u=UMin, left v=VMax; wall map top u=UMax, left v=VMin.
+function Get-Surface([double]$BoardX, [double]$BoardY, [int]$Turn, [double]$Width, [double]$Height) {
+ if ($Turn -lt 0) { return @($BoardY, ($Width - $BoardX)) }
+ if ($Turn -gt 0) { return @(($Height - $BoardY), $BoardX) }
+ @($BoardX, $BoardY)
+}
+foreach ($case in @(
+  @{ Name = 'projector'; Turn = -1; UMin = 0.0505; UMax = 0.6223; VMin = 0.0087; VMax = 0.9912; TopU = 0.0505; LeftV = 0.9912; RightV = 0.0087 },
+  @{ Name = 'wall map'; Turn = 1; UMin = 0.0006; UMax = 0.7458; VMin = 0.0007; VMax = 0.9996; TopU = 0.7458; LeftV = 0.0007; RightV = 0.9996 })) {
+ $size = 1024
+ $width = [math]::Round(($case.VMax - $case.VMin) * $size); $height = [math]::Round(($case.UMax - $case.UMin) * $size)
+ $frameLeft = ($case.UMin + $case.UMax) * 0.5 * $size - $height / 2; $frameTop = ($case.VMin + $case.VMax) * 0.5 * $size - $width / 2
+ $topLeft = Get-Surface 0 0 $case.Turn $width $height; $topRight = Get-Surface $width 0 $case.Turn $width $height
+ Assert ([math]::Abs($frameLeft + $topLeft[0] - $case.TopU * $size) -le 1.5 -and [math]::Abs($frameTop + $topLeft[1] - $case.LeftV * $size) -le 1.5) "$($case.Name): the board's top-left must land on the screen's top-left UV corner"
+ Assert ([math]::Abs($frameLeft + $topRight[0] - $case.TopU * $size) -le 1.5 -and [math]::Abs($frameTop + $topRight[1] - $case.RightV * $size) -le 1.5) "$($case.Name): the board's top-right must land on the screen's top-right UV corner"
+}
+$redraw = Get-Body $component 'protected\s+void\s+Redraw\s*\('
+Assert ($redraw.Contains('m_wMap.SetPivot(0.5, 0.5);') -and $redraw.Contains('m_wMap.SetRotation(DrawDegrees());') -and $redraw.Contains('ToSurface(left + width * 0.5, top + height * 0.5, centerX, centerY);')) 'the map image turns about its centre on the turned board'
+Assert ($redraw.Contains('TracePath();')) 'each redraw reports a changed drawing path to the trace'
+$lines = Get-Body $component 'protected\s+void\s+RedrawLines\s*\('
+Assert ($lines.Contains('Math.Atan2(deltaY, deltaX) * Math.RAD2DEG + DrawDegrees()') -and $lines.Contains('ToSurface(startX, startY, surfaceX, surfaceY);')) 'drawn lines are placed and turned with the board'
+Assert ((Get-Body $component 'protected\s+void\s+RedrawMarkers\s*\(').Contains('ToSurface(boardX, boardY, surfaceX, surfaceY);') -and (Get-Body $component 'protected\s+void\s+RebuildMarkers\s*\(').Contains('TurnLeaves(markerWidget, DrawDegrees());')) 'markers are placed and turned with the board'
+$leaves = Get-Body $component 'protected\s+static\s+void\s+TurnLeaves\s*\('
+Assert ($leaves.Contains('image.SetRotation(image.GetRotation() + degrees);') -and $leaves.Contains('text.SetRotation(text.GetRotation() + degrees);')) 'marker icons keep their own rotation plus the board turn'
+$title = Get-Body $component 'protected\s+void\s+LayoutTitle\s*\('
+Assert ($title.Contains('m_wTitle.SetPivot(0.5, 0.5);') -and $title.Contains('m_wTitle.SetRotation(DrawDegrees());')) 'the title turns with the board'
 
-# Layout: board content in its own canvas, the render target shows only the turned screen image.
+# Layouts: the render target shell (RTTexture0 with the hand-off image, the optional canvas)
+# and the board content in its own layout, created into whichever surface draws it.
 $layout = Read-Text (Module-Path 'UI/layouts/EXPBM/EBM_BoardRT.layout')
 Assert-References $layout 'EBM_BoardRT.layout'
-$canvasAt = $layout.IndexOf('Name "EBM_Canvas"'); $contentAt = $layout.IndexOf('Name "EBM_Content"'); $rtAt = $layout.IndexOf('Name "RTTexture0"'); $screenAt = $layout.IndexOf('Name "EBM_Screen"')
-Assert ($canvasAt -gt 0 -and $canvasAt -lt $contentAt -and $contentAt -lt $rtAt -and $rtAt -lt $screenAt) 'layout order: EBM_Canvas holding EBM_Content, then RTTexture0 holding EBM_Screen'
 Assert ($layout -match '(?s)RTTextureWidgetClass "\{[0-9A-F]{16}\}" \{\s+Name "EBM_Canvas"' -and $layout -match '(?s)RTTextureWidgetClass "\{[0-9A-F]{16}\}" \{\s+Name "RTTexture0"' -and $layout -match '(?s)ImageWidgetClass "\{[0-9A-F]{16}\}" \{\s+Name "EBM_Screen"') 'EBM_Canvas and RTTexture0 must be render targets, EBM_Screen an image'
-foreach ($name in 'EBM_Paper', 'EBM_Map', 'EBM_EngineMapSlot', 'EBM_Lines', 'EBM_Markers', 'EBM_Title') {
- $at = $layout.IndexOf("Name `"$name`"")
- Assert ($at -gt $contentAt -and $at -lt $rtAt) "$name must be drawn on the canvas"
-}
-Assert ($layout.IndexOf('Name "EBM_Map"') -lt $layout.IndexOf('Name "EBM_EngineMapSlot"') -and $layout.IndexOf('Name "EBM_EngineMapSlot"') -lt $layout.IndexOf('Name "EBM_Lines"')) 'the game map must lie over the map image and under lines and markers'
+Assert ($layout.IndexOf('Name "RTTexture0"') -lt $layout.IndexOf('Name "EBM_Screen"') -and (Get-Body $layout 'Name "EBM_Canvas"') -notmatch 'WidgetClass') 'EBM_Screen sits in RTTexture0; the canvas stays empty until the hand-off fills it'
+Assert ($layout.IndexOf('Name "RTTexture0"') -lt $layout.IndexOf('Name "EBM_Backdrop"') -and $layout.IndexOf('Name "EBM_Backdrop"') -lt $layout.IndexOf('Name "EBM_Screen"') -and $layout -match '(?s)Name "EBM_Backdrop".*?Anchor 0 0 1 1.*?Color 0\.86 0\.85 0\.8 1') 'the screen keeps a paper backdrop under everything (all it shows on the surface path)'
+Assert ($layout -match '(?s)RTTextureWidgetClass "\{[0-9A-F]{16}\}" \{\s+Name "EBM_SurfaceRT"' -and (Get-Body $layout 'Name "EBM_SurfaceRT"') -notmatch 'WidgetClass') 'EBM_SurfaceRT is an empty render target filled with the board content on the surface path'
+foreach ($name in 'EBM_Content', 'EBM_Paper', 'EBM_Map', 'EBM_Title') { Assert (!$layout.Contains("Name `"$name`"")) "$name belongs to the content layout" }
 Assert ($layout -match '(?s)Name "EBM_Root".*?SizeX 1024\s+OffsetRight -1024\s+SizeY 1024\s+OffsetBottom -1024') 'the layout root must default to the square render target'
-Assert ([regex]::Matches($layout, '"\{([0-9A-F]{16})\}"').Count -eq @([regex]::Matches($layout, '"\{([0-9A-F]{16})\}"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique).Count) 'layout widget IDs must be unique'
+$contentLayoutPath = 'UI/layouts/EXPBM/EBM_BoardContent.layout'
+$contentLayout = Read-Text (Module-Path $contentLayoutPath)
+Assert-References $contentLayout 'EBM_BoardContent.layout'
+Assert ($component.Contains("CONTENT_LAYOUT = `"{5DBA61BA423517E6}$contentLayoutPath`"") -and $moduleGuids['5DBA61BA423517E6'] -ceq $contentLayoutPath) 'the component must create the content layout by its identity'
+Assert ($contentLayout -match '^FrameWidgetClass "\{[0-9A-F]{16}\}" \{\s+Name "EBM_Content"' -and $contentLayout -match '(?s)Name "EBM_Content".*?Clipping True') 'the content root is a clipping frame (turned elements are cut at the UV rectangle)'
+$previous = 0
+foreach ($name in 'EBM_Paper', 'EBM_Map', 'EBM_EngineMapSlot', 'EBM_Lines', 'EBM_Markers', 'EBM_Title') {
+ $at = $contentLayout.IndexOf("Name `"$name`"")
+ Assert ($at -gt $previous) "content layout order: paper, map image, game map, lines, markers, title ($name)"
+ $previous = $at
+}
+$titleSlot = [regex]::Match($contentLayout, '(?s)Name "EBM_Title"\s+Slot FrameWidgetSlot "\{[0-9A-F]{16}\}" \{([^}]*)\}')
+Assert ($titleSlot.Success -and $titleSlot.Groups[1].Value -match 'SizeX 974' -and $titleSlot.Groups[1].Value -notmatch 'SizeToContent') 'the title has a fixed box so it can turn about its centre'
+foreach ($text in $layout, $contentLayout) { Assert ([regex]::Matches($text, '"\{([0-9A-F]{16})\}"').Count -eq @([regex]::Matches($text, '"\{([0-9A-F]{16})\}"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique).Count) 'layout widget IDs must be unique' }
 
 # Roads, buildings, names: the game's own map renderer, never the player's map flow.
 $engineLayoutPath = 'UI/layouts/EXPBM/EBM_EngineMap.layout'
@@ -170,7 +237,54 @@ Assert ($update.Contains('float pixelsPerMeter = m_fScale * screenWidth / m_iRtW
 Assert ($update.Contains('ENGINE_MAP_RETRIES')) 'the size retry must be bounded'
 $allowed = Get-Body $component 'protected\s+bool\s+EngineMapAllowed\s*\('
 Assert ($allowed.Contains('mapEntity.IsOpen()')) 'the board must never drive the native map while a map of the player is open'
-$create = Get-Body $component 'protected\s+void\s+CreateBoardWidgets\s*\('
+Assert ($allowed.Contains('m_iDrawTurn != 0') -and (Get-Body $component 'protected\s+string\s+EngineMapBlocker\s*\(').Contains('return "turned-screen";')) 'a map widget cannot turn: no game map on a turned direct board (the map image stays)'
+
+# Upright surface: the quads were decoded from the base game (XOB9 LOD 0, one submesh, four
+# vertices, front by clockwise winding, the convention that reads the decoded tela1 and
+# posters correctly). Corners: model x, y, u, v. Front +Z, so seen from the front right is -X.
+$surfaces = @{
+ projector = @{ Text = $projector; Model = '{01F85A3B7D7C5EB0}Assets/Structures/BuildingsParts/Doors/Door_Barracks_01/Glass_Door_Barracks_92x56.xob'; Size = @(0.92, 0.56); UV = @(0.28439, 0.74439, 0.35912, 0.63912)
+  Corners = @(@(-0.46, -0.28, 0.74439, 0.63912), @(0.46, -0.28, 0.28439, 0.63912), @(0.46, 0.28, 0.28439, 0.35912), @(-0.46, 0.28, 0.74439, 0.35912))
+  Screen = @{ Center = @(0.0059, 1.2312, -0.0118); Normal = @(1, 0, 0); Up = @(0, 1, 0); Size = @(3.9564, 2.3026) } }
+ wall = @{ Text = $board; Model = '{406BC52002B99A15}Assets/Structures/BuildingsParts/Graffiti/Graffiti_01/Graffiti_FIA_V1.xob'; Size = @(0.958094, 0.70362); UV = @(0.67569, 0.99506, 0.04905, 0.28359)
+  Corners = @(@(-0.479047, -0.35181, 0.99506, 0.28359), @(0.479047, -0.35181, 0.67569, 0.28359), @(0.479047, 0.35181, 0.67569, 0.04905), @(-0.479047, 0.35181, 0.99506, 0.04905))
+  Screen = @{ Center = @(-0.0001, 0.4508, -0.0001); Normal = @(0, 0, 1); Up = @(0, 1, 0); Size = @(1.3858, 1.0396) } }
+}
+function Get-Cross([double[]]$A, [double[]]$B) { @(($A[1] * $B[2] - $A[2] * $B[1]), ($A[2] * $B[0] - $A[0] * $B[2]), ($A[0] * $B[1] - $A[1] * $B[0])) }
+foreach ($name in $surfaces.Keys) {
+ $case = $surfaces[$name]; $text = $case.Text
+ Assert ($text.Contains("m_sSurfaceModel `"$($case.Model)`"")) "${name}: the upright surface model must be $($case.Model)"
+ Assert ((Get-Number $text 'm_fSurfaceUMin') -eq $case.UV[0] -and (Get-Number $text 'm_fSurfaceUMax') -eq $case.UV[1] -and (Get-Number $text 'm_fSurfaceVMin') -eq $case.UV[2] -and (Get-Number $text 'm_fSurfaceVMax') -eq $case.UV[3]) "${name}: surface UV rectangle must match the decoded model"
+ Assert ($text -match ('(?m)^\s*m_vSurfaceModelSize ' + [regex]::Escape("$($case.Size[0]) $($case.Size[1]) 0") + '\s*$')) "${name}: surface model size must match the decoded model"
+ $screen = $case.Screen
+ Assert ($text -match ('(?m)^\s*m_vScreenNormal ' + ($screen.Normal -join ' ') + '\s*$') -and $text -match ('(?m)^\s*m_vScreenUp ' + ($screen.Up -join ' ') + '\s*$')) "${name}: screen front and up must match the decoded screen"
+ # Same arithmetic as ComputeSurfaceTransform (unrotated, unscaled owner): axes -right, up, normal.
+ $right = Get-Cross $screen.Normal $screen.Up
+ $scale = [math]::Min($screen.Size[0] / $case.Size[0], $screen.Size[1] / $case.Size[1])
+ foreach ($corner in $case.Corners) {
+  $world = 0..2 | ForEach-Object { $screen.Center[$_] - $right[$_] * $corner[0] * $scale + $screen.Up[$_] * $corner[1] * $scale }
+  # Screen coordinates seen from the front: x to the right, y down, from the top-left corner of the drawn quad.
+  $sx = (0..2 | ForEach-Object { ($world[$_] - $screen.Center[$_]) * $right[$_] } | Measure-Object -Sum).Sum + $case.Size[0] * $scale / 2
+  $sy = $case.Size[1] * $scale / 2 - (0..2 | ForEach-Object { ($world[$_] - $screen.Center[$_]) * $screen.Up[$_] } | Measure-Object -Sum).Sum
+  $u = $case.UV[0] + ($case.UV[1] - $case.UV[0]) * $sx / ($case.Size[0] * $scale)
+  $v = $case.UV[2] + ($case.UV[3] - $case.UV[2]) * $sy / ($case.Size[1] * $scale)
+  Assert ([math]::Abs($u - $corner[2]) -lt 0.001 -and [math]::Abs($v - $corner[3]) -lt 0.001) "${name}: the surface must show its UV rectangle upright (u right, v down) seen from the screen's front"
+ }
+ Assert ($case.Size[0] * $scale -le $screen.Size[0] + 0.0001 -and $case.Size[1] * $scale -le $screen.Size[1] + 0.0001 -and ($case.Size[0] * $scale * $case.Size[1] * $scale) / ($screen.Size[0] * $screen.Size[1]) -gt 0.94) "${name}: the surface must fit the screen and cover most of it"
+ Assert ([math]::Abs((($case.UV[1] - $case.UV[0]) / $case.Size[0]) - (($case.UV[3] - $case.UV[2]) / $case.Size[1])) -lt 0.001) "${name}: surface texels must be square (one square render target)"
+}
+$transform = Get-Body $component 'protected\s+void\s+ComputeSurfaceTransform\s*\('
+Assert ($transform.Contains('vector right = CrossProduct(normal, up);') -and $transform.Contains('transform[0] = -right;') -and $transform.Contains('transform[1] = up;') -and $transform.Contains('transform[2] = normal;')) 'the surface quad (front +Z, right -X) must face the screen front with its right on the screen right'
+Assert ($transform.Contains('Math.Min(m_vScreenSize[0] / m_vSurfaceModelSize[0], m_vScreenSize[1] / m_vSurfaceModelSize[1])') -and $transform.Contains('* ownerScale')) 'the surface scales uniformly to fit the screen, with the board scale'
+Assert ((Get-Body $component 'protected\s+static\s+vector\s+CrossProduct\s*\(').Contains('first[1] * second[2] - first[2] * second[1], first[2] * second[0] - first[0] * second[2], first[0] * second[1] - first[1] * second[0]')) 'CrossProduct must be the standard component formula used in the decoding'
+$spawn = Get-Body $component 'protected\s+bool\s+SpawnSurface\s*\('
+Assert ($spawn.Contains('GetGame().SpawnEntity(GenericEntity, owner.GetWorld(), params)') -and $spawn.Contains("remap += string.Format(`"`$remap '%1' '%2';`", materials[i], SURFACE_MATERIAL);") -and $spawn.Contains('m_Surface.SetObject(visual, remap);')) 'the surface is a local entity whose every material slot shows the render target'
+Assert ($spawn.Contains('return false;') -and $spawn.Contains('Trace("surface-failed"')) 'a surface that cannot be loaded or spawned falls back to the screen itself'
+Assert ($component.Contains('static const ResourceName SURFACE_MATERIAL = "{AA3CD43539C7EF56}Assets/EXPBM/EBM_BoardRT.emat";')) 'the surface uses the render target material'
+Assert ((Get-Body $component 'protected\s+void\s+BindSurfaceTarget\s*\(').Contains('m_wSurfaceRT.SetRenderTarget(m_Surface);') -and (Get-Body $component 'protected\s+void\s+DeleteSurface\s*\(').Contains('m_wSurfaceRT.RemoveRenderTarget(m_Surface);') -and (Get-Body $component 'protected\s+void\s+DestroyBoardWidgets\s*\(').Contains('DeleteSurface();')) 'the surface render target is bound to the surface and released with it'
+Assert ((Get-Body $component 'protected\s+void\s+ClientProximityTick\s*\(').Contains('PlaceSurface(false);')) 'the surface follows a moved, turned or scaled board'
+$surfaceLayout = $layoutScreen.Substring($layoutScreen.IndexOf('if (m_bSurfaceActive)'))
+Assert ($surfaceLayout.Contains('m_iDrawTurn = 0;') -and $surfaceLayout.Contains('FrameSlot.SetSize(m_wSurfaceRT, surfaceSize, surfaceSize);') -and $surfaceLayout.Contains('PlaceFrame(m_wContent, Math.Min(m_fSurfaceUMin, m_fSurfaceUMax) * surfaceSize, Math.Min(m_fSurfaceVMin, m_fSurfaceVMax) * surfaceSize, m_iRtWidth, m_iRtHeight);')) 'the surface path draws the board unturned over the surface UV rectangle'
 $destroy = Get-Body $component 'protected\s+void\s+DestroyBoardWidgets\s*\('
 Assert ($create.Contains('GetOnMapInit().Insert(EBM_OnLocalMapInit)') -and $create.Contains('GetOnMapClose().Insert(EBM_OnLocalMapClose)')) 'the board must yield to and return after the player map'
 Assert ($destroy.Contains('GetOnMapInit().Remove(EBM_OnLocalMapInit)') -and $destroy.Contains('GetOnMapClose().Remove(EBM_OnLocalMapClose)') -and $destroy.Contains('ReleaseEngineMap();')) 'destroying the board must release the native map and its hooks'
@@ -186,6 +300,19 @@ Assert ($mapEntity -notmatch '\b(OpenMap|CloseMap|SetupMapConfig)\s*\(') 'the bo
 $open = Get-Body $mapEntity 'override\s+protected\s+void\s+OnMapOpen\s*\('
 Assert ($open.Contains('ZoomChange(m_fZoomPPU / pixelPerUnit);') -and $open.Contains('PosChange(m_Workspace.DPIScale(m_iPanX), m_Workspace.DPIScale(m_iPanY));') -and $open.Contains('EBM_ApplyDescriptorTypes(config);')) "an opening map must get its own zoom, pan and icon mapping back"
 Assert ($open.IndexOf('m_bEBM_NativeDirty = false;') -lt $open.IndexOf('super.OnMapOpen(config);') -and $open.Contains('super.OnMapOpen(config);')) 'the view is restored before vanilla OnMapOpen continues'
+
+# Opt-in trace that proves the drawing path on the next live test.
+$diagnostics = Read-Text (Module-Path 'Scripts/Game/EXPBM/EBM_Diagnostics.c')
+Assert ($diagnostics.Contains('System.GetCLIParam("ebmDiagnostics", value)') -and $diagnostics.Contains('System.GetCLIParam("ebmCanvasHandoff", value)') -and $diagnostics.Contains('[EBM DIAG]')) 'EBM_Diagnostics reads -ebmDiagnostics and -ebmCanvasHandoff and prefixes [EBM DIAG]'
+Assert ($component -match '\[Attribute\("0"[^\]]*\]\s+protected bool m_bDebugTrace;') 'per-board trace attribute, off by default'
+foreach ($action in 'create', 'raster', 'handoff', 'path', 'destroy', 'surface', 'surface-failed', 'bind-surface') { Assert ($component.Contains("Trace(`"$action`"")) "the trace must report $action" }
+Assert ($diagnostics.Contains('System.GetCLIParam("ebmDirect", value)')) 'EBM_Diagnostics reads -ebmDirect (skip the surface for a comparison)'
+$tracePath = Get-Body $component 'protected\s+void\s+TracePath\s*\('
+Assert ($tracePath.Contains('path = "engine";') -and $tracePath.Contains('string path = "raster";') -and $tracePath.Contains('mode=%2')) 'the trace reports path=engine or path=raster and the drawing mode'
+Assert ($bind.Contains('Trace(action, string.Format("entity=%1 object=%2 materials=%3"')) 'the trace must report the render target binding with the mesh object and its materials'
+foreach ($script in Get-ChildItem -LiteralPath (Module-Path 'Scripts/Game/EXPBM') -File -Filter '*.c') {
+ foreach ($format in [regex]::Matches((Read-Text $script.FullName), 'string\.Format\("([^"]*)"')) { Assert (![regex]::IsMatch($format.Groups[1].Value, '%1[0-9]')) "string.Format takes at most nine arguments: $($script.Name)" }
+}
 
 # Attribution: README, Workshop description, notices, credits and the packed comment script.
 $readme = Read-Text (Join-Path $repo 'README.md')
@@ -213,4 +340,4 @@ foreach ($script in Get-ChildItem -LiteralPath (Module-Path 'Scripts/Game/EXPBM'
  Assert (![regex]::IsMatch($text, '(?m)^\s*(?:static\s+|protected\s+|override\s+)*(?:bool|int|float|vector|string|ResourceName)\s+\w+\s*\([^)]*\)\s*\{[^\r\n]*\bif\b[^\r\n]*\}\s*$')) "one-line non-void method with an if (No return statement): $($script.Name)"
  Assert (![regex]::IsMatch($text, '(?m)^\s*protected\s+(?:ref\s+)?(MapLayer|MapConfiguration|MapWidget|CanvasWidget|ImageWidget|RTTextureWidget)\s+\1\s*;')) "field named like a vanilla type in $($script.Name)"
 }
-'PASS: briefing projector closure, references and metadata; projector and wall-map screen turns cover their UV rectangles; canvas hand-off layout; game map renderer wiring; attribution. Native render, orientation and roads are not verified here.'
+'PASS: briefing projector closure, references and metadata; upright surface default (decoded vanilla quads shown upright on both screens, unturned board and game map view); direct fallback (content over each screen UV rectangle, every element turned north-up); opt-in canvas hand-off; game map renderer wiring; [EBM DIAG] trace; attribution. Native render, orientation and roads are not verified here.'

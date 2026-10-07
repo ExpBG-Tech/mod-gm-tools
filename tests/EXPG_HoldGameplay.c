@@ -193,14 +193,28 @@ class EXPG_GarrisonGameplay : GenericEntity
   if (entity) origin = entity.GetOrigin();
   return origin;
  }
+ // Durable Full (0.1.11): a Full-cached garrison has no squad until it wakes; the
+ // record recreates it and Group follows Record.Group (EOnFrame).
  bool Active()
  {
-  return Group && Group.EXPG_Active && Record && Manager.Find(Group) == Record && !Record.ReleaseRequested;
+  if (!Record || Record.Finished || Record.ReleaseRequested) return false;
+  if (Record.Full && !Record.Group) return true;
+  return Group && Group.EXPG_Active && Manager.Find(Group) == Record;
  }
  bool Awake() { return Record && !Record.Full && !Record.Simulation; }
  bool FullAsleep() { return Record && Record.Full && Record.Full.GetState() == EBG_FullGroupPhase.CACHED; }
  bool SimulationAsleep() { return Record && !Record.Full && Record.Simulation && Record.Simulation.Suspended; }
- void SetCacheMode(int mode) { Group.EXPG_SetSetting(0, mode); }
+ // A Full-cached garrison has no squad to edit: the record's setting stands in for it.
+ void SetCacheMode(int mode)
+ {
+  if (Record && Record.Group) Record.Group.EXPG_SetSetting(0, mode);
+  else if (Record) Record.CacheMode = mode;
+ }
+ int Agents()
+ {
+  if (!Group) return 0;
+  return Group.GetAgentsCount();
+ }
  bool Living(EXPG_HoldGuard guard)
  {
   SCR_ChimeraCharacter actor = guard.Member.CacheMember.Entity;
@@ -220,7 +234,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
    PrintFormat("[EXPG HOLD GUARD] stage=%1 member=%2 fixed=%3 dead=%4 post=%5 node=%6 bound=%7 actor=%8 placed=%9", stage, member.CacheMember.Id, member.Fixed, member.CacheMember.Dead, member.PostPoint(), member.NodeIndex, member.Post != null || member.Patrol != null, EXPG_Origin(actor), guard.Placed);
   }
-  if (Record) PrintFormat("[EXPG HOLD RECORD] stage=%1 active=%2 members=%3 agents=%4 status=%5", stage, Active(), Record.Members.Count(), Group.GetAgentsCount(), Record.Status);
+  if (Record) PrintFormat("[EXPG HOLD RECORD] stage=%1 active=%2 members=%3 agents=%4 status=%5", stage, Active(), Record.Members.Count(), Agents(), Record.Status);
  }
  // Awake, every living guard in the squad and under garrison control.
  bool AllAwake()
@@ -372,6 +386,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   if (Finished || Now() < Next) return;
   Next = Now() + 0.5;
+  if (Record && Record.Group) Group = Record.Group;
   if (Now() - Started > FIXTURE_SECONDS) { Check(false, string.Format("%1 second deadline; last phase %2", FIXTURE_SECONDS, Phase)); LogGuards("deadline"); Finish("timeout"); return; }
   if (EXPG_GarrisonRecord.EXPG_TestRefusals > 0) { Check(false, "no garrison status said refused, retained or cannot"); Finish("refusal"); return; }
   if (Phase < RELEASE_PHASE && (EXPG_GarrisonRecord.EXPG_TestReleases > 0 || (Record && Record.Ready && !Active())))
@@ -496,7 +511,7 @@ class EXPG_GarrisonGameplay : GenericEntity
     Waited(150, "garrison Full-cached within 150 seconds: " + Record.Status);
     return;
    }
-   Check(Group.GetAgentsCount() == 0 && Record.Status.Contains("Full cached"), "the garrison Full-cached and its soldiers are removed until wake");
+   Check(!Record.Group && Record.Status.Contains("Full cached"), "the garrison Full-cached: its soldiers and squad are removed until wake");
    SetCacheMode(0);
    Advance(8);
    return;

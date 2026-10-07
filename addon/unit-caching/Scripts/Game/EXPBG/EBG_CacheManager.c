@@ -651,6 +651,13 @@ class EBG_CacheManager
  // groups"). Never automatic and never a save bypass: each held record is handed
  // back to normal AI. No restored survivor is spawned twice, no casualty is
  // refilled and no AI is deleted. One server log line per record.
+ // A loaded record of an eliminated group: nothing alive to own; forgotten, not held.
+ void ForgetEliminated(EBG_CacheGroup record)
+ {
+  if (!record) return;
+  if (EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.ReleaseGroup(record);
+  Records.RemoveItem(record);
+ }
  int ReleaseBlocked(int playerId)
  {
   int released;

@@ -1,0 +1,113 @@
+FrameWidgetClass "{EDFFCEE034DD0143}" {
+ Name "EBM_Content"
+ Slot FrameWidgetSlot "{BCD361826A5B0991}" {
+  OffsetLeft 0
+  OffsetTop 0
+  SizeX 1006
+  OffsetRight -1006
+  SizeY 586
+  OffsetBottom -586
+ }
+ Clipping True
+ "Ignore Cursor" 1
+ {
+  ImageWidgetClass "{207410C479E73737}" {
+   Name "EBM_Paper"
+   Slot FrameWidgetSlot "{3E554C926BE35CCA}" {
+    Anchor 0 0 1 1
+    PositionX 0
+    OffsetLeft 0
+    PositionY 0
+    OffsetTop 0
+    SizeX 0
+    OffsetRight 0
+    SizeY 0
+    OffsetBottom 0
+    Alignment 0 0
+   }
+   "Ignore Cursor" 1
+   Color 0.86 0.85 0.8 1
+  }
+  ImageWidgetClass "{2C82F254469E095F}" {
+   Name "EBM_Map"
+   Slot FrameWidgetSlot "{3EB8C148B7A821E9}" {
+    OffsetLeft 0
+    OffsetTop 0
+    SizeToContent 1
+   }
+   "Ignore Cursor" 1
+   Size 1024 720
+  }
+  FrameWidgetClass "{84D2AA25C03DF969}" {
+   Name "EBM_EngineMapSlot"
+   Slot FrameWidgetSlot "{9EDE12C4D8C61BF4}" {
+    Anchor 0 0 1 1
+    PositionX 0
+    OffsetLeft 0
+    PositionY 0
+    OffsetTop 0
+    SizeX 0
+    OffsetRight 0
+    SizeY 0
+    OffsetBottom 0
+    Alignment 0 0
+   }
+   Clipping True
+   "Ignore Cursor" 1
+  }
+  FrameWidgetClass "{8BABFAF09025A2BF}" {
+   Name "EBM_Lines"
+   Slot FrameWidgetSlot "{26ADAB9A2248DAFA}" {
+    Anchor 0 0 1 1
+    PositionX 0
+    OffsetLeft 0
+    PositionY 0
+    OffsetTop 0
+    SizeX 0
+    OffsetRight 0
+    SizeY 0
+    OffsetBottom 0
+    Alignment 0 0
+   }
+   Clipping False
+   "Ignore Cursor" 1
+  }
+  FrameWidgetClass "{B58D223032035413}" {
+   Name "EBM_Markers"
+   Slot FrameWidgetSlot "{24BD53574E9417F7}" {
+    Anchor 0 0 1 1
+    PositionX 0
+    OffsetLeft 0
+    PositionY 0
+    OffsetTop 0
+    SizeX 0
+    OffsetRight 0
+    SizeY 0
+    OffsetBottom 0
+    Alignment 0 0
+   }
+   Clipping False
+   "Ignore Cursor" 1
+  }
+  TextWidgetClass "{D9EED23CD62A0EB5}" {
+   Name "EBM_Title"
+   Slot FrameWidgetSlot "{50927D7E5D2BF292}" {
+    OffsetLeft 16
+    OffsetTop 8
+    SizeX 974
+    OffsetRight -990
+    SizeY 40
+    OffsetBottom -48
+   }
+   "Ignore Cursor" 1
+   Color 0.05 0.05 0.05 1
+   Text "EXPBG BRIEFING"
+   "Font Size" 28
+   "Min Font Size" 28
+   FontProperties FontProperties "{358246786ABD57B5}" {
+    Font "{3E7733BAC8C831F6}UI/Fonts/RobotoCondensed/RobotoCondensed_Regular.fnt"
+    Bold 1
+   }
+  }
+ }
+}

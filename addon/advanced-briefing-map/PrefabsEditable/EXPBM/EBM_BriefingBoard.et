@@ -17,6 +17,18 @@ GenericEntity : "{DCBC472CDA3EA9B2}Prefabs/Props/Civilian/WallMap_01.et" {
    m_fScreenVMin 0.0007
    m_fScreenVMax 0.9996
    m_fScreenRotation 90
+   m_vScreenCenter -0.0001 0.4508 -0.0001
+   m_vScreenNormal 0 0 1
+   m_vScreenUp 0 1 0
+   m_vScreenSize 1.3858 1.0396 0
+   m_sSurfaceModel "{406BC52002B99A15}Assets/Structures/BuildingsParts/Graffiti/Graffiti_01/Graffiti_FIA_V1.xob"
+   m_vSurfaceModelCenter 0 0 0
+   m_vSurfaceModelSize 0.958094 0.70362 0
+   m_fSurfaceUMin 0.67569
+   m_fSurfaceUMax 0.99506
+   m_fSurfaceVMin 0.04905
+   m_fSurfaceVMax 0.28359
+   m_fSurfaceLift 0.006
   }
   ActionsManagerComponent "{D15C9B14BBEE6754}" {
    ActionContexts {

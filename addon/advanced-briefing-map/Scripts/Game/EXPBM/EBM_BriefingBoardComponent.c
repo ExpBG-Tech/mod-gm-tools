@@ -4,14 +4,24 @@ class EBM_BriefingBoardComponentClass : ScriptComponentClass {}
 // Server-authoritative board. One briefer holds the lock; their client streams the
 // visible map frame, their own static markers and their drawn lines. Every client
 // with a UI renders that state into the board mesh's $rendertarget material.
-// The board is drawn upright into its own canvas (EBM_Canvas) and handed to the mesh's
-// render target (RTTexture0) turned to match the screen surface's UV rectangle, because
-// both supported meshes map the texture a quarter turn round (WallMap_01 and the Heine
-// projector screen). Roads, buildings, names and contours come from the game's own map
-// renderer (see EBM_MapEntity.c); the world map image stays underneath as the fallback.
+// Both supported meshes map the texture a quarter turn round (WallMap_01 and the Heine
+// projector screen), and the game's own map view (roads, buildings, names; EBM_MapEntity.c)
+// cannot be turned. So by default each client spawns a local flat quad with upright UVs (a
+// vanilla model, every material slot remapped to the render target material) just in
+// front of the screen, and draws the board content (EBM_BoardContent.layout) unturned into
+// its own render target (EBM_SurfaceRT): game map view over the world map image, lines,
+// markers and title. The screen itself (RTTexture0) then shows only the paper backdrop.
+// Fallbacks: if the game map view cannot draw, the map image under it still shows; if the
+// surface model cannot be loaded or spawned, the content is drawn straight onto the screen
+// (RTTexture0, over its UV rectangle) with every element turned, the single render target
+// path 0.1.9 proved live. The 0.1.10 hand-off (content in EBM_Canvas shown turned through
+// the image EBM_Screen) drew a plain white screen live and is only an opt-in experiment.
 class EBM_BriefingBoardComponent : ScriptComponent
 {
  static const ResourceName LAYOUT = "{636C657BF826EDAA}UI/layouts/EXPBM/EBM_BoardRT.layout";
+ // The render target material, on the screen slot (prefab) and on the upright surface (remap).
+ static const ResourceName SURFACE_MATERIAL = "{AA3CD43539C7EF56}Assets/EXPBM/EBM_BoardRT.emat";
+ static const ResourceName CONTENT_LAYOUT = "{5DBA61BA423517E6}UI/layouts/EXPBM/EBM_BoardContent.layout";
  static const ResourceName ENGINE_MAP_LAYOUT = "{F4540CBAD6301389}UI/layouts/EXPBM/EBM_EngineMap.layout";
  static const ResourceName LINE_LAYOUT = "{E8850FCD9219C411}UI/layouts/Map/MapDrawLine.layout";
  static const ResourceName DEFAULT_MAP_CONFIG = "{1B8AC767E06A0ACD}Configs/Map/MapFullscreen.conf";
@@ -25,6 +35,12 @@ class EBM_BriefingBoardComponent : ScriptComponent
  static const int STALE_MS = 12000;
  // Height of the vanilla line image (the texture carries its own transparent margin).
  static const float LINE_THICKNESS = 50;
+ // Title box in board units (top-left corner and height; the width follows the board).
+ static const float TITLE_LEFT = 16;
+ static const float TITLE_TOP = 8;
+ static const float TITLE_HEIGHT = 40;
+ // Render target renewals per board build when the mesh object changes.
+ static const int MAX_REBINDS = 5;
 
  [Attribute("2", UIWidgets.Slider, "Scale applied when the board entity is unscaled (1 = keep model size)", "1 4 0.1")]
  protected float m_fBoardScale;
@@ -41,12 +57,43 @@ class EBM_BriefingBoardComponent : ScriptComponent
  protected float m_fScreenVMax;
  [Attribute("-90", UIWidgets.EditBox, "Turn (degrees, clockwise) of the board picture inside the render target so it reads upright on the mesh: -90 projector screen, 90 WallMap_01, 0 unturned UVs")]
  protected float m_fScreenRotation;
- [Attribute("1", UIWidgets.CheckBox, "Draw the board in its own canvas and hand it to the render target turned; off draws it straight into the UV rectangle without turning (diagnostic fallback)")]
+ // Upright surface: a local flat quad with standard upright UVs placed just in front of the
+ // screen, so the board (and the game's own map view, which cannot be turned) is drawn
+ // unturned. Defaults: the Heine projector screen (tela1) and the vanilla barracks door pane.
+ [Attribute("0.0059 1.2312 -0.0118", UIWidgets.EditBox, "Screen centre in the board model's own space (m, unscaled)")]
+ protected vector m_vScreenCenter;
+ [Attribute("1 0 0", UIWidgets.EditBox, "Screen front normal in the board model's own space")]
+ protected vector m_vScreenNormal;
+ [Attribute("0 1 0", UIWidgets.EditBox, "Screen up direction in the board model's own space")]
+ protected vector m_vScreenUp;
+ [Attribute("3.9564 2.3026 0", UIWidgets.EditBox, "Screen width and height (m, unscaled)")]
+ protected vector m_vScreenSize;
+ [Attribute("{01F85A3B7D7C5EB0}Assets/Structures/BuildingsParts/Doors/Door_Barracks_01/Glass_Door_Barracks_92x56.xob", UIWidgets.ResourcePickerThumbnail, "Upright surface model: one flat quad, front +Z, upright UVs (u to the right, v down seen from the front); empty draws on the screen itself", "xob")]
+ protected ResourceName m_sSurfaceModel;
+ [Attribute("0 0 0", UIWidgets.EditBox, "Upright surface model: quad centre in its own space")]
+ protected vector m_vSurfaceModelCenter;
+ [Attribute("0.92 0.56 0", UIWidgets.EditBox, "Upright surface model: quad width and height in its own space")]
+ protected vector m_vSurfaceModelSize;
+ [Attribute("0.28439", UIWidgets.EditBox, "Upright surface model: lowest U (left edge)")]
+ protected float m_fSurfaceUMin;
+ [Attribute("0.74439", UIWidgets.EditBox, "Upright surface model: highest U (right edge)")]
+ protected float m_fSurfaceUMax;
+ [Attribute("0.35912", UIWidgets.EditBox, "Upright surface model: lowest V (top edge)")]
+ protected float m_fSurfaceVMin;
+ [Attribute("0.63912", UIWidgets.EditBox, "Upright surface model: highest V (bottom edge)")]
+ protected float m_fSurfaceVMax;
+ [Attribute("0.01", UIWidgets.EditBox, "Upright surface distance in front of the screen (m)")]
+ protected float m_fSurfaceLift;
+ [Attribute("2048", UIWidgets.EditBox, "Upright surface render target size (square, layout units)")]
+ protected int m_iSurfaceRtSize;
+ [Attribute("0", UIWidgets.CheckBox, "Experimental, instead of the upright surface: draw the board in a second render target and hand it to the screen's render target turned (drew a white screen in the 0.1.10 live test). The client option -ebmCanvasHandoff 1 switches it on for a test")]
  protected bool m_bCanvasHandoff;
- [Attribute("15", UIWidgets.EditBox, "Board canvas frame rate limit (0 = unlimited)")]
+ [Attribute("15", UIWidgets.EditBox, "Hand-off canvas frame rate limit (0 = unlimited)")]
  protected int m_iCanvasMaxFps;
- [Attribute("1", UIWidgets.CheckBox, "Draw roads, buildings, names and contours with the game's own map renderer (one board per client at a time, only while the player's own map is closed; otherwise the plain map image)")]
+ [Attribute("1", UIWidgets.CheckBox, "Draw roads, buildings, names and contours with the game's own map renderer where it can be shown (upright surface, hand-off canvas or an unturned screen; one board per client at a time, only while the player's own map is closed). The plain map image is always drawn underneath")]
  protected bool m_bUseEngineMap;
+ [Attribute("0", UIWidgets.CheckBox, "Trace board widget creation, render target binding and the drawing path in the client log (EBM DIAG lines); the client option -ebmDiagnostics 1 does the same for every board")]
+ protected bool m_bDebugTrace;
  [Attribute("1080", UIWidgets.EditBox, "Map detail layer: the one a briefer screen this many pixels high would show for the same view")]
  protected float m_fLayerReferenceHeight;
  [Attribute("", UIWidgets.ResourcePickerThumbnail, "Map image override; empty uses the world map entity's satellite background image", "edds")]
@@ -73,9 +120,24 @@ class EBM_BriefingBoardComponent : ScriptComponent
  protected float m_fLastUpdateMs;
  protected bool m_bWatchdog;
 
- // Client rendering. Board canvas size in layout units (the screen's UV rectangle, upright).
+ // Client rendering. Board size in layout units (the screen's UV rectangle, upright).
  protected int m_iRtWidth = 1006;
  protected int m_iRtHeight = 586;
+ // Quarter turns of the mesh UVs (-1 projector, +1 wall map, 0 none) and of the drawing
+ // (the same on the direct path, 0 on the hand-off canvas).
+ protected int m_iScreenTurn;
+ protected int m_iDrawTurn;
+ protected bool m_bHandoffActive;
+ protected bool m_bSurfaceActive;
+ // Local (never replicated) upright surface entity and its render target.
+ protected IEntity m_Surface;
+ protected RTTextureWidget m_wSurfaceRT;
+ protected vector m_vSurfacePlacedOrigin;
+ protected vector m_vSurfacePlacedAngles;
+ protected float m_fSurfacePlacedScale;
+ protected VObject m_BoundObject;
+ protected int m_iRebinds;
+ protected string m_sLastPath;
  protected Widget m_wRoot;
  protected RTTextureWidget m_wRT;
  protected RTTextureWidget m_wCanvas;
@@ -299,8 +361,20 @@ class EBM_BriefingBoardComponent : ScriptComponent
   else if (m_wRoot && distance > m_fRenderDistance + 15)
   {
    DestroyBoardWidgets();
+   return;
   }
-  else if (m_wRoot && !m_wEngineMap && !s_EngineMapOwner && EngineMapAllowed())
+  if (m_Surface)
+   PlaceSurface(false);
+  if (!m_wRoot)
+   return;
+  if (m_wRT && m_iRebinds < MAX_REBINDS && owner.GetVObject() != m_BoundObject)
+  {
+   // The render target belongs to the mesh object it was set on; a new object needs it again
+   // (bounded, in case the engine hands out a new object handle each time).
+   m_iRebinds++;
+   BindRenderTarget("rebind");
+  }
+  else if (!m_wEngineMap && !s_EngineMapOwner && EngineMapAllowed())
   {
    // Another board gave the native map back (deleted, out of range): take it over.
    EBM_OnStateRpl();
@@ -321,23 +395,83 @@ class EBM_BriefingBoardComponent : ScriptComponent
   return image;
  }
 
+ // Quarter turn of the screen UVs from m_fScreenRotation: -1 (anticlockwise), +1 or 0.
+ protected int ScreenTurn()
+ {
+  float turn = m_fScreenRotation;
+  if (Math.AbsFloat(Math.AbsFloat(turn) - 90) < 1)
+  {
+   if (turn < 0)
+    return -1;
+   return 1;
+  }
+  if (Math.AbsFloat(turn) >= 1)
+   Print("EXPBG Briefing: screen rotation " + turn.ToString() + " is not 0 or a quarter turn; drawing unturned", LogLevel.WARNING);
+  return 0;
+ }
+
  protected void CreateBoardWidgets()
  {
   WorkspaceWidget workspace = GetGame().GetWorkspace();
-  if (!workspace) return;
+  if (!workspace)
+  {
+   Trace("create-failed", "reason=no-workspace");
+   return;
+  }
   m_wRoot = workspace.CreateWidgets(LAYOUT);
-  if (!m_wRoot) return;
+  if (!m_wRoot)
+  {
+   Print("EXPBG Briefing: the board layout could not be created", LogLevel.WARNING);
+   return;
+  }
   m_wRT = RTTextureWidget.Cast(m_wRoot.FindAnyWidget("RTTexture0"));
   m_wCanvas = RTTextureWidget.Cast(m_wRoot.FindAnyWidget("EBM_Canvas"));
   m_wScreen = ImageWidget.Cast(m_wRoot.FindAnyWidget("EBM_Screen"));
-  m_wContent = m_wRoot.FindAnyWidget("EBM_Content");
-  m_wEngineMapSlot = m_wRoot.FindAnyWidget("EBM_EngineMapSlot");
-  m_wMarkerLayer = m_wRoot.FindAnyWidget("EBM_Markers");
-  m_wLineLayer = m_wRoot.FindAnyWidget("EBM_Lines");
-  m_wMap = ImageWidget.Cast(m_wRoot.FindAnyWidget("EBM_Map"));
-  m_wTitle = TextWidget.Cast(m_wRoot.FindAnyWidget("EBM_Title"));
-  if (!m_wRT || !m_wCanvas || !m_wScreen || !m_wContent || !m_wMarkerLayer || !m_wLineLayer || !m_wMap)
+  m_wSurfaceRT = RTTextureWidget.Cast(m_wRoot.FindAnyWidget("EBM_SurfaceRT"));
+  if (!m_wRT || !m_wCanvas || !m_wScreen || !m_wSurfaceRT)
   {
+   Print("EXPBG Briefing: the board layout lacks its render target widgets", LogLevel.WARNING);
+   DestroyBoardWidgets();
+   return;
+  }
+  // Path: experimental hand-off when asked for; otherwise the upright surface; otherwise the
+  // board drawn straight onto the screen itself, turned (also the fallback when the surface
+  // model cannot be loaded or spawned).
+  m_iScreenTurn = ScreenTurn();
+  m_bHandoffActive = m_iScreenTurn != 0 && (m_bCanvasHandoff || EBM_Diagnostics.HandoffForced());
+  m_bSurfaceActive = false;
+  if (!m_bHandoffActive && !m_sSurfaceModel.IsEmpty() && !EBM_Diagnostics.DirectForced())
+   m_bSurfaceActive = SpawnSurface();
+  Widget surface = m_wRT;
+  if (m_bHandoffActive)
+   surface = m_wCanvas;
+  else if (m_bSurfaceActive)
+   surface = m_wSurfaceRT;
+  // Unused render targets and the hand-off image leave the hierarchy and draw nothing.
+  if (!m_bHandoffActive)
+  {
+   m_wCanvas.RemoveFromHierarchy();
+   m_wCanvas = null;
+   m_wScreen.RemoveFromHierarchy();
+   m_wScreen = null;
+  }
+  if (!m_bSurfaceActive)
+  {
+   m_wSurfaceRT.RemoveFromHierarchy();
+   m_wSurfaceRT = null;
+  }
+  m_wContent = workspace.CreateWidgets(CONTENT_LAYOUT, surface);
+  if (m_wContent)
+  {
+   m_wEngineMapSlot = m_wContent.FindAnyWidget("EBM_EngineMapSlot");
+   m_wMarkerLayer = m_wContent.FindAnyWidget("EBM_Markers");
+   m_wLineLayer = m_wContent.FindAnyWidget("EBM_Lines");
+   m_wMap = ImageWidget.Cast(m_wContent.FindAnyWidget("EBM_Map"));
+   m_wTitle = TextWidget.Cast(m_wContent.FindAnyWidget("EBM_Title"));
+  }
+  if (!m_wContent || !m_wMarkerLayer || !m_wLineLayer || !m_wMap)
+  {
+   Print("EXPBG Briefing: the board content layout could not be created", LogLevel.WARNING);
    DestroyBoardWidgets();
    return;
   }
@@ -347,15 +481,201 @@ class EBM_BriefingBoardComponent : ScriptComponent
   if (!image.IsEmpty()) m_bMapImageLoaded = m_wMap.LoadImageTexture(0, image);
   m_wMap.SetVisible(m_bMapImageLoaded);
   m_sMarkerSignature = string.Empty;
-  m_wRT.SetRenderTarget(GetOwner());
+  m_sLastPath = string.Empty;
+  if (TraceEnabled())
+  {
+   string uv = string.Format("%1..%2,%3..%4", m_fScreenUMin, m_fScreenUMax, m_fScreenVMin, m_fScreenVMax);
+   if (m_bSurfaceActive)
+    uv = string.Format("%1..%2,%3..%4", m_fSurfaceUMin, m_fSurfaceUMax, m_fSurfaceVMin, m_fSurfaceVMax);
+   Trace("create", string.Format("mode=%1 screenTurn=%2 drawTurn=%3 board=%4x%5 uv=%6", DrawMode(), m_iScreenTurn, m_iDrawTurn, m_iRtWidth, m_iRtHeight, uv));
+   Trace("raster", string.Format("image=%1 loaded=%2", image, m_bMapImageLoaded));
+  }
+  BindRenderTarget("bind");
+  BindSurfaceTarget();
   SCR_MapEntity.GetOnMapInit().Insert(EBM_OnLocalMapInit);
   SCR_MapEntity.GetOnMapClose().Insert(EBM_OnLocalMapClose);
   m_bMapHooks = true;
  }
 
- // The mesh samples the render target through the screen's UV rectangle, which may be
- // turned (projector: shown a quarter turn clockwise; WallMap_01: anticlockwise). The board
- // canvas keeps the rectangle's upright size and is placed over it pre-turned the other way.
+ protected string DrawMode()
+ {
+  if (m_bHandoffActive)
+   return "handoff";
+  if (m_bSurfaceActive)
+   return "surface";
+  return "direct";
+ }
+
+ // Hands RTTexture0 to the owner's mesh ($rendertarget in EBM_BoardRT.emat). The binding
+ // belongs to the current mesh object, so it is remembered and renewed if the object changes.
+ // With the upright surface the screen itself shows only the paper backdrop.
+ protected void BindRenderTarget(string action)
+ {
+  IEntity owner = GetOwner();
+  if (!m_wRT || !owner || owner.IsDeleted())
+   return;
+  m_wRT.SetRenderTarget(owner);
+  m_BoundObject = owner.GetVObject();
+  if (TraceEnabled())
+   Trace(action, string.Format("entity=%1 object=%2 materials=%3", owner, DescribeObject(m_BoundObject), DescribeMaterials(m_BoundObject)));
+ }
+
+ protected void BindSurfaceTarget()
+ {
+  if (!m_wSurfaceRT || !m_Surface)
+   return;
+  m_wSurfaceRT.SetRenderTarget(m_Surface);
+  if (TraceEnabled())
+   Trace("bind-surface", string.Format("entity=%1 object=%2 materials=%3 scale=%4", m_Surface, DescribeObject(m_Surface.GetVObject()), DescribeMaterials(m_Surface.GetVObject()), m_Surface.GetScale()));
+ }
+
+ protected static string DescribeObject(VObject visual)
+ {
+  if (!visual)
+   return "none";
+  return visual.GetResourceName();
+ }
+
+ protected static string DescribeMaterials(VObject visual)
+ {
+  string slots;
+  if (!visual)
+   return slots;
+  string materials[64];
+  int count = visual.GetMaterials(materials);
+  for (int i = 0; i < count; i++)
+  {
+   if (i > 0)
+    slots += ",";
+   slots += materials[i];
+  }
+  return slots;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Upright surface (local entity, never replicated)
+ //------------------------------------------------------------------------------------------------
+ // Spawns the surface quad with every material slot remapped to the render target material.
+ protected bool SpawnSurface()
+ {
+  IEntity owner = GetOwner();
+  if (!owner || m_vSurfaceModelSize[0] <= 0 || m_vSurfaceModelSize[1] <= 0)
+   return false;
+  Resource resource = Resource.Load(m_sSurfaceModel);
+  BaseResourceObject resourceObject;
+  if (resource && resource.IsValid())
+   resourceObject = resource.GetResource();
+  VObject visual;
+  if (resourceObject)
+   visual = resourceObject.ToVObject();
+  if (!visual)
+  {
+   Print("EXPBG Briefing: the upright surface model could not be loaded; drawing on the screen itself", LogLevel.WARNING);
+   Trace("surface-failed", "reason=model " + m_sSurfaceModel);
+   return false;
+  }
+  vector transform[4];
+  float scale;
+  ComputeSurfaceTransform(transform, scale);
+  EntitySpawnParams params = new EntitySpawnParams();
+  params.TransformMode = ETransformMode.WORLD;
+  params.Transform[0] = transform[0];
+  params.Transform[1] = transform[1];
+  params.Transform[2] = transform[2];
+  params.Transform[3] = transform[3];
+  params.Scale = scale;
+  m_Surface = GetGame().SpawnEntity(GenericEntity, owner.GetWorld(), params);
+  if (!m_Surface)
+  {
+   Print("EXPBG Briefing: the upright surface could not be spawned; drawing on the screen itself", LogLevel.WARNING);
+   Trace("surface-failed", "reason=spawn");
+   return false;
+  }
+  string remap;
+  string materials[64];
+  int count = visual.GetMaterials(materials);
+  for (int i = 0; i < count; i++)
+  {
+   remap += string.Format("$remap '%1' '%2';", materials[i], SURFACE_MATERIAL);
+  }
+  m_Surface.SetObject(visual, remap);
+  m_Surface.ClearFlags(EntityFlags.TRACEABLE, false);
+  PlaceSurface(true);
+  Trace("surface", string.Format("model=%1 slots=%2 scale=%3 origin=%4", m_sSurfaceModel, count, scale, transform[3]));
+  return true;
+ }
+
+ // World transform of the surface: front +Z, right -X, up +Y of the quad onto the screen's
+ // front, right and up, centred on the screen and as large as fits (uniform scale).
+ protected void ComputeSurfaceTransform(out vector transform[4], out float scale)
+ {
+  IEntity owner = GetOwner();
+  vector ownerTransform[4];
+  owner.GetWorldTransform(ownerTransform);
+  vector axisX = ownerTransform[0].Normalized();
+  vector axisY = ownerTransform[1].Normalized();
+  vector axisZ = ownerTransform[2].Normalized();
+  float ownerScale = owner.GetScale();
+  if (ownerScale <= 0)
+   ownerScale = 1;
+  vector normal = axisX * m_vScreenNormal[0] + axisY * m_vScreenNormal[1] + axisZ * m_vScreenNormal[2];
+  normal.Normalize();
+  vector up = axisX * m_vScreenUp[0] + axisY * m_vScreenUp[1] + axisZ * m_vScreenUp[2];
+  up.Normalize();
+  // Seen from the front, right = normal x up (checked on the decoded models: front +X has +Z on its right).
+  vector right = CrossProduct(normal, up);
+  vector center = ownerTransform[3] + (axisX * m_vScreenCenter[0] + axisY * m_vScreenCenter[1] + axisZ * m_vScreenCenter[2]) * ownerScale + normal * m_fSurfaceLift;
+  scale = ownerScale * Math.Min(m_vScreenSize[0] / m_vSurfaceModelSize[0], m_vScreenSize[1] / m_vSurfaceModelSize[1]);
+  transform[0] = -right;
+  transform[1] = up;
+  transform[2] = normal;
+  transform[3] = center - (transform[0] * m_vSurfaceModelCenter[0] + transform[1] * m_vSurfaceModelCenter[1] + transform[2] * m_vSurfaceModelCenter[2]) * scale;
+ }
+
+ protected static vector CrossProduct(vector first, vector second)
+ {
+  return Vector(first[1] * second[2] - first[2] * second[1], first[2] * second[0] - first[0] * second[2], first[0] * second[1] - first[1] * second[0]);
+ }
+
+ // Keeps the surface on the screen when the board is moved, turned or scaled (Game Master).
+ protected void PlaceSurface(bool force)
+ {
+  IEntity owner = GetOwner();
+  if (!m_Surface || !owner)
+   return;
+  vector origin = owner.GetOrigin();
+  vector angles = owner.GetAngles();
+  float ownerScale = owner.GetScale();
+  if (!force && origin == m_vSurfacePlacedOrigin && angles == m_vSurfacePlacedAngles && ownerScale == m_fSurfacePlacedScale)
+   return;
+  vector transform[4];
+  float scale;
+  ComputeSurfaceTransform(transform, scale);
+  m_Surface.SetTransform(transform);
+  m_Surface.SetScale(scale);
+  m_Surface.Update();
+  m_vSurfacePlacedOrigin = origin;
+  m_vSurfacePlacedAngles = angles;
+  m_fSurfacePlacedScale = ownerScale;
+  if (!force)
+   Trace("surface-move", string.Format("origin=%1 scale=%2", transform[3], scale));
+ }
+
+ protected void DeleteSurface()
+ {
+  if (!m_Surface)
+   return;
+  if (m_wSurfaceRT && !m_Surface.IsDeleted())
+   m_wSurfaceRT.RemoveRenderTarget(m_Surface);
+  delete m_Surface;
+  m_Surface = null;
+ }
+
+ // The mesh samples the render target through the screen's UV rectangle, turned a quarter
+ // (projector: shown clockwise; WallMap_01: anticlockwise). Surface path: the content frame
+ // covers the surface quad's upright UV rectangle, unturned. Direct path: the content frame
+ // covers the screen's rectangle and every element is drawn pre-turned the other way
+ // (ToSurface). Hand-off path: the content fills the upright canvas, shown pre-turned by EBM_Screen.
  protected void LayoutScreen()
  {
   int size = m_iRtSize;
@@ -365,8 +685,7 @@ class EBM_BriefingBoardComponent : ScriptComponent
   float spanV = Math.AbsFloat(m_fScreenVMax - m_fScreenVMin) * size;
   float centerX = (m_fScreenUMin + m_fScreenUMax) * 0.5 * size;
   float centerY = (m_fScreenVMin + m_fScreenVMax) * 0.5 * size;
-  bool quarterTurn = m_bCanvasHandoff && Math.AbsFloat(Math.AbsFloat(m_fScreenRotation) - 90) < 1;
-  if (quarterTurn)
+  if (m_iScreenTurn != 0)
   {
    m_iRtWidth = Math.Round(spanV);
    m_iRtHeight = Math.Round(spanU);
@@ -376,35 +695,86 @@ class EBM_BriefingBoardComponent : ScriptComponent
    m_iRtWidth = Math.Round(spanU);
    m_iRtHeight = Math.Round(spanV);
   }
+  // The layout root lives in the workspace and is stretched there; only render targets are sized.
+  FrameSlot.SetSize(m_wRT, size, size);
+  if (m_bSurfaceActive)
+  {
+   int surfaceSize = m_iSurfaceRtSize;
+   if (surfaceSize < 64)
+    surfaceSize = 64;
+   m_iDrawTurn = 0;
+   m_iRtWidth = Math.Round(Math.AbsFloat(m_fSurfaceUMax - m_fSurfaceUMin) * surfaceSize);
+   m_iRtHeight = Math.Round(Math.AbsFloat(m_fSurfaceVMax - m_fSurfaceVMin) * surfaceSize);
+   if (m_iRtWidth < 16)
+    m_iRtWidth = 16;
+   if (m_iRtHeight < 16)
+    m_iRtHeight = 16;
+   FrameSlot.SetSize(m_wSurfaceRT, surfaceSize, surfaceSize);
+   PlaceFrame(m_wContent, Math.Min(m_fSurfaceUMin, m_fSurfaceUMax) * surfaceSize, Math.Min(m_fSurfaceVMin, m_fSurfaceVMax) * surfaceSize, m_iRtWidth, m_iRtHeight);
+   LayoutTitle();
+   return;
+  }
   if (m_iRtWidth < 16)
    m_iRtWidth = 16;
   if (m_iRtHeight < 16)
    m_iRtHeight = 16;
-  FrameSlot.SetSize(m_wRoot, size, size);
-  FrameSlot.SetSize(m_wRT, size, size);
-  FrameSlot.SetSize(m_wCanvas, m_iRtWidth, m_iRtHeight);
-  float left = centerX - m_iRtWidth * 0.5;
-  float top = centerY - m_iRtHeight * 0.5;
-  if (!m_bCanvasHandoff)
+  if (m_bHandoffActive)
   {
-   // Diagnostic fallback: the board straight into the UV rectangle, not turned.
-   m_wScreen.SetVisible(false);
-   m_wRT.AddChild(m_wContent);
-   FrameSlot.SetAnchorMin(m_wContent, 0, 0);
-   FrameSlot.SetAnchorMax(m_wContent, 0, 0);
-   FrameSlot.SetAlignment(m_wContent, 0, 0);
-   FrameSlot.SetPos(m_wContent, left, top);
-   FrameSlot.SetSize(m_wContent, m_iRtWidth, m_iRtHeight);
-   return;
+   m_iDrawTurn = 0;
+   FrameSlot.SetSize(m_wCanvas, m_iRtWidth, m_iRtHeight);
+   PlaceFrame(m_wContent, 0, 0, m_iRtWidth, m_iRtHeight);
+   if (m_iCanvasMaxFps > 0)
+    m_wCanvas.SetMaxFPS(m_iCanvasMaxFps);
+   m_wScreen.SetImageTexture(0, m_wCanvas);
+   m_wScreen.SetImage(0);
+   m_wScreen.SetSize(m_iRtWidth, m_iRtHeight);
+   m_wScreen.SetPivot(0.5, 0.5);
+   m_wScreen.SetRotation(m_iScreenTurn * 90);
+   FrameSlot.SetPos(m_wScreen, centerX - m_iRtWidth * 0.5, centerY - m_iRtHeight * 0.5);
+   if (TraceEnabled())
+   {
+    int textureWidth, textureHeight;
+    m_wScreen.GetImageSize(0, textureWidth, textureHeight);
+    Trace("handoff", string.Format("canvasTexture=%1x%2 (0x0: the image got no canvas texture and draws its plain colour)", textureWidth, textureHeight));
+   }
   }
-  if (m_iCanvasMaxFps > 0)
-   m_wCanvas.SetMaxFPS(m_iCanvasMaxFps);
-  m_wScreen.SetImageTexture(0, m_wCanvas);
-  m_wScreen.SetImage(0);
-  m_wScreen.SetSize(m_iRtWidth, m_iRtHeight);
-  m_wScreen.SetPivot(0.5, 0.5);
-  m_wScreen.SetRotation(m_fScreenRotation);
-  FrameSlot.SetPos(m_wScreen, left, top);
+  else
+  {
+   m_iDrawTurn = m_iScreenTurn;
+   float frameWidth = m_iRtWidth;
+   float frameHeight = m_iRtHeight;
+   if (m_iDrawTurn != 0)
+   {
+    frameWidth = m_iRtHeight;
+    frameHeight = m_iRtWidth;
+   }
+   PlaceFrame(m_wContent, centerX - frameWidth * 0.5, centerY - frameHeight * 0.5, frameWidth, frameHeight);
+  }
+  LayoutTitle();
+ }
+
+ // Fixed top-left anchoring, then position and size (parent: a render target).
+ protected static void PlaceFrame(Widget widget, float left, float top, float width, float height)
+ {
+  FrameSlot.SetAnchorMin(widget, 0, 0);
+  FrameSlot.SetAnchorMax(widget, 0, 0);
+  FrameSlot.SetAlignment(widget, 0, 0);
+  FrameSlot.SetPos(widget, left, top);
+  FrameSlot.SetSize(widget, width, height);
+ }
+
+ // Title box along the board's top edge, turned with the drawing about its own centre.
+ protected void LayoutTitle()
+ {
+  if (!m_wTitle)
+   return;
+  float width = m_iRtWidth - 2 * TITLE_LEFT;
+  float centerX, centerY;
+  ToSurface(TITLE_LEFT + width * 0.5, TITLE_TOP + TITLE_HEIGHT * 0.5, centerX, centerY);
+  FrameSlot.SetSize(m_wTitle, width, TITLE_HEIGHT);
+  FrameSlot.SetPos(m_wTitle, centerX - width * 0.5, centerY - TITLE_HEIGHT * 0.5);
+  m_wTitle.SetPivot(0.5, 0.5);
+  m_wTitle.SetRotation(DrawDegrees());
  }
 
  protected void DestroyBoardWidgets()
@@ -418,15 +788,26 @@ class EBM_BriefingBoardComponent : ScriptComponent
   }
   IEntity owner = GetOwner();
   if (m_wRT && owner && !owner.IsDeleted()) m_wRT.RemoveRenderTarget(owner);
-  if (m_wRoot) m_wRoot.RemoveFromHierarchy();
+  DeleteSurface();
+  if (m_wRoot)
+  {
+   m_wRoot.RemoveFromHierarchy();
+   Trace("destroy", string.Empty);
+  }
   m_wRoot = null;
   m_wRT = null;
   m_wCanvas = null;
   m_wScreen = null;
+  m_wSurfaceRT = null;
   m_wContent = null;
   m_wEngineMapSlot = null;
   m_EngineMapConfig = null;
   m_bEngineMapFailed = false;
+  m_bHandoffActive = false;
+  m_bSurfaceActive = false;
+  m_BoundObject = null;
+  m_iRebinds = 0;
+  m_sLastPath = string.Empty;
   m_wMarkerLayer = null;
   m_wLineLayer = null;
   m_wMap = null;
@@ -438,11 +819,38 @@ class EBM_BriefingBoardComponent : ScriptComponent
   m_sMarkerSignature = string.Empty;
  }
 
- // World map coordinates (x east, y north) to board layout units.
+ // World map coordinates (x east, y north) to board layout units (upright board, y down).
  protected void ToBoard(float worldX, float worldY, out float boardX, out float boardY)
  {
   boardX = m_iRtWidth * 0.5 + (worldX - m_fCenterX) * m_fScale;
   boardY = m_iRtHeight * 0.5 - (worldY - m_fCenterY) * m_fScale;
+ }
+
+ // Board units to the content frame's own units: the board turned a quarter against the
+ // mesh (-1: anticlockwise, the projector; +1: clockwise, the wall map), so it reads upright.
+ protected void ToSurface(float boardX, float boardY, out float surfaceX, out float surfaceY)
+ {
+  if (m_iDrawTurn < 0)
+  {
+   surfaceX = boardY;
+   surfaceY = m_iRtWidth - boardX;
+  }
+  else if (m_iDrawTurn > 0)
+  {
+   surfaceX = m_iRtHeight - boardY;
+   surfaceY = boardX;
+  }
+  else
+  {
+   surfaceX = boardX;
+   surfaceY = boardY;
+  }
+ }
+
+ // Widget rotation (degrees, clockwise) that goes with ToSurface.
+ protected float DrawDegrees()
+ {
+  return m_iDrawTurn * 90.0;
  }
 
  protected void Redraw()
@@ -478,22 +886,85 @@ class EBM_BriefingBoardComponent : ScriptComponent
   m_fCenterY = (minY + maxY) * 0.5;
   if (m_bMapImageLoaded && m_wMap)
   {
+   // The map image turns about its centre, so its unturned and turned boxes share it.
    float left, top;
    ToBoard(mapX, mapY + mapHeight, left, top);
-   FrameSlot.SetPos(m_wMap, left, top);
-   m_wMap.SetSize(mapWidth * m_fScale, mapHeight * m_fScale);
+   float width = mapWidth * m_fScale;
+   float height = mapHeight * m_fScale;
+   float centerX, centerY;
+   ToSurface(left + width * 0.5, top + height * 0.5, centerX, centerY);
+   m_wMap.SetSize(width, height);
+   m_wMap.SetPivot(0.5, 0.5);
+   m_wMap.SetRotation(DrawDegrees());
+   FrameSlot.SetPos(m_wMap, centerX - width * 0.5, centerY - height * 0.5);
   }
   UpdateEngineMap();
   RedrawLines();
   RedrawMarkers();
+  TracePath();
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Diagnostics (opt-in: m_bDebugTrace or -ebmDiagnostics 1)
+ //------------------------------------------------------------------------------------------------
+ protected bool TraceEnabled()
+ {
+  return EBM_Diagnostics.Enabled(m_bDebugTrace);
+ }
+
+ protected void Trace(string action, string detail)
+ {
+  if (TraceEnabled())
+   EBM_Diagnostics.Event(action, GetOwner(), detail);
+ }
+
+ // Logs the drawing path when it changes (not every redraw).
+ protected void TracePath()
+ {
+  if (!TraceEnabled())
+   return;
+  // path=engine: the game's map view (roads, buildings, names) over the map image; path=raster: the map image only.
+  string path = "raster";
+  if (m_wEngineMap)
+   path = "engine";
+  string blocker = EngineMapBlocker();
+  string detail = string.Format("path=%1 mode=%2 rasterLoaded=%3 engineBlocker=%4 briefer=%5 view=%6 markers=%7 lines=%8", path, DrawMode(), m_bMapImageLoaded, blocker, m_iBriefer, m_aView.Count(), m_aMarkerWidgets.Count(), m_aLineWidgets.Count());
+  if (path + blocker == m_sLastPath)
+   return;
+  m_sLastPath = path + blocker;
+  Trace("path", detail);
  }
 
  //------------------------------------------------------------------------------------------------
  // Game map renderer (roads, buildings, names, contours)
  //------------------------------------------------------------------------------------------------
+ // Why the game map renderer cannot draw on this board now; empty when it can.
+ protected string EngineMapBlocker()
+ {
+  if (!m_bUseEngineMap)
+   return "disabled";
+  if (m_bEngineMapFailed)
+   return "failed";
+  if (!m_wEngineMapSlot)
+   return "no-slot";
+  // A map widget cannot be turned: only the hand-off canvas or an unturned screen shows it upright.
+  if (m_iDrawTurn != 0)
+   return "turned-screen";
+  SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
+  if (!mapEntity)
+   return "no-map-entity";
+  if (mapEntity.IsOpen())
+   return "player-map-open";
+  if (mapEntity.GetMapSizeX() <= 0 || mapEntity.GetMapSizeY() <= 0)
+   return "no-map-size";
+  if (s_EngineMapOwner && s_EngineMapOwner != this)
+   return "other-board";
+  return string.Empty;
+ }
+
  protected bool EngineMapAllowed()
  {
-  if (!m_bUseEngineMap || m_bEngineMapFailed || !m_wEngineMapSlot)
+  if (!m_bUseEngineMap || m_bEngineMapFailed || !m_wEngineMapSlot || m_iDrawTurn != 0)
    return false;
   SCR_MapEntity mapEntity = SCR_MapEntity.GetMapInstance();
   if (!mapEntity || mapEntity.IsOpen())
@@ -672,16 +1143,19 @@ class EBM_BriefingBoardComponent : ScriptComponent
    float length = Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
    if (length < 1) continue;
    // The vanilla drawn-line layout (root aligned left-centre, image pivot left-centre), placed the way
-   // the map places it: root at the start point, image rotated in screen space (y down) and stretched.
+   // the map places it: root at the start point, image rotated in screen space (y down) and stretched,
+   // plus the drawing turn on a turned screen.
    Widget lineRoot = workspace.CreateWidgets(LINE_LAYOUT, m_wLineLayer);
    if (!lineRoot) continue;
    ImageWidget lineImage = ImageWidget.Cast(lineRoot.FindAnyWidget("DrawLineImage"));
    if (lineImage)
    {
-    lineImage.SetRotation(Math.Atan2(deltaY, deltaX) * Math.RAD2DEG);
+    lineImage.SetRotation(Math.Atan2(deltaY, deltaX) * Math.RAD2DEG + DrawDegrees());
     lineImage.SetSize(length, LINE_THICKNESS);
    }
-   FrameSlot.SetPos(lineRoot, startX, startY);
+   float surfaceX, surfaceY;
+   ToSurface(startX, startY, surfaceX, surfaceY);
+   FrameSlot.SetPos(lineRoot, surfaceX, surfaceY);
    DisableCursor(lineRoot);
    m_aLineWidgets.Insert(lineRoot);
   }
@@ -720,7 +1194,9 @@ class EBM_BriefingBoardComponent : ScriptComponent
    if (field + MARKER_FIELDS > m_aMarkers.Count()) continue;
    float boardX, boardY;
    ToBoard(m_aMarkers[field + 4], m_aMarkers[field + 5], boardX, boardY);
-   FrameSlot.SetPos(markerWidget, boardX, boardY);
+   float surfaceX, surfaceY;
+   ToSurface(boardX, boardY, surfaceX, surfaceY);
+   FrameSlot.SetPos(markerWidget, surfaceX, surfaceY);
    markerWidget.SetVisible(boardX > -64 && boardX < m_iRtWidth + 64 && boardY > -64 && boardY < m_iRtHeight + 64);
   }
  }
@@ -768,9 +1244,36 @@ class EBM_BriefingBoardComponent : ScriptComponent
     widgetComponent.SetEventListening(false);
    }
    DisableCursor(markerWidget);
+   TurnLeaves(markerWidget, DrawDegrees());
    m_aMarkerWidgets.Insert(markerWidget);
    m_aMarkerObjects.Insert(marker);
    m_aMarkerSlots.Insert(i);
+  }
+ }
+
+ // Frames cannot be turned, so a marker is turned piece by piece: every image and text about
+ // its own centre (icons and labels read upright; a label keeps its unturned offset).
+ protected static void TurnLeaves(Widget widget, float degrees)
+ {
+  if (!widget || degrees == 0)
+   return;
+  ImageWidget image = ImageWidget.Cast(widget);
+  if (image)
+  {
+   image.SetPivot(0.5, 0.5);
+   image.SetRotation(image.GetRotation() + degrees);
+  }
+  TextWidget text = TextWidget.Cast(widget);
+  if (text)
+  {
+   text.SetPivot(0.5, 0.5);
+   text.SetRotation(text.GetRotation() + degrees);
+  }
+  Widget child = widget.GetChildren();
+  while (child)
+  {
+   TurnLeaves(child, degrees);
+   child = child.GetSibling();
   }
  }
 

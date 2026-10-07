@@ -108,6 +108,9 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
  {
   return false;
  }
+ // Seam for owners of a transaction: called in the spawning call, right after a survivor
+ // row has its entity (author and carried state applied), before it joins the group.
+ protected void OnSurvivorSpawned(EBG_PrefabSurvivor row) {}
  static bool CanDeleteFullEntity(IEntity entity)
  {
   if (!entity) return false;
@@ -449,6 +452,8 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    row.Member.Missing = false;
    row.Author.Apply(row.Entity);
    if (respawned) row.Carry.Apply(row.Entity);
+   // Same call as the spawn, before the survivor joins the group: an owner may pin its AI.
+   OnSurvivorSpawned(row);
    PersistenceSystem persistence = PersistenceSystem.GetInstance();
    row.Member.PersistentId = UUID.NULL_UUID;
    if (persistence) row.Member.PersistentId = persistence.GetId(row.Entity);

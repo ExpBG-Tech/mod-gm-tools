@@ -177,7 +177,7 @@ Assert ($gameplay.Contains($command)) 'tests/GAMEPLAY.md must carry the vehicle 
 $readme = Read-Text (Join-Path $repo 'README.md')
 Assert ($readme -match '"Vehicle types"') 'README must describe the Vehicle types setting'
 $changelog = Read-Text (Join-Path $repo 'CHANGELOG.md')
-$unreleased = [regex]::Match($changelog, '(?s)## (?:Unreleased|0\.1\.10)\b(.*?)(\n## |\z)').Groups[1].Value
-Assert ($unreleased -match 'Vehicle types') 'CHANGELOG Unreleased must mention Vehicle types'
+$unreleased = [regex]::Match($changelog, '(?s)## 0\.1\.10\b(.*?)(\n## |\z)').Groups[1].Value
+Assert ($unreleased -match 'Vehicle types') 'CHANGELOG 0.1.10 must mention Vehicle types'
 Assert ([regex]::Matches($changelog, '(?m)^## Unreleased').Count -le 1) 'CHANGELOG must keep at most one Unreleased header'
 'PASS: Ambient Destruction vehicle types (Civilian/Military/Both, key 12, default Both): every wreck categorised as catalog data, Both keeps the original bag order and draws, schema 3 snapshots with schema 1/2 read as Both, spinbox attribute; vehicle category fixture wired.'

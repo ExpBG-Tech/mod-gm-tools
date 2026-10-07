@@ -391,16 +391,54 @@ class EBG_CacheGroupSnapshot : EBG_CachePose
   if (!nativeOrders.IsEmpty() && (Cycled || Orders.Count() != 1)) { return false; }
   return NativeOrdersUnshared(group, nativeOrders);
  }
+ // Ledger capture (Garrison persistence): read only and never refuses what it cannot
+ // own. Orders it cannot capture, dynamic AI settings and an unresolved cycle queue
+ // are left out (counted in Skipped); the group itself is never deleted here. The
+ // AI policy (settings 16-18) is the one to restore, not a temporary cache pin.
+ bool Tolerant;
+ int Skipped;
+ bool CaptureForLedger(SCR_AIGroup group, int lod, bool active)
+ {
+  Tolerant = true;
+  Skipped = 0;
+  if (!group || !CaptureGroup(group)) return false;
+  Settings[16] = -1;
+  Settings[17] = Math.ClampInt(lod, 0, AIAgent.GetMaxLOD());
+  int activeValue = 0;
+  if (active) activeValue = 1;
+  Settings[18] = activeValue;
+  if (!ValidGroup()) return CaptureRefusal("Ledger capture: unavailable group prefab or faction");
+  return true;
+ }
+ // Tolerant capture only: values the native setters would reject are cleared.
+ protected void Sanitize()
+ {
+  if (Name.Length() > 4096) Name = Name.Substring(0, 4096);
+  if (Description.Length() > 4096) Description = Description.Substring(0, 4096);
+  if (Formation.Length() > 256 || (!Formation.IsEmpty() && (!GetGame().GetAIWorld() || !GetGame().GetAIWorld().GetFormation(Formation)))) Formation = "";
+  if (Settings.Count() != 19) return;
+  Settings[2] = Math.ClampInt(Settings[2], -1, 128);
+  Settings[3] = Math.ClampInt(Settings[3], 0, 128);
+  Settings[5] = Math.ClampInt(Settings[5], 0, 10000);
+  // The live AI policy may be a cache pin; CaptureForLedger writes the one to restore.
+  Settings[16] = -1;
+  Settings[17] = Math.ClampInt(Settings[17], 0, AIAgent.GetMaxLOD());
+  Dead = Math.ClampInt(Dead, 0, 128);
+ }
  bool CaptureGroup(SCR_AIGroup group)
  {
-  if (group.Type() != SCR_AIGroup || group.IsPlayable() || group.GetMaster() || group.GetSlave() || group.IsCreatedByCommander() || group.GetRallyPointId() >= 0) return CaptureRefusal("Full capture holds externally managed, playable, linked or custom group type " + group.Type().ToString());
+  if (!Tolerant && (group.Type() != SCR_AIGroup || group.IsPlayable() || group.GetMaster() || group.GetSlave() || group.IsCreatedByCommander() || group.GetRallyPointId() >= 0)) return CaptureRefusal("Full capture holds externally managed, playable, linked or custom group type " + group.Type().ToString());
   SCR_AIGroupSettingsComponent settings = SCR_AIGroupSettingsComponent.Cast(group.FindComponent(SCR_AIGroupSettingsComponent));
   if (settings)
   {
    array<SCR_AISettingBase> entries = {};
    settings.GetAllSettings(entries);
    foreach (SCR_AISettingBase entry : entries)
-   if (entry.GetOrigin() != SCR_EAISettingOrigin.DEFAULT && entry.GetOrigin() != SCR_EAISettingOrigin.WAYPOINT) return CaptureRefusal("Full capture holds unsupported dynamic AI setting " + entry.Type().ToString());
+   {
+    if (entry.GetOrigin() == SCR_EAISettingOrigin.DEFAULT || entry.GetOrigin() == SCR_EAISettingOrigin.WAYPOINT) continue;
+    if (!Tolerant) return CaptureRefusal("Full capture holds unsupported dynamic AI setting " + entry.Type().ToString());
+    Skipped++;
+   }
   }
   Capture(group);
   Author.Capture(group);
@@ -423,24 +461,43 @@ class EBG_CacheGroupSnapshot : EBG_CachePose
    Parent = editable.GetParentEntity();
   }
   else group.GetWaypoints(nativeOrderedWaypoints);
-  if (nativeOrderedWaypoints.Count() > 128) return CaptureRefusal("Full capture holds waypoint count above 128");
+  if (nativeOrderedWaypoints.Count() > 128 && !Tolerant) return CaptureRefusal("Full capture holds waypoint count above 128");
   array<AIWaypoint> seen = {};
   foreach (AIWaypoint waypoint : nativeOrderedWaypoints)
   {
-   if (!waypoint || AIWaypointCycle.Cast(waypoint) || seen.Contains(waypoint)) return CaptureRefusal("Full capture holds missing, nested-cycle or duplicate ordered waypoint");
+   if (!waypoint || AIWaypointCycle.Cast(waypoint) || seen.Contains(waypoint) || Orders.Count() >= 128)
+   {
+    if (!Tolerant) return CaptureRefusal("Full capture holds missing, nested-cycle or duplicate ordered waypoint");
+    Skipped++;
+    continue;
+   }
    seen.Insert(waypoint);
    EBG_CacheOrder order = new EBG_CacheOrder();
-   if (!order.CaptureOrder(waypoint)) return CaptureRefusal("Full capture holds: " + order.CaptureProblem);
+   if (!order.CaptureOrder(waypoint))
+   {
+    if (!Tolerant) return CaptureRefusal("Full capture holds: " + order.CaptureProblem);
+    Skipped++;
+    continue;
+   }
    Orders.Insert(order);
   }
-  if (!OwnsOrders(group)) return CaptureRefusal("Full capture holds shared, unsupported or unresolved waypoint ownership");
-  if (Cycled && (!editable || !editable.EBG_SnapshotCycleQueue(nativeOrderedWaypoints, CycleQueue, CycleReruns))) return CaptureRefusal("Full capture holds unresolved native cycle queue");
+  if (!Tolerant && !OwnsOrders(group)) return CaptureRefusal("Full capture holds shared, unsupported or unresolved waypoint ownership");
+  if (Cycled && (!editable || !editable.EBG_SnapshotCycleQueue(nativeOrderedWaypoints, CycleQueue, CycleReruns) || Orders.Count() != nativeOrderedWaypoints.Count()))
+  {
+   if (!Tolerant) return CaptureRefusal("Full capture holds unresolved native cycle queue");
+   // A queue that cannot be mapped onto the captured orders restores as a plain queue.
+   Cycled = false;
+   CycleQueue.Clear();
+   CycleReruns = 0;
+   Skipped++;
+  }
+  if (Tolerant) Sanitize();
   if (!ValidGroup()) return CaptureRefusal("Full capture holds unavailable group prefab/faction/formation or invalid supported group scalars");
   return true;
  }
  bool ValidGroup()
  {
-  if (!Valid() || !PrefabType(SCR_AIGroup, true) || Settings.Count() != 19 || Orders.Count() > 128 || Dead < 0 || Dead > 128 || FactionName.IsEmpty() || Name.Length() > 4096 || Description.Length() > 4096 || Formation.Length() > 256) return false;
+  if (!Valid() || !PrefabType(SCR_AIGroup, !Tolerant) || Settings.Count() != 19 || Orders.Count() > 128 || Dead < 0 || Dead > 128 || FactionName.IsEmpty() || Name.Length() > 4096 || Description.Length() > 4096 || Formation.Length() > 256) return false;
   array<int> booleans = {0, 1, 6, 7, 12, 18};
   foreach (int key : booleans) if (Settings[key] < 0 || Settings[key] > 1) return false;
   if (Settings[2] < -1 || Settings[2] > 128 || Settings[3] < 0 || Settings[3] > 128 || Settings[5] < 0 || Settings[5] > 10000 || Settings[16] != -1 || Settings[17] < 0 || Settings[17] > AIAgent.GetMaxLOD()) return false;

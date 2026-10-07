@@ -68,7 +68,7 @@ class EXPG_GarrisonAttribute : SCR_BaseValueListEditorAttribute
 
  override SCR_BaseEditorAttributeVar ReadVariable(Managed item, SCR_AttributesManagerEditorComponent manager)
  {
-  if (!manager) return null; // Mission-only: no native/CDF save replay without the ownership ledger.
+  if (!manager) return null; // Never saved as attributes: the garrison ledger (EXPG_Snapshot.c) carries them.
   SCR_AIGroup group = GetGarrison(item);
   if (!group) return null;
   if (m_Key == 0) return SCR_BaseEditorAttributeVar.CreateFloat(group.EXPG_CacheMode);

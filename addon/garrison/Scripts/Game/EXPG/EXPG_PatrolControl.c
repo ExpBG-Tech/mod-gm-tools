@@ -512,6 +512,17 @@ class EXPG_PatrolControl
 	void ForceSettle()
 	{
 		if (m_Move) { Block(); }
+		// Stopped half way: the stop he stands at becomes his claim, so he caches (and
+		// wakes, or is saved) on a stop rather than metres away from the one he claimed.
+		if (m_Actor && m_Plan && m_Node >= 0 && vector.DistanceXZ(m_Actor.GetOrigin(), m_Plan.Nodes[m_Node].Position) > 1.5)
+		{
+			int nearStop = m_Plan.NearestNode(m_Actor.GetOrigin(), 1.0, true);
+			if (nearStop >= 0 && nearStop != m_Node && m_Plan.TryClaimStop(m_Actor, nearStop))
+			{
+				m_Node = nearStop;
+				m_Look = m_Plan.Nodes[nearStop].WatchLook;
+			}
+		}
 		m_State = STATE_DWELL;
 		m_Window = false;
 		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + 10000;

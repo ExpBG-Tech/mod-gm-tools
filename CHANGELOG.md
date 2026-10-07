@@ -1,5 +1,65 @@
 # EXPBG GM Tools changelog
 
+## 0.1.11
+
+- Garrison: garrisons are saved with the mission. Build a mission, save it and
+  load it: every garrison comes back in its building with its posts and patrol
+  stops, cache state (awake, Simulation or Full, the Full ones still with nobody
+  in the world), wake and sleep distances, casualties (never respawned) and the
+  AI Surrender and AI Global Skills squad and soldier overrides. Loadouts and
+  wounds restore as prefab defaults, as Full caching does. Native saves carry a
+  garrison ledger of their own; CDF Game Master Save carries the same ledger
+  with EXPBG CDF Compat 0.1.6 or later. Garrison squads and soldiers are no
+  longer saved as ordinary squads: the native autosave no longer fails while a
+  garrison is active ("[EXPG SAVE] Refused active garrison ownership" and
+  "[PERSISTENCE] Save failed" are gone) and Unit Caching Prepare for Save no
+  longer releases garrisons. On load each garrison waits for its building's
+  analysis, takes its posts back by position and wakes with its soldiers' AI
+  held until every guard is bound; a garrison whose building is gone restores
+  as an ordinary squad. Add Garrison waits while garrisons load. A save whose
+  garrison ledger cannot be read loads without garrisons and tells every Game
+  Master. With an older EXPBG CDF Compat, CDF keeps the 0.1.8 rules (Full runs
+  as Simulation, CDF saves wait for Prepare for Save).
+- Garrison: Full caching now captures and removes the squad itself too and
+  recreates it at wake (as Unit Caching Full does), so no empty squad is left
+  behind for a save, a load or a Game Master to delete. A Full-cached garrison
+  has no squad in the world until it wakes. A squad that cannot be captured
+  (orders or AI settings it cannot own) caches in Simulation instead, with the
+  reason in its status, and tries Full again ten minutes later.
+- Garrison: EXPBG Add Garrison never deletes soldiers. The 0.1.10 live test
+  placed 2 of a 9-man rifle squad on a small house and deleted the other 7.
+  Now the whole squad deploys: soldiers beyond the building's posts take free
+  posts, then patrol inside, then other watch positions, then places close
+  around the building, last where they spawned (the order for added squads).
+- Garrison: "EXPBG Release All Garrisons" (right-click a garrison squad) wakes
+  every garrison and returns its squad to normal AI control, for a mission that
+  will be saved and used without EXPBG GM Tools.
+- Unit Caching: a native save's group that was eliminated (no living AI) no
+  longer holds every later save with "Original member has retained UUID-less
+  transfer lineage"; its record is forgotten on load.
+- Briefing Projector Screen (and the wall-map board): the screen shows the map
+  again, now with roads, buildings, names and contours. In the 0.1.10 live
+  test it stayed plain white on both sides, before and after "EXPBG: Brief on
+  map". 0.1.10 drew the board in a second render target and showed it on the
+  screen through an image; that image never received the board picture, so its
+  plain white colour covered the screen. Both screens map their picture a
+  quarter turn round, and the game's own map view cannot be turned, so each
+  player's game now places a flat panel with an upright picture just in front
+  of the screen (a base-game pane, covering about 96% of the projector and 98%
+  of the wall map; the rest shows plain paper) and draws the board on it
+  unturned: the game map view with roads and buildings over the world map
+  image, drawn lines, markers and the title, north-up. If the map view cannot
+  draw, the map image, markers and lines still show; if the panel cannot be
+  created, the board is drawn on the screen itself with every element turned
+  so it still reads north-up (the single render target path 0.1.9 drew live).
+  The panel follows the board when a Game Master moves it. The board no longer
+  resizes its layout root (the "EBM_Root: Position/Size works only when min and
+  max anchor is the same" log error), and it binds the render target again if
+  the screen's model object changes. Client option -ebmDiagnostics 1 (or the
+  board's "Debug trace" attribute) logs board creation, the panel, the render
+  target bindings with the models' materials and the drawing path
+  (path=engine or path=raster) as "[EBM DIAG]" lines; -ebmDirect 1 skips the
+  panel for a comparison. Not yet tested in the game.
 ## 0.1.10
 
 - New module Time and Weather (Systems): "Weather Transition" blends the

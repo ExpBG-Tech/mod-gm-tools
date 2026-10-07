@@ -122,6 +122,15 @@ class EBG_MissionPersistence
   }
   return false;
  }
+ static bool Eliminated(EBG_MissionGroupData saved)
+ {
+  if (!saved) return false;
+  foreach (EBG_MissionMemberData member : saved.Members)
+  {
+   if (!member.Dead && !member.Missing && !member.WasPlayer) return false;
+  }
+  return true;
+ }
  static bool Finite(float value) { return value == value && value > -1000000000 && value < 1000000000; }
  static bool ValidIds(array<UUID> ids)
  {
@@ -186,6 +195,15 @@ class EBG_MissionPersistence
    if (group.Imported) continue;
    EBG_CacheGroup record = manager.PreparePersistentGroup(group);
    string reason = record.PersistenceIssue;
+   // An eliminated group (no saved living AI) has nothing to own or restore: forget
+   // it instead of holding every later save on metadata that can never resolve.
+   if (reason != "" && Eliminated(group))
+   {
+    manager.ForgetEliminated(record);
+    group.Imported = true;
+    PrintFormat("[EBG MISSION LOAD] group=%1 eliminated (0 alive); its record is forgotten instead of held: %2", group.GroupId, reason);
+    continue;
+   }
    if (reason == "" && group.Issue == "" && cleanup.ImportPersistentGroup(group, record, reason))
    {
     record.PersistenceIssue = ""; group.Imported = true;

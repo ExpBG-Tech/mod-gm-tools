@@ -24,6 +24,18 @@ GenericEntity : "{10C26F96EF7A8CF5}Prefabs/Props/Core/Props_Base.et" {
    m_fScreenVMin 0.0087
    m_fScreenVMax 0.9912
    m_fScreenRotation -90
+   m_vScreenCenter 0.0059 1.2312 -0.0118
+   m_vScreenNormal 1 0 0
+   m_vScreenUp 0 1 0
+   m_vScreenSize 3.9564 2.3026 0
+   m_sSurfaceModel "{01F85A3B7D7C5EB0}Assets/Structures/BuildingsParts/Doors/Door_Barracks_01/Glass_Door_Barracks_92x56.xob"
+   m_vSurfaceModelCenter 0 0 0
+   m_vSurfaceModelSize 0.92 0.56 0
+   m_fSurfaceUMin 0.28439
+   m_fSurfaceUMax 0.74439
+   m_fSurfaceVMin 0.35912
+   m_fSurfaceVMax 0.63912
+   m_fSurfaceLift 0.01
   }
   ActionsManagerComponent "{E342DBEC396C63BE}" {
    ActionContexts {

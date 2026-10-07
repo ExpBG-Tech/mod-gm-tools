@@ -101,6 +101,39 @@ class EXPG_AddGarrisonContextAction : SCR_BaseContextAction
  }
 }
 
+// Every garrison wakes and its squad returns to normal AI control (for a mission that
+// will be saved and loaded without EXPBG GM Tools). Offered on a garrison squad.
+[BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
+class EXPG_ReleaseAllGarrisonsContextAction : SCR_BaseContextAction
+{
+ protected static bool IsGarrison(SCR_EditableEntityComponent hoveredEntity)
+ {
+  if (!hoveredEntity) return false;
+  SCR_AIGroup group = SCR_AIGroup.Cast(hoveredEntity.GetOwner());
+  return group && group.EXPG_Active;
+ }
+
+ override bool CanBeShown(SCR_EditableEntityComponent hoveredEntity, notnull set<SCR_EditableEntityComponent> selectedEntities, vector cursorWorldPosition, int flags)
+ {
+  SCR_EditorManagerEntity editor = SCR_EditorManagerEntity.GetInstance();
+  if (!editor || editor.IsLimited() || editor.GetCurrentMode() != EEditorMode.EDIT) return false;
+  return IsGarrison(hoveredEntity);
+ }
+
+ // Checked again on the server before Perform; the hovered squad is replicated.
+ override bool CanBePerformed(SCR_EditableEntityComponent hoveredEntity, notnull set<SCR_EditableEntityComponent> selectedEntities, vector cursorWorldPosition, int flags)
+ {
+  return IsGarrison(hoveredEntity);
+ }
+
+ override void Perform(SCR_EditableEntityComponent hoveredEntity, notnull set<SCR_EditableEntityComponent> selectedEntities, vector cursorWorldPosition, int flags, int param = -1)
+ {
+  if (!Replication.IsServer()) return;
+  int released = EXPG_GarrisonManager.ReleaseAll("Released by the Game Master (Release All Garrisons)");
+  PrintFormat("[EXPG GARRISON] Release All Garrisons: %1 garrisons release their squads to normal AI", released);
+ }
+}
+
 modded class SCR_PlacingEditorComponent
 {
  protected static ref map<EntityID, SCR_PlacingEditorComponent> s_EXPG_Pickers = new map<EntityID, SCR_PlacingEditorComponent>();
@@ -568,7 +601,7 @@ modded class SCR_PlacingEditorComponent
    EXPG_Reply("The squad remains under normal AI control because garrison assignment was refused.");
   }
   else if (reinforcing) EXPG_Reply(string.Format("Garrison reinforcement is deploying: all %1 soldiers join this building's garrison, on free posts first, then on extra positions in and around the building.", members.Count()));
-  else EXPG_Reply("Garrison preparation is completing. The new squad will use the building's safe capacity.");
+  else EXPG_Reply(string.Format("Garrison is deploying: all %1 soldiers take the building's posts first, then patrol inside, then more watch positions and places close around the building. Nobody is removed.", members.Count()));
   GetOnPlaceEntityServer().Invoke(prefabID, editable, playerId);
  }
 

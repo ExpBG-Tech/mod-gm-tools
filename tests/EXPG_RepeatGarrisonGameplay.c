@@ -140,9 +140,19 @@ class EXPG_GarrisonGameplay : GenericEntity
   }
   return around;
  }
+ // Durable Full (0.1.11): a Full-cached garrison has no squad until it wakes; the
+ // record recreates it and add.Group follows add.Record.Group (EOnFrame).
  bool Active(EXPG_RepeatAdd add)
  {
-  return add.Group && add.Group.EXPG_Active && add.Record && Manager.Find(add.Group) == add.Record && !add.Record.ReleaseRequested;
+  if (!add.Record || add.Record.Finished || add.Record.ReleaseRequested) return false;
+  if (add.Record.Full && !add.Record.Group) return true;
+  return add.Group && add.Group.EXPG_Active && Manager.Find(add.Group) == add.Record;
+ }
+ // A Full-cached garrison has no squad to edit: the record's setting stands in for it.
+ void SetMode(EXPG_RepeatAdd add, int mode)
+ {
+  if (add.Record && add.Record.Group) add.Record.Group.EXPG_SetSetting(0, mode);
+  else if (add.Record) add.Record.CacheMode = mode;
  }
  bool Asleep(EXPG_GarrisonRecord record)
  {
@@ -258,6 +268,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   if (Finished || Now() < Next) return;
   Next = Now() + 0.5;
+  foreach (EXPG_RepeatAdd tracked : Adds) { if (tracked.Record && tracked.Record.Group) tracked.Group = tracked.Record.Group; }
   if (Now() - Started > FIXTURE_SECONDS) { Check(false, string.Format("%1 second deadline; last phase %2", FIXTURE_SECONDS, Phase)); foreach (EXPG_RepeatAdd late : Adds) PostsHeld(late, true); Finish("timeout"); return; }
   if (EXPG_GarrisonRecord.EXPG_TestRefusals > 0) { Check(false, "no garrison refused, retained as normal AI or released its survivors"); Finish("refusal"); return; }
   foreach (int i, EXPG_RepeatAdd add : Adds)
@@ -322,7 +333,7 @@ class EXPG_GarrisonGameplay : GenericEntity
     if (Now() - PhaseStarted > 90) { Check(false, "first garrison Full-cached within 90 seconds: " + Adds[0].Record.Status); Finish("first sleep"); }
     return;
    }
-   if (!Check(Adds[0].Record.Full != null && Adds[0].Group.GetAgentsCount() == 0, "first garrison Full-cached; its soldiers are gone until wake")) { Finish("first sleep state"); return; }
+   if (!Check(Adds[0].Record.Full != null && !Adds[0].Record.Group, "first garrison Full-cached; its soldiers are gone until wake")) { Finish("first sleep state"); return; }
    if (!AddSquad()) { Finish("add"); return; }
    Advance(2);
    return;
@@ -337,7 +348,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    {
     int mode = 2;
     if (m == 2) mode = 1;
-    Adds[m].Group.EXPG_SetSetting(0, mode);
+    SetMode(Adds[m], mode);
    }
    Advance(5);
    return;
@@ -352,7 +363,7 @@ class EXPG_GarrisonGameplay : GenericEntity
     return;
    }
    bool modes = Adds[2].Record.Simulation != null;
-   foreach (int s, EXPG_RepeatAdd full : Adds) if (s != 2 && (!full.Record.Full || full.Group.GetAgentsCount() != 0)) modes = false;
+   foreach (int s, EXPG_RepeatAdd full : Adds) if (s != 2 && (!full.Record.Full || full.Record.Group)) modes = false;
    if (!Check(modes, "third garrison Simulation-cached, every other garrison Full-cached with its soldiers removed")) { Finish("sleep modes"); return; }
    Advance(6);
    return;
@@ -361,7 +372,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    foreach (EXPG_RepeatAdd held6 : Adds) if (!Asleep(held6.Record)) { Check(false, "garrisons stay cached without a wake cause"); Finish("sleep hold"); return; }
    if (Now() - PhaseStarted < 5) return;
-   Adds[1].Group.EXPG_SetSetting(0, 0);
+   SetMode(Adds[1], 0);
    Advance(7);
    return;
   }
@@ -382,7 +393,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    foreach (int d, EXPG_RepeatAdd other8 : Adds) if (d != 1 && !Asleep(other8.Record)) { Check(false, "other garrisons stay cached while the second is awake"); Finish("independent hold"); return; }
    if (!PostsHeld(Adds[1], true)) { Check(false, "second garrison holds its posts while the others sleep"); Finish("second hold"); return; }
    if (Now() - PhaseStarted < 5) return;
-   foreach (int w, EXPG_RepeatAdd waking : Adds) if (w != 1) waking.Group.EXPG_SetSetting(0, 0);
+   foreach (int w, EXPG_RepeatAdd waking : Adds) if (w != 1) SetMode(waking, 0);
    Advance(9);
    return;
   }

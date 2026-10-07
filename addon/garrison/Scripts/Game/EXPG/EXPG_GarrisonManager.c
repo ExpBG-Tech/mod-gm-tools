@@ -63,6 +63,9 @@ class EXPG_GarrisonMember
  float ReturnSent = -1000;
  static const int MOVE_TRIES = 5;
  static const float MAX_DRIFT = 6;
+ // Loaded from a save: the saved node index, a hint only until the post is remapped
+ // onto the analysed plan by position (EXPG_GarrisonManager.Remap).
+ int NodeHint = -1;
 
  void ReleaseControl()
  {
@@ -244,6 +247,64 @@ class EXPG_GarrisonRecord
  bool HoldShown;
  // A Full restore whose safety check keeps failing waits at most 10 s (WakeFull).
  float WakeHeldSince = -1;
+ // Persistence (EXPG_Snapshot.c). The token is made at adoption and kept across
+ // saves; GeneratedBy is reserved for the Random Garrison module.
+ string Token;
+ string GeneratedBy;
+ // Settings live in the record: a Full-cached garrison has no squad in the world.
+ // The squad's replicated values are the Game Master's edit surface (SyncSettings).
+ int CacheMode = 2;
+ float WakeDistance = 300;
+ float SleepDistance = 400;
+ // Loaded from a save: posts are remapped once the building's plan is analysed,
+ // then it wakes (saved awake or Simulation, which caches again at once when no
+ // player is near) or stays Full cached until a player comes within wake distance.
+ bool RemapPending;
+ bool WakeOnLoad;
+ bool SleepAfterLoad;
+ ref EXPG_BuildingRef Site;
+ // Full refused because the squad could not be captured: Simulation instead, and
+ // Full is tried again ten minutes later (EXPG_GarrisonManager.TrySleep).
+ string FullRefused;
+ float FullRefusedAt;
+ bool FallbackSimulation;
+
+ // The squad's replicated settings are normalized and copied into the record.
+ void SyncSettings()
+ {
+  if (!Group) { return; }
+  vector settings = EXPG_GarrisonSettings.Normalize(Vector(Group.EXPG_WakeDistance, Group.EXPG_SleepDistance, Group.EXPG_CacheMode));
+  Group.EXPG_WakeDistance = settings[0];
+  Group.EXPG_SleepDistance = settings[1];
+  Group.EXPG_CacheMode = settings[2];
+  WakeDistance = settings[0];
+  SleepDistance = settings[1];
+  CacheMode = settings[2];
+ }
+
+ // A Full wake recreated the squad (durable Full): it belongs to this garrison in
+ // the spawning call, before it replicates, with the record's settings and status.
+ void AdoptRestoredGroup(SCR_AIGroup group)
+ {
+  if (!group || Group == group) { return; }
+  Group = group;
+  group.EXPG_Active = true;
+  group.EXPG_WakeDistance = WakeDistance;
+  group.EXPG_SleepDistance = SleepDistance;
+  group.EXPG_CacheMode = CacheMode;
+  group.EXPG_Status = Status;
+  group.GetOnWaypointAdded().Insert(OnWaypoint);
+  group.EXPG_Changed();
+  EXPG_GarrisonPersistence.KeepNewborn(group);
+  PrintFormat("[EXPG Garrison] group=%1 squad recreated for its Full restore", group);
+ }
+
+ // Durable Full sleep: the squad is about to be captured and deleted.
+ void DetachGroup()
+ {
+  UnbindSquadHook();
+  if (Group) { Group.GetOnWaypointAdded().Remove(OnWaypoint); }
+ }
 
  void Report(string message)
  {
@@ -551,6 +612,15 @@ class EXPG_GarrisonManager
  protected int m_RecordCursor;
  protected float m_NextPlayers;
  protected int m_NextFullId = -1;
+ protected float m_Born;
+ // Persistence (EXPG_Persistence.c): a load in progress, its queued ledger, whether
+ // the native ledger was checked, the last logged mode and the exclusion schedule.
+ protected bool m_Importing;
+ protected ref array<ref EXPG_GarrisonSnapshot> m_PendingImport;
+ protected bool m_NativeChecked;
+ protected int m_LastMode = -1;
+ protected float m_NextExclusion;
+ protected float m_NextNotice;
 
  static EXPG_GarrisonManager Get()
  {
@@ -560,7 +630,11 @@ class EXPG_GarrisonManager
    if (s_Instance) { GetGame().GetCallqueue().Remove(s_Instance.Pump); }
    s_Instance = new EXPG_GarrisonManager();
    s_Instance.m_World = GetGame().GetWorld();
+   s_Instance.m_Born = s_Instance.Now();
    GetGame().GetCallqueue().CallLater(s_Instance.Pump, 100, true);
+   // A native load imports its garrisons once persistence is active; mid-session
+   // that is now, so a first Add Garrison is never told garrisons are loading.
+   s_Instance.ServiceNativeImport();
   }
   return s_Instance;
  }
@@ -640,13 +714,24 @@ class EXPG_GarrisonManager
   return reserved;
  }
 
+ // CDF legacy mode only (no EXPBG CDF Compat bridge): Prepare for Save releases garrisons.
  static void RequestReleaseAll()
  {
-  if (!HasActive()) { return; }
+  ReleaseAll("Unit Caching Prepare for Save (CDF without the EXPBG CDF Compat bridge)");
+ }
+
+ // Every garrison wakes and becomes an ordinary squad. Returns how many.
+ static int ReleaseAll(string reason)
+ {
+  if (!HasActive()) { return 0; }
+  int released;
   foreach (EXPG_GarrisonRecord record : s_Instance.m_Records)
   {
-   if (!record.Finished) { record.RequestRelease("Unit Caching Prepare for Save (garrisons are mission-only)"); }
+   if (record.Finished || record.ReleaseRequested) { continue; }
+   record.RequestRelease(reason);
+   released++;
   }
+  return released;
  }
 
  float Now() { return m_World.GetWorldTime() * 0.001; }
@@ -811,9 +896,16 @@ class EXPG_GarrisonManager
   return fallback;
  }
 
+ // A save or load is running. Prepare for Save holds garrisons only in CDF legacy
+ // mode (it releases them there); otherwise garrisons save themselves.
  static bool SaveInProgress()
  {
-  if (EBG_OptimizerControl.Preparing || EBG_CacheSnapshot.Loading) { return true; }
+  if (EBG_CacheSnapshot.Loading) { return true; }
+  if (s_Instance && s_Instance.m_World == GetGame().GetWorld())
+  {
+   if (s_Instance.IsImporting()) { return true; }
+   if (EBG_OptimizerControl.Preparing && s_Instance.PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_LEGACY) { return true; }
+  }
   SaveGameManager saving = GetGame().GetSaveGameManager();
   return saving && saving.IsBusy();
  }
@@ -838,6 +930,7 @@ class EXPG_GarrisonManager
 
  bool CanFit(IEntity building, int count, out string reason)
  {
+  if (IsImporting()) { reason = "Garrisons are loading from a save; add the garrison again in a moment"; return false; }
   if (SaveInProgress()) { reason = "Finish saving and resume Unit Caching before adding a garrison"; return false; }
   reason = "Choose an infantry squad with 1 to 32 members";
   if (count < 1 || count > 32) { return false; }
@@ -864,8 +957,8 @@ class EXPG_GarrisonManager
   return AdoptInternal(group, building, playerId, 0);
  }
 
- // Only the successful native editor spawn callback may call this. Existing
- // Adopt callers never authorize deleting soldiers to fit a smaller building.
+ // Only the successful native editor spawn callback may call this: the fresh
+ // roster is checked before anyone moves. Nobody is ever deleted to fit a building.
  bool AdoptFresh(SCR_AIGroup group, IEntity building, int playerId, int requestedCount)
  {
   if (requestedCount < 1 || requestedCount > 32 || !group || !group.EXPG_FreshRequestMatches(requestedCount)) { return false; }
@@ -887,6 +980,8 @@ class EXPG_GarrisonManager
   record.CreatorId = playerId;
   record.FreshRequested = freshRequested;
   record.Created = Now();
+  record.Token = NewToken();
+  record.SyncSettings();
   group.EXPG_Active = true;
   group.GetOnWaypointAdded().Insert(record.OnWaypoint);
   m_Records.Insert(record);
@@ -936,14 +1031,14 @@ class EXPG_GarrisonManager
   group.GetAgents(agents);
   if (record.FreshRequested > 0 && !group.EXPG_FreshRosterMatches(record.FreshRequested))
   { record.RequestRelease("Fresh squad membership changed; retained as normal AI"); return false; }
-  // A squad added to a building that already has a garrison deploys in full
-  // (free posts first, then extra positions). Only a building's sole garrison
-  // is limited to, and a fresh one trimmed to, the verified safe posts.
+  // Every squad deploys in full and nobody is ever deleted to fit a building. The
+  // first garrison takes the building's planned posts and patrol starts; soldiers
+  // beyond them, and every later squad, follow the reinforcement order: free fixed
+  // posts, interior patrollers (free-room rule), more watch positions, close rings
+  // around the building, then the soldier's own spawn point (ChooseReinforcement).
   bool reinforce = OtherGarrisons(record) > 0;
-  int capacity = record.Plan.Slots.Count();
-  if (reinforce) { capacity = agents.Count(); }
-  int fitting = PlacementCount(agents.Count(), capacity);
-  if (fitting == 0 || (agents.Count() > fitting && record.FreshRequested == 0) || (record.FreshRequested > 0 && agents.Count() != record.FreshRequested))
+  int fitting = PlacementCount(agents.Count(), agents.Count());
+  if (fitting == 0 || (record.FreshRequested > 0 && agents.Count() != record.FreshRequested))
   { record.RequestRelease("Squad cannot fit safely; retained as a normal squad"); return false; }
   array<IEntity> originals = {};
   foreach (AIAgent agent : agents)
@@ -970,9 +1065,10 @@ class EXPG_GarrisonManager
   {
    // Analysis ran while the picker was open. Validate all selected places again
    // before moving anyone; ignore only this squad's original spawn positions.
-   if (!record.Plan.ValidateSlots(fitting, originals))
+   int planned = Math.Min(fitting, record.Plan.Slots.Count());
+   if (planned < 1 || !record.Plan.ValidateSlots(planned, originals))
    { record.RequestRelease("Structure positions changed or are obstructed; retained as a normal squad"); return false; }
-   for (int slotIndex = 0; slotIndex < fitting; slotIndex++)
+   for (int slotIndex = 0; slotIndex < planned; slotIndex++)
    {
     EXPG_BuildingNode slotNode = record.Plan.Nodes[record.Plan.Slots[slotIndex]];
     bool slotFixed = record.Plan.FixedSlots[slotIndex];
@@ -985,38 +1081,17 @@ class EXPG_GarrisonManager
     }
     AddPlacement(placements, null, record.Plan.Slots[slotIndex], slotNode.Position, slotLook, slotFixed, slotKind);
    }
+   // Soldiers beyond the planned posts: same order as an added squad.
+   if (placements.Count() < fitting) { ChooseReinforcement(record, originals, placements); }
   }
   if (placements.Count() < fitting)
   { record.RequestRelease("Garrison positions unavailable; retained as a normal squad"); return false; }
-  // Complete deletion preflight before the first mutation. A refused/late
-  // ownership change never retries trimming or refills a casualty.
-  for (int surplus = fitting; surplus < originals.Count(); surplus++)
-  {
-   SCR_EditableEntityComponent extra = SCR_EditableEntityComponent.GetEditableEntity(originals[surplus]);
-   if (!extra || extra.HasEntityFlag(EEditableEntityFlag.NON_DELETABLE))
-   { record.RequestRelease("Fresh squad surplus cannot be deleted safely; retained as normal AI"); return false; }
-  }
+  // The fresh roster is checked once more before anyone is moved; nobody is deleted.
   bool fresh = record.FreshRequested > 0;
   record.FreshRequested = 0;
   group.EBG_UseCapturedRoster();
-  for (int surplus = originals.Count() - 1; surplus >= fitting; surplus--)
-  {
-   if (!group.EXPG_FreshRosterMatches(originals.Count()))
-   { record.RequestRelease("Fresh squad provenance changed; retained survivors as normal AI"); return false; }
-   foreach (IEntity candidate : originals)
-   {
-    if (!EligiblePlacement(SCR_ChimeraCharacter.Cast(candidate), group))
-    { record.RequestRelease("Fresh squad ownership changed during trimming; retained survivors as normal AI"); return false; }
-   }
-   SCR_EditableEntityComponent extra = SCR_EditableEntityComponent.GetEditableEntity(originals[surplus]);
-   if (!extra || extra.HasEntityFlag(EEditableEntityFlag.NON_DELETABLE) || !group.EXPG_ExpectFreshRemoval(originals[surplus]) || !extra.Delete(false, false) || originals[surplus])
-   { record.RequestRelease("Native surplus deletion was not acknowledged; retained survivors as normal AI"); return false; }
-   originals.RemoveOrdered(surplus);
-  }
-  // Deletion callbacks may modify the roster. Check the remaining identities
-  // before positioning anyone, then retire this one-shot deletion authority.
   if (fresh && !group.EXPG_FreshRosterMatches(originals.Count()))
-  { record.RequestRelease("Fresh squad changed after trimming; retained survivors as normal AI"); return false; }
+  { record.RequestRelease("Fresh squad changed while taking posts; retained as normal AI"); return false; }
   group.EXPG_EndFreshRoster();
   int index;
   array<int> kinds = {0, 0, 0, 0, 0};
@@ -1211,6 +1286,8 @@ class EXPG_GarrisonManager
   int count = originals.Count();
   array<vector> occupied = {};
   OtherGarrisons(record, occupied);
+  // A first garrison's overflow keeps clear of the posts its squad already took.
+  foreach (EXPG_Placement chosen : placements) { occupied.Insert(chosen.Position); }
   foreach (int slotOrder, int slot : plan.Slots)
   {
    if (placements.Count() >= count) { break; }
@@ -1342,6 +1419,7 @@ class EXPG_GarrisonManager
   string reason;
   if (!EBG_SimulationCache.Restore(record.Simulation, reason)) { record.Report(reason); return false; }
   record.Simulation = null;
+  record.FallbackSimulation = false;
   record.Created = Now();
   // Patrollers kept their controls while cached: each stands at his stop for a
   // fresh dwell, then walks again.
@@ -1358,6 +1436,17 @@ class EXPG_GarrisonManager
  protected bool WakeFull(EXPG_GarrisonRecord record)
  {
   EXPG_FullCache full = record.Full;
+  // The recreated squad was deleted (by a Game Master, with its soldiers): nothing
+  // is left to restore and nobody is respawned.
+  if (full.GroupLost())
+  {
+   full.Abandon();
+   record.Full = null;
+   record.FullRecord = null;
+   record.Plan.Unpark(record);
+   record.RequestRelease("Squad deleted");
+   return true;
+  }
   full.ObserveAndHold();
   EBG_FullGroupPhase state = full.GetState();
   if (state == EBG_FullGroupPhase.CACHED || state == EBG_FullGroupPhase.FAILED)
@@ -1425,6 +1514,16 @@ class EXPG_GarrisonManager
   }
   record.Created = Now();
   record.ClearSince = -1;
+  record.WakeOnLoad = false;
+  // Saved Simulation-cached: it caches again on its next tick when no player is
+  // near (the 15 s and 30 s sleep timers are skipped once).
+  if (record.SleepAfterLoad)
+  {
+   record.SleepAfterLoad = false;
+   record.Created = Now() - 16;
+   record.ClearSince = Now() - 31;
+   record.RetryAt = 0;
+  }
   ReleaseSettle(record);
   record.AlertActive = false;
   record.Report("Garrison restored");
@@ -1465,7 +1564,15 @@ class EXPG_GarrisonManager
   record.Full.SetOwner(record);
   record.ReleaseControls();
   record.ParkPosts();
-  if (record.Full.BeginManagedSleep(group)) { record.Report("Full cached (prefab-default kits on restore)"); return; }
+  // Durable Full: the squad is captured and deleted with its soldiers.
+  record.DetachGroup();
+  if (record.Full.BeginManagedSleep(group))
+  {
+   record.Group = null;
+   record.FullRefused = "";
+   record.Report("Full cached (prefab-default kits on restore)");
+   return;
+  }
   string failure = record.Full.GetError();
   if (record.Full.HasDeletionAttempted())
   { record.Report("Full recovery retained: " + failure); return; }
@@ -1474,9 +1581,14 @@ class EXPG_GarrisonManager
   record.Full = null;
   record.FullRecord = null;
   record.Plan.Unpark(record);
+  if (group) { group.GetOnWaypointAdded().Insert(record.OnWaypoint); }
   // Untouched originals: bind again; a guard not bound yet is retried every Tick.
   record.BindControls();
   record.Report("Full cache held: " + failure);
+  // The squad itself could not be captured (orders, AI settings, editor protection):
+  // the next sleep caches it in Simulation instead (TrySleep), Full again later.
+  record.FullRefused = failure;
+  record.FullRefusedAt = Now();
  }
 
  // Why the squad itself cannot be Full cached; empty when it can.
@@ -1514,21 +1626,30 @@ class EXPG_GarrisonManager
   GameProject.GetLoadedAddons(addons);
   if (addons.Contains("6A1876F37D65AB09") && !addons.Contains("07BC942D90324CD9"))
   { record.Report("Cache held: CDF requires the EXPBG GM Tools CDF companion for save protection"); return; }
-  if (EBG_OptimizerControl.Preparing || EBG_CacheSnapshot.Loading) { record.Report("Cache held: a Unit Caching save or load is in progress"); return; }
+  bool legacy = PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_LEGACY;
+  if ((legacy && EBG_OptimizerControl.Preparing) || EBG_CacheSnapshot.Loading || IsImporting()) { record.Report("Cache held: a Unit Caching save or load is in progress"); return; }
   // Patrollers first finish their walk at a stop (silently: not a refusal).
   if (!PatrolsSettled(record)) { return; }
-  if (CacheModeInUse(record.Group) == 2)
+  // Full refused for the squad itself: Simulation instead, Full again after ten minutes.
+  if (!record.FullRefused.IsEmpty() && Now() - record.FullRefusedAt > 600) { record.FullRefused = ""; }
+  bool fallback = !record.FullRefused.IsEmpty() && CacheModeInUse(record.Group) == 2;
+  if (!fallback && CacheModeInUse(record.Group) == 2)
   {
    TryFullSleep(record);
    // A held sleep lets the patrol go on until the next attempt.
    if (!record.Full) { ReleaseSettle(record); }
    return;
   }
+  // Simulation keeps the original actors bound; a refused Full sleep released and
+  // rebound their controls, which may take a tick.
+  if (fallback && !record.BindControls()) { ReleaseSettle(record); return; }
   string reason;
   record.Simulation = EBG_SimulationCache.Suspend(record.Group, reason);
-  // Full chosen, CDF loaded: one status line per sleep names the fallback.
+  record.FallbackSimulation = fallback && record.Simulation != null;
+  // Full chosen, CDF loaded without its bridge: one status line per sleep names the fallback.
   string cachedStatus = "Simulation cached";
-  if (record.Group.EXPG_CacheMode == 2) { cachedStatus = "Simulation cached (CDF loaded)"; }
+  if (record.FallbackSimulation) { cachedStatus = "Simulation cached (Full refused: " + record.FullRefused + ")"; }
+  else if (legacy && record.CacheMode == 2) { cachedStatus = "Simulation cached (CDF loaded)"; }
   if (record.Simulation) { record.Report(cachedStatus); }
   else
   {
@@ -1564,13 +1685,11 @@ class EXPG_GarrisonManager
   }
  }
 
- // CDF Game Master Save (6A1876F37D65AB09) cannot keep Garrison Full survivors.
- // Saves are refused while any garrison is active, and a clear-before-load would
- // delete the retained empty group of a Full-cached garrison (the record could
- // never wake and would block every later save) or respawn its survivors into the
- // loaded scene. So a garrison set to Full caches in Simulation while CDF is
- // loaded: the original soldiers stay on their posts with AI paused, a CDF load
- // deletes them like any squad and nobody is recreated. Read once per mission.
+ // CDF Game Master Save (6A1876F37D65AB09) is loaded. Read once per mission. With
+ // the EXPBG CDF Compat garrison bridge (CdfBridgeVersion) the CDF document carries
+ // the garrison ledger; without it (legacy) a garrison set to Full caches in
+ // Simulation, CDF saves are refused while a garrison is active and a CDF load
+ // deletes the soldiers like any squad (0.1.8 rules).
  protected int m_CdfLoaded = -1;
  protected bool CdfLoaded()
  {
@@ -1584,13 +1703,47 @@ class EXPG_GarrisonManager
   return m_CdfLoaded == 1;
  }
 
+ // EXPBG CDF Compat 0.1.6 and later override this with EXPG_GarrisonPersistence.
+ // BRIDGE_API: its bridge saves and loads the garrison ledger in the CDF document.
+ // An instance method on purpose: a modded static would bind to this base version.
+ protected int CdfBridgeVersion()
+ {
+  return 0;
+ }
+
+ // EXPG_GarrisonPersistence mode (native, CDF bridged, CDF legacy); a change is logged.
+ int PersistenceMode()
+ {
+  int mode = EXPG_GarrisonPersistence.MODE_NATIVE;
+  if (CdfLoaded())
+  {
+   mode = EXPG_GarrisonPersistence.MODE_CDF_LEGACY;
+   if (CdfBridgeVersion() == EXPG_GarrisonPersistence.BRIDGE_API) { mode = EXPG_GarrisonPersistence.MODE_CDF_BRIDGED; }
+  }
+  if (mode != m_LastMode)
+  {
+   m_LastMode = mode;
+   PrintFormat("[EXPG SAVE] garrison persistence mode: %1 (CDF bridge API %2, expected %3)", EXPG_GarrisonPersistence.ModeName(mode), CdfBridgeVersion(), EXPG_GarrisonPersistence.BRIDGE_API);
+  }
+  return mode;
+ }
+
  // The cache mode a garrison runs: 0 Off, 1 Simulation, 2 Full. The GM's choice
- // (EXPG_CacheMode) is kept; only its use changes while CDF is loaded.
+ // (EXPG_CacheMode) is kept; only its use changes while CDF is loaded without the
+ // EXPBG CDF Compat garrison bridge (legacy).
  int CacheModeInUse(SCR_AIGroup group)
  {
   int mode;
   if (group) { mode = group.EXPG_CacheMode; }
-  if (mode == 2 && CdfLoaded()) { mode = 1; }
+  if (mode == 2 && CdfLoaded() && PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_LEGACY) { mode = 1; }
+  return mode;
+ }
+
+ // The same for a record: a Full-cached garrison has no squad in the world.
+ int RecordModeInUse(EXPG_GarrisonRecord record)
+ {
+  int mode = record.CacheMode;
+  if (mode == 2 && CdfLoaded() && PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_LEGACY) { mode = 1; }
   return mode;
  }
 
@@ -1598,15 +1751,631 @@ class EXPG_GarrisonManager
  string CacheState(EXPG_GarrisonRecord record)
  {
   string text = "awake on their posts";
-  if (record.Full && record.Full.GetState() == EBG_FullGroupPhase.CACHED) { text = "Full cached"; }
+  if (record.RemapPending) { text = "loaded from a save, analysing the building"; }
+  else if (record.Full && record.Full.GetState() == EBG_FullGroupPhase.CACHED) { text = "Full cached"; }
   else if (record.Full) { text = "restoring Full survivors"; }
   else if (record.Simulation && record.Simulation.Suspended) { text = "Simulation cached"; }
   else if (record.Simulation) { text = "restoring from Simulation"; }
   else if (!record.Ready) { text = "taking their posts"; }
-  else if (!record.Group || record.Group.EXPG_CacheMode == 0) { text = "awake, caching Off"; }
+  else if (record.CacheMode == 0) { text = "awake, caching Off"; }
   else if (record.Status.Contains("Cache held") || record.Status.Contains("cache held")) { text = "awake, caching held (see the garrison status)"; }
-  if (record.Simulation && record.Group && record.Group.EXPG_CacheMode == 2 && CdfLoaded()) { text += " (CDF loaded)"; }
+  if (record.Simulation && record.CacheMode == 2 && PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_LEGACY) { text += " (CDF loaded)"; }
+  else if (record.Simulation && record.FallbackSimulation) { text += " (Full refused)"; }
   return text;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Persistence: save exclusion, ledger export and import (EXPG_Persistence.c)
+ //------------------------------------------------------------------------------------------------
+ protected string NewToken()
+ {
+  string token;
+  for (int attempt = 0; attempt < 8; attempt++)
+  {
+   token = string.Format("G%1-%2", Math.RandomInt(100000000, 999999999), Math.RandomInt(100000000, 999999999));
+   bool used = false;
+   foreach (EXPG_GarrisonRecord record : m_Records)
+   {
+    if (record.Token == token) { used = true; break; }
+   }
+   if (!used) { break; }
+  }
+  return token;
+ }
+
+ // A living guard still in his squad, never possessed: the garrison saves him.
+ protected bool OwnsActor(EXPG_GarrisonRecord record, EXPG_GarrisonMember member)
+ {
+  EBG_CacheMember cache = member.CacheMember;
+  SCR_ChimeraCharacter actor = cache.Entity;
+  if (cache.Dead || cache.WasPlayer || !actor || !record.Group || actor.GetCharacterGroup() != record.Group) { return false; }
+  if (actor.EBG_WasPlayerControlled() || actor.EBG_HasLeftSquad() || IsDeadActor(actor)) { return false; }
+  CharacterControllerComponent controller = actor.GetCharacterController();
+  return controller && !controller.IsPlayerControlled();
+ }
+
+ // Saved by the ledger: a Full transaction, or a squad and living guards that a load
+ // can delete and recreate. A squad the editor protects from deletion (a scenario
+ // squad) is left to the other saves as an ordinary squad (its posts are not kept).
+ protected bool Portable(EXPG_GarrisonRecord record)
+ {
+  if (record.Full) { return true; }
+  if (!record.Group || !EBG_PrefabFullCache.CanDeleteFullEntity(record.Group)) { return false; }
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   if (OwnsActor(record, member) && !EBG_PrefabFullCache.CanDeleteFullEntity(member.CacheMember.Entity)) { return false; }
+  }
+  return true;
+ }
+
+ // Every owned entity of a Ready, portable garrison leaves the other saves; whatever
+ // is no longer owned is handed back (EXPG_SaveExclusion). Bounded by the records.
+ void SyncExclusion()
+ {
+  bool flag = PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_BRIDGED;
+  EXPG_SaveExclusion.BeginSync();
+  foreach (EXPG_GarrisonRecord record : m_Records)
+  {
+   if (record.Finished || !record.Ready || !Portable(record)) { continue; }
+   SCR_AIGroup group = record.Group;
+   if (group)
+   {
+    EXPG_SaveExclusion.Keep(group, flag);
+    array<AIWaypoint> orders = {};
+    group.GetWaypoints(orders);
+    foreach (AIWaypoint order : orders) { EXPG_SaveExclusion.Keep(order, flag); }
+   }
+   foreach (EXPG_GarrisonMember member : record.Members)
+   {
+    if (OwnsActor(record, member)) { EXPG_SaveExclusion.Keep(member.CacheMember.Entity, flag); }
+   }
+  }
+  EXPG_SaveExclusion.EndSync();
+ }
+
+ void KeepOwned(IEntity entity)
+ {
+  EXPG_SaveExclusion.Keep(entity, PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_BRIDGED);
+ }
+
+ // False while a load is replacing the garrisons; for CDF in legacy mode, also while
+ // any garrison is active (Prepare for Save releases them first, as in 0.1.8).
+ bool LedgerAllowed(bool forCdf, out string reason)
+ {
+  reason = "";
+  if (forCdf && PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_LEGACY && HasActive())
+  {
+   reason = "Use Unit Caching Prepare for Save to restore and release all garrisons, then wait for Ready. Without the EXPBG CDF Compat garrison bridge, garrison assignments are mission-only under CDF.";
+   return false;
+  }
+  if (m_Importing && !m_PendingImport)
+  {
+   reason = "A load is replacing the garrisons; save again once it has finished";
+   return false;
+  }
+  return true;
+ }
+
+ // Queued imports verbatim, then every Ready portable garrison in record order.
+ bool ExportLedger(notnull array<ref EXPG_GarrisonSnapshot> ledger, out string reason)
+ {
+  reason = "";
+  if (m_PendingImport)
+  {
+   foreach (EXPG_GarrisonSnapshot pending : m_PendingImport) { ledger.Insert(pending); }
+  }
+  int order = ledger.Count();
+  int protectedSquads;
+  foreach (EXPG_GarrisonRecord record : m_Records)
+  {
+   if (record.Finished || !record.Ready) { continue; }
+   if (!Portable(record)) { protectedSquads++; continue; }
+   string why;
+   EXPG_GarrisonSnapshot saved = ExportRecord(record, why);
+   if (!saved)
+   {
+    if (why.IsEmpty()) { continue; }
+    reason = string.Format("garrison %1 (%2) cannot be saved: %3", record.Token, record.Group, why);
+    return false;
+   }
+   saved.OrderIndex = order;
+   if (saved.Squad.Token <= 0) { saved.Squad.Token = order + 1; }
+   order++;
+   ledger.Insert(saved);
+  }
+  if (protectedSquads > 0) { PrintFormat("[EXPG SAVE] %1 garrisons are protected from deletion by the editor and save as ordinary squads (their posts are not kept)", protectedSquads, level: LogLevel.WARNING); }
+  return EXPG_Ledger.Validate(ledger, reason);
+ }
+
+ // One garrison, read only. Null with an empty reason: nothing alive to save.
+ protected EXPG_GarrisonSnapshot ExportRecord(EXPG_GarrisonRecord record, out string reason)
+ {
+  reason = "";
+  record.SyncSettings();
+  if (record.Token.IsEmpty()) { record.Token = NewToken(); }
+  EXPG_GarrisonSnapshot saved = new EXPG_GarrisonSnapshot();
+  saved.Token = record.Token;
+  saved.GeneratedBy = record.GeneratedBy;
+  saved.CacheMode = record.CacheMode;
+  saved.WakeDistance = record.WakeDistance;
+  saved.SleepDistance = record.SleepDistance;
+  saved.ReleaseRequested = record.ReleaseRequested;
+  saved.ReleaseReason = record.ReleaseReason;
+  if (record.Plan.Structure) { saved.Site.Capture(record.Plan.Structure); }
+  else if (record.Site) { saved.Site.CopyFrom(record.Site); }
+  if (!saved.Site.Valid()) { reason = "its building is unknown"; return null; }
+  EXPG_FullCache full = record.Full;
+  if (full)
+  {
+   // Cached, or waking: rows not created yet are written from the transaction.
+   saved.CacheState = 2;
+   saved.Squad = full.LedgerSquad();
+  }
+  if (!saved.Squad)
+  {
+   if (record.Simulation) { saved.CacheState = 1; }
+   saved.Squad = new EBG_CacheGroupSnapshot();
+   if (!record.Group || !saved.Squad.CaptureForLedger(record.Group, 0, true))
+   {
+    reason = "its squad could not be recorded: " + saved.Squad.CaptureProblem;
+    return null;
+   }
+  }
+  IEntity leader;
+  if (record.Group) { leader = record.Group.GetLeaderEntity(); }
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   EBG_CacheMember cache = member.CacheMember;
+   EXPG_MemberSnapshot row = new EXPG_MemberSnapshot();
+   row.Id = cache.Id;
+   row.Fixed = member.Fixed;
+   row.PostKind = member.PostKind;
+   row.NodeHint = member.NodeIndex;
+   if (record.RemapPending) { row.NodeHint = member.NodeHint; }
+   vector post = member.PostPoint();
+   row.LocalPost = saved.Site.ToLocal(post);
+   row.LocalLook = saved.Site.DirToLocal(member.PostLook);
+   vector transform[4];
+   EBG_SurvivorCarry carry = null;
+   row.Dead = cache.Dead;
+   if (!row.Dead && full)
+   {
+    EBG_PrefabSurvivor survivor = full.FindRow(cache);
+    if (!survivor || survivor.Abandoned)
+    {
+     // A possessed guard belongs to the other saves; any other missing row is a casualty.
+     if (cache.WasPlayer) { continue; }
+     row.Dead = true;
+    }
+    else if (!survivor.Created)
+    {
+     row.Prefab = survivor.Prefab;
+     for (int axis = 0; axis < 4; axis++) { transform[axis] = survivor.Transform[axis]; }
+     row.Author = survivor.Author;
+     carry = survivor.Carry;
+    }
+    else if (survivor.Entity && !IsDeadActor(survivor.Entity) && !cache.WasPlayer)
+    {
+     survivor.Entity.GetWorldTransform(transform);
+     row.Prefab = SCR_ResourceNameUtils.GetPrefabName(survivor.Entity);
+     row.Author.Capture(survivor.Entity);
+     carry = new EBG_SurvivorCarry();
+     carry.Capture(survivor.Entity);
+    }
+    else if (cache.WasPlayer) { continue; }
+    else { row.Dead = true; }
+   }
+   else if (!row.Dead)
+   {
+    SCR_ChimeraCharacter actor = cache.Entity;
+    // A possessed guard or a leaver belongs to the other saves now.
+    if (cache.WasPlayer) { continue; }
+    if (!actor || IsDeadActor(actor)) { row.Dead = true; }
+    else if (!OwnsActor(record, member)) { continue; }
+    else
+    {
+     actor.GetWorldTransform(transform);
+     row.Prefab = SCR_ResourceNameUtils.GetPrefabName(actor);
+     row.Author.Capture(actor);
+     carry = new EBG_SurvivorCarry();
+     carry.Capture(actor);
+    }
+   }
+   if (!row.Dead)
+   {
+    // He restores where he stood when that is within reach of his post (or stop),
+    // otherwise on the post itself: a loaded guard is always bindable.
+    vector at = transform[3];
+    vector facing = transform[2];
+    if (vector.DistanceXZ(at, post) > 1.2 || Math.AbsFloat(at[1] - post[1]) > 0.9)
+    {
+     at = post;
+     facing = member.PostLook;
+    }
+    facing[1] = 0;
+    if (facing.Length() < 0.1) { facing = member.PostLook; }
+    row.LocalLast = saved.Site.ToLocal(at);
+    row.LocalFacing = saved.Site.DirToLocal(facing);
+    row.WorldLast = at;
+    row.WorldFacing = facing;
+    if (carry) { row.CaptureCarry(carry); }
+    if (leader && cache.Entity == leader) { saved.LeaderId = row.Id; }
+   }
+   saved.Members.Insert(row);
+  }
+  if (saved.AliveCount() == 0) { return null; }
+  if (saved.LeaderId == 0)
+  {
+   foreach (EXPG_MemberSnapshot first : saved.Members)
+   {
+    if (!first.Dead) { saved.LeaderId = first.Id; break; }
+   }
+  }
+  return saved;
+ }
+
+ // A load replaces the scene, or a native load is not active yet.
+ bool IsImporting()
+ {
+  return m_Importing || NativeLoadPending();
+ }
+
+ // A native save is being loaded and its persistence is not active yet (at most two
+ // minutes): its garrisons come first.
+ protected bool NativeLoadPending()
+ {
+  if (m_NativeChecked) { return false; }
+  PersistenceSystem system = PersistenceSystem.GetInstance();
+  if (!system || !system.WasDataLoaded()) { return false; }
+  return system.GetState() < EPersistenceSystemState.ACTIVE && Now() - m_Born < 120;
+ }
+
+ bool NativeImportChecked()
+ {
+  return m_NativeChecked;
+ }
+
+ // Native carrier: once persistence is active, the ledger read by the serializer is
+ // imported (a native load always starts a fresh world: nothing to discard).
+ protected void ServiceNativeImport()
+ {
+  if (m_Importing || NativeLoadPending()) { return; }
+  m_NativeChecked = true;
+  string problem;
+  array<ref EXPG_GarrisonSnapshot> ledger = EXPG_GarrisonPersistence.TakeNativeLedger(problem);
+  if (!problem.IsEmpty()) { EXPG_GarrisonNotice.Post("The garrisons of this save could not be loaded: " + problem + ". The rest of the save loaded; the garrisons were not restored."); }
+  if (!ledger || ledger.IsEmpty()) { return; }
+  string reason;
+  if (!StartImport(reason) || !Queue(ledger, reason))
+  {
+   StopImport();
+   EXPG_GarrisonNotice.Post("The garrisons of this save were not loaded: " + reason);
+   return;
+  }
+  Materialize();
+ }
+
+ bool StartImport(out string reason)
+ {
+  reason = "a garrison load is already in progress";
+  if (m_Importing) { return false; }
+  m_Importing = true;
+  m_PendingImport = null;
+  // A carrier's clear decides by OwnsForSave: the owned set must be current.
+  SyncExclusion();
+  reason = "";
+  return true;
+ }
+
+ void StopImport()
+ {
+  m_Importing = false;
+  m_PendingImport = null;
+ }
+
+ // A load replaced the scene: every garrison of the old scene is forgotten without
+ // waking or respawning anyone. Soldiers the load did not remove wake as ordinary
+ // AI; plans and Add Garrison requests are dropped; the exclusion is handed back.
+ void DiscardAll(string why)
+ {
+  int discarded;
+  foreach (EXPG_GarrisonRecord record : m_Records)
+  {
+   if (record.Finished) { continue; }
+   discarded++;
+   if (record.Full)
+   {
+    record.Full.Abandon();
+    record.Full = null;
+    record.FullRecord = null;
+   }
+   if (record.Simulation)
+   {
+    bool present = false;
+    foreach (EBG_SimulationAgent saved : record.Simulation.Members)
+    {
+     if (saved.Character) { present = true; }
+     else if (saved.Devices) { saved.Devices.Discard(); }
+    }
+    string ignored;
+    if (present) { EBG_SimulationCache.Restore(record.Simulation, ignored); }
+    record.Simulation = null;
+   }
+   record.RequestRelease(why);
+   record.FinishRelease();
+  }
+  m_Records.Clear();
+  foreach (EXPG_PlanWaiter waiter : m_Waiters)
+  {
+   if (waiter.Finished) { continue; }
+   waiter.Finished = true;
+   waiter.OnFailed("a save was loaded; use EXPBG Add Garrison again");
+  }
+  m_Waiters.Clear();
+  m_Plans.Clear();
+  m_PendingImport = null;
+  EXPG_SaveExclusion.ReleaseAll();
+  if (discarded > 0) { PrintFormat("[EXPG LOAD] %1 garrisons of the previous scene discarded (%2); nobody was woken or respawned", discarded, why); }
+ }
+
+ bool Queue(array<ref EXPG_GarrisonSnapshot> ledger, out string reason)
+ {
+  reason = "no garrison load was started";
+  if (!m_Importing || !ledger) { return false; }
+  if (!EXPG_Ledger.Validate(ledger, reason)) { return false; }
+  m_PendingImport = {};
+  foreach (EXPG_GarrisonSnapshot saved : ledger)
+  {
+   int at = m_PendingImport.Count();
+   while (at > 0 && m_PendingImport[at - 1].OrderIndex > saved.OrderIndex) { at--; }
+   m_PendingImport.InsertAt(saved, at);
+  }
+  reason = "";
+  return true;
+ }
+
+ // The carrier's world is final: create the loaded garrisons in saved order. Nothing
+ // spawns here; each waits for its building's plan (ServiceLoaded).
+ void Materialize()
+ {
+  if (!m_Importing) { return; }
+  array<ref EXPG_GarrisonSnapshot> pending = m_PendingImport;
+  m_PendingImport = null;
+  m_Importing = false;
+  if (!pending || pending.IsEmpty()) { return; }
+  int created, lost, skipped, awake, simulation, full;
+  foreach (EXPG_GarrisonSnapshot saved : pending)
+  {
+   EXPG_GarrisonRecord record = ImportRecord(saved);
+   if (!record) { skipped++; continue; }
+   created++;
+   if (!record.Plan.Structure) { lost++; }
+   if (saved.CacheState == 0) { awake++; }
+   else if (saved.CacheState == 1) { simulation++; }
+   else { full++; }
+  }
+  PrintFormat("[EXPG LOAD] garrisons=%1 lost=%2 skipped=%3 awake=%4 simulation=%5 full=%6", created, lost, skipped, awake, simulation, full);
+  string message = string.Format("Loaded %1 garrisons from the save (%2 awake, %3 Simulation cached, %4 Full cached).", created, awake, simulation, full);
+  if (lost > 0) { message += string.Format(" %1 lost their building and are released as ordinary squads.", lost); }
+  if (skipped > 0) { message += string.Format(" %1 had no surviving guards or were already present (see [EXPG LOAD] in the server log).", skipped); }
+  EXPG_GarrisonNotice.Post(message);
+ }
+
+ // One loaded garrison, created Full cached with no soldier in the world. Its squad
+ // and survivors spawn at wake (casualties never), AI pinned until bound.
+ protected EXPG_GarrisonRecord ImportRecord(EXPG_GarrisonSnapshot saved)
+ {
+  foreach (EXPG_GarrisonRecord existing : m_Records)
+  {
+   if (!existing.Finished && existing.Token == saved.Token)
+   {
+    PrintFormat("[EXPG LOAD] garrison %1 already exists; its saved copy is not loaded twice", saved.Token, level: LogLevel.WARNING);
+    return null;
+   }
+  }
+  if (saved.AliveCount() == 0)
+  {
+   PrintFormat("[EXPG LOAD] garrison %1 had no surviving guards; nothing to restore", saved.Token);
+   return null;
+  }
+  string missing;
+  IEntity building = saved.Site.Find(missing);
+  EXPG_BuildingPlan plan;
+  if (building)
+  {
+   plan = Prepare(building);
+   if (!plan) { missing = m_PrepareFailure; }
+  }
+  bool lost = !plan;
+  if (lost)
+  {
+   // No building to hold: a plan without structure keeps the origin for distances.
+   plan = new EXPG_BuildingPlan();
+   plan.Origin = saved.Site.Transform[3];
+   plan.Done = true;
+   plan.Error = missing;
+   PrintFormat("[EXPG LOAD] garrison %1: %2 (%3); its survivors restore as an ordinary squad", saved.Token, missing, saved.Site.Describe(), level: LogLevel.WARNING);
+  }
+  EXPG_GarrisonRecord record = new EXPG_GarrisonRecord();
+  record.Token = saved.Token;
+  record.GeneratedBy = saved.GeneratedBy;
+  vector settings = EXPG_GarrisonSettings.Normalize(Vector(saved.WakeDistance, saved.SleepDistance, saved.CacheMode));
+  record.WakeDistance = settings[0];
+  record.SleepDistance = settings[1];
+  record.CacheMode = settings[2];
+  record.Plan = plan;
+  record.Site = saved.Site;
+  record.Ready = true;
+  record.Created = Now();
+  record.RemapPending = true;
+  record.WakeOnLoad = saved.CacheState != 2;
+  record.SleepAfterLoad = saved.CacheState == 1;
+  EBG_CacheGroup captured = new EBG_CacheGroup();
+  captured.Id = m_NextFullId--;
+  captured.Anchor = plan.Origin;
+  array<ref EBG_PrefabSurvivor> rows = {};
+  foreach (EXPG_MemberSnapshot row : saved.Members)
+  {
+   EXPG_GarrisonMember member = new EXPG_GarrisonMember();
+   member.Plan = plan;
+   member.CacheMember = new EBG_CacheMember();
+   member.CacheMember.Id = row.Id;
+   member.CacheMember.Dead = row.Dead;
+   member.Fixed = row.Fixed;
+   member.PostKind = row.PostKind;
+   member.NodeIndex = -1;
+   member.NodeHint = row.NodeHint;
+   member.PostPosition = saved.Site.ToWorld(row.LocalPost);
+   member.PostLook = saved.Site.DirToWorld(row.LocalLook);
+   member.GivenPost = member.PostPosition;
+   member.Arrived = true;
+   vector spawn[4];
+   SpawnTransform(saved.Site, row, lost, spawn);
+   member.CacheMember.Position = spawn[3];
+   record.Members.Insert(member);
+   captured.Members.Insert(member.CacheMember);
+   if (row.Dead)
+   {
+    captured.Dead++;
+    continue;
+   }
+   EBG_PrefabSurvivor survivor = new EBG_PrefabSurvivor();
+   survivor.Member = member.CacheMember;
+   survivor.Prefab = row.Prefab;
+   for (int axis = 0; axis < 4; axis++) { survivor.Transform[axis] = spawn[axis]; }
+   survivor.Author = row.Author;
+   survivor.Emplacement = new EBG_StaticEmplacement();
+   row.FillCarry(survivor.Carry);
+   // The squad leader is restored first, so he leads the recreated squad again.
+   if (row.Id == saved.LeaderId) { rows.InsertAt(survivor, 0); }
+   else { rows.Insert(survivor); }
+   captured.FullMembers.Insert(member.CacheMember);
+   captured.Alive++;
+  }
+  record.FullRecord = captured;
+  record.Full = new EXPG_FullCache();
+  record.Full.SetRecord(captured);
+  record.Full.SetOwner(record);
+  if (!record.Full.ImportCached(saved.Squad, rows))
+  {
+   PrintFormat("[EXPG LOAD] garrison %1: its squad snapshot could not be restored; not loaded", saved.Token, level: LogLevel.ERROR);
+   return null;
+  }
+  if (lost) { record.RequestRelease("Loaded from save: " + missing + "; released as an ordinary squad"); }
+  else if (saved.ReleaseRequested) { record.RequestRelease("Loaded from save: " + saved.ReleaseReason); }
+  if (!record.ReleaseRequested) { record.Report("Loaded from save: analysing the building"); }
+  m_Records.Insert(record);
+  return record;
+ }
+
+ // Upright, at the saved last position (building-local), or at the world position
+ // when the building is gone (snapped to the surface below).
+ protected void SpawnTransform(EXPG_BuildingRef site, EXPG_MemberSnapshot row, bool lost, out vector transform[4])
+ {
+  vector point = site.ToWorld(row.LocalLast);
+  vector facing = site.DirToWorld(row.LocalFacing);
+  if (lost)
+  {
+   point = GroundPoint(row.WorldLast);
+   facing = row.WorldFacing;
+  }
+  facing[1] = 0;
+  float yaw = 0;
+  if (facing.Length() > 0.1) { yaw = facing.ToYaw(); }
+  Math3D.AnglesToMatrix(Vector(yaw, 0, 0), transform);
+  transform[3] = point;
+ }
+
+ protected vector GroundPoint(vector point)
+ {
+  TraceParam trace = new TraceParam();
+  trace.Start = point + "0 1.5 0";
+  trace.End = point - "0 30 0";
+  trace.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  trace.LayerMask = EPhysicsLayerDefs.CharacterAI;
+  float hit = m_World.TraceMove(trace, null);
+  if (hit < 1) { return vector.Lerp(trace.Start, trace.End, hit) + "0 0.05 0"; }
+  vector ground = point;
+  ground[1] = m_World.GetSurfaceY(point[0], point[2]);
+  return ground;
+ }
+
+ // A loaded garrison waits for its building's plan (analysed first while it must
+ // wake or a player is near), then takes its posts back (Remap).
+ protected bool ServiceLoaded(EXPG_GarrisonRecord record)
+ {
+  EXPG_BuildingPlan plan = record.Plan;
+  if (plan.Structure && !plan.Done)
+  {
+   plan.LastUsed = Now();
+   if (record.WakeOnLoad || Near(record, record.WakeDistance)) { plan.WaitedAt = Now(); }
+   return false;
+  }
+  Remap(record);
+  return true;
+ }
+
+ // Posts and patrol stops are saved building-local. A saved node is kept when it
+ // still stands within 0.1 m of the post, else the nearest standing node within
+ // 0.25 m is taken, else the post stays off the plan at the saved spot. A patrol
+ // stop that cannot be found again becomes a fixed post where the patroller wakes.
+ // An unusable plan (building changed or gone) releases the squad when it wakes.
+ protected void Remap(EXPG_GarrisonRecord record)
+ {
+  record.RemapPending = false;
+  EXPG_BuildingPlan plan = record.Plan;
+  bool usable = plan.Structure && plan.Done && plan.Error.IsEmpty() && plan.Valid();
+  int kept, moved, offPlan, fixedPatrols;
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   if (member.CacheMember.Dead) { continue; }
+   vector post = member.PostPosition;
+   int node = -1;
+   if (usable)
+   {
+    int hint = member.NodeHint;
+    if (hint >= 0 && hint < plan.Nodes.Count() && plan.Nodes[hint].Reachable && vector.DistanceSq(plan.Nodes[hint].Position, post) <= 0.01) { node = hint; kept++; }
+    else
+    {
+     node = plan.NearestNode(post, 0.25, true);
+     if (node >= 0) { moved++; }
+    }
+   }
+   if (!member.Fixed)
+   {
+    if (node >= 0 && plan.Nodes[node].Reachable)
+    {
+     member.NodeIndex = node;
+     member.PatrolState = new EXPG_PatrolState();
+     member.PatrolState.NodeIndex = node;
+     member.PatrolState.Target = -1;
+     member.PatrolState.From = member.CacheMember.Position;
+     member.PatrolState.To = plan.Nodes[node].Position;
+    }
+    else
+    {
+     member.Fixed = true;
+     member.NodeIndex = -1;
+     member.PostPosition = member.CacheMember.Position;
+     fixedPatrols++;
+    }
+   }
+   else
+   {
+    member.NodeIndex = node;
+    if (node < 0) { offPlan++; }
+   }
+   member.GivenPost = member.PostPoint();
+  }
+  PrintFormat("[EXPG LOAD] garrison %1 posts: kept %2, remapped %3, off the plan %4, patrols held as fixed posts %5, plan usable %6", record.Token, kept, moved, offPlan, fixedPatrols, usable);
+  if (!usable && !record.ReleaseRequested)
+  {
+   string why = plan.Error;
+   if (why.IsEmpty()) { why = "the building changed"; }
+   record.RequestRelease("Loaded from save: " + why + "; released as an ordinary squad");
+  }
+  record.ParkPosts();
+  if (!record.ReleaseRequested && record.Full && !record.WakeOnLoad) { record.Report("Full cached (loaded from save)"); }
  }
 
  // Seconds without any guard of the building at ALERTED or above before the
@@ -1798,14 +2567,18 @@ class EXPG_GarrisonManager
 
  protected void Tick(EXPG_GarrisonRecord record)
  {
-  if (!record.Group) { record.RequestRelease("Squad deleted"); }
+  // A loaded garrison waits for its building's analysis, then takes its posts back.
+  if (record.RemapPending && !ServiceLoaded(record)) { return; }
+  // Durable Full: a Full-cached garrison has no squad in the world until it wakes.
+  if (!record.Group && !record.Full) { record.RequestRelease("Squad deleted"); }
   if (!record.Plan.Valid()) { record.RequestRelease("Building moved or was replaced"); }
+  record.SyncSettings();
   // One floor support check per group service catches damaged or removed floors
   // without rescanning the whole building. Never a release and never a teleport:
   // a guard whose floor gives way falls and holds where he lands (PostControl);
   // until then caching is held. Debris on a post is no floor loss while the guard
   // still stands on something.
-  if (!record.Members.IsEmpty())
+  if (!record.Members.IsEmpty() && record.Plan.Structure)
   {
    EXPG_GarrisonMember check = record.Members[record.SafetyCursor++ % record.Members.Count()];
    SCR_ChimeraCharacter standing = check.CacheMember.Entity;
@@ -1819,16 +2592,18 @@ class EXPG_GarrisonManager
   }
   if (record.Full)
   {
-   bool wakeFull = record.ReleaseRequested || !record.Group || CacheModeInUse(record.Group) != 2;
-   if (record.Group && Near(record, record.Group.EXPG_WakeDistance)) { wakeFull = true; }
+   bool wakeFull = record.ReleaseRequested || record.WakeOnLoad || RecordModeInUse(record) != 2;
+   if (Near(record, record.WakeDistance)) { wakeFull = true; }
    if (record.Full.GetState() != EBG_FullGroupPhase.CACHED) { wakeFull = true; }
    if (!wakeFull || !Wake(record)) { return; }
   }
   if (record.Simulation)
   {
-   // A Full garrison Simulation-cached because CDF is loaded runs mode 1 too.
-   bool wake = record.ReleaseRequested || !record.Group || CacheModeInUse(record.Group) != 1;
-   if (record.Group && Near(record, record.Group.EXPG_WakeDistance)) { wake = true; }
+   // A Full garrison Simulation-cached (CDF legacy, or Full refused) runs mode 1 too.
+   int simulationMode = RecordModeInUse(record);
+   if (record.FallbackSimulation && simulationMode == 2) { simulationMode = 1; }
+   bool wake = record.ReleaseRequested || !record.Group || simulationMode != 1;
+   if (Near(record, record.WakeDistance)) { wake = true; }
    if (!record.Simulation.Suspended) { wake = true; }
    // Death, external deletion, a squad change and possession wake the sleeping
    // originals, even when no player has crossed the distance boundary. Awake,
@@ -1983,12 +2758,9 @@ class EXPG_GarrisonManager
   }
   else if (record.Status == "Native controls are initializing") { record.Report("Garrison active"); }
   ServiceAlert(record);
-  vector settings = EXPG_GarrisonSettings.Normalize(Vector(record.Group.EXPG_WakeDistance, record.Group.EXPG_SleepDistance, record.Group.EXPG_CacheMode));
-  record.Group.EXPG_WakeDistance = settings[0];
-  record.Group.EXPG_SleepDistance = settings[1];
-  record.Group.EXPG_CacheMode = settings[2];
+  record.SyncSettings();
   // Awake by design (caching Off, a player near, just placed or woken): no hold.
-  if (record.Group.EXPG_CacheMode == 0 || Near(record, record.Group.EXPG_SleepDistance) || Now() - record.Created < 15)
+  if (record.CacheMode == 0 || Near(record, record.SleepDistance) || Now() - record.Created < 15)
   { record.ClearSince = -1; ReleaseSettle(record); record.ClearHold(); return; }
   // An alarm, like combat, keeps the garrison awake until it calms down; any
   // other hold names its reason ("Cache held: ...").
@@ -2012,6 +2784,15 @@ class EXPG_GarrisonManager
   if (!GetGame() || GetGame().GetWorld() != m_World || !GetGame().InPlayMode())
   { if (GetGame()) { GetGame().GetCallqueue().Remove(Pump); } return; }
   if (Now() >= m_NextPlayers) { Players(); m_NextPlayers = Now() + 1; }
+  // Once a second: owned entities stay out of the other saves; a native ledger is
+  // imported once persistence is active; load notices reach late Game Masters.
+  if (Now() >= m_NextExclusion)
+  {
+   m_NextExclusion = Now() + 1;
+   if (!m_Importing) { SyncExclusion(); }
+   ServiceNativeImport();
+   EXPG_GarrisonNotice.Deliver();
+  }
   if (!m_Plans.IsEmpty())
   {
    // About 4 ms of analysis per 100 ms pump: large buildings finish in seconds
@@ -2027,7 +2808,9 @@ class EXPG_GarrisonManager
    if (!used && Now() - plan.LastUsed > 120) { m_Plans.RemoveItem(plan); }
   }
   ServiceWaiters();
+  // A carrier is replacing the garrisons: no record is ticked until it has finished.
   int serviceCount = Math.Min(4, m_Records.Count());
+  if (m_Importing) { serviceCount = 0; }
   for (int i = 0; i < serviceCount && !m_Records.IsEmpty(); i++)
   {
    m_RecordCursor = m_RecordCursor % m_Records.Count();

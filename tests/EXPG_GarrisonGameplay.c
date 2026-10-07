@@ -113,7 +113,8 @@ modded class SCR_AIGroup
   bool sameLeader = leader && leader.GetID() == EXPG_TestOriginalLeader && retained.Contains(EXPG_TestOriginalLeader);
   PrintFormat("[EXPG TRIM SPAWN] synchronous=%1 queued=%2", EXPG_TestInitialAdmissions, EXPG_TestNativeAdmissions.Count() - EXPG_TestInitialAdmissions);
   PrintFormat("[EXPG TRIM RESULT] admitted=%1 before=%2 retained=%3 acknowledged=%4 deleted=%5 leaderPreserved=%6 originals=%7", EXPG_TestNativeAdmissions.Count(), EXPG_TestBeforeTrim.Count(), retained.Count(), EXPG_TestAcknowledgedRemovals.Count(), deleted, sameLeader, originals);
-  return originals && retained.Count() == 9 && EXPG_TestAcknowledgedRemovals.Count() == 3 && deleted == 3 && sameLeader;
+  // 0.1.11: a fresh squad is never trimmed; every native admission is kept.
+  return originals && retained.Count() == 12 && EXPG_TestAcknowledgedRemovals.Count() == 0 && deleted == 0 && sameLeader;
  }
 }
 
@@ -363,6 +364,17 @@ class EXPG_GarrisonGameplay : GenericEntity
  int RequestedCount = 4;
  int ExpectedCount = 4;
  IEntity Structure;
+ // Fresh-roster case: a small map house (House_Village_E_1I02, the 0.1.10 live case)
+ // so the twelve-man squad overflows its planned posts.
+ IEntity SmallHouse;
+ bool AddSmallHouse(IEntity entity)
+ {
+  if (SmallHouse || !SCR_DestructibleBuildingEntity.Cast(entity)) return true;
+  ResourceName prefab = SCR_ResourceNameUtils.GetPrefabName(entity);
+  if (!prefab.Contains("House_Village_E_1I02")) return true;
+  SmallHouse = entity;
+  return false;
+ }
  SCR_AIGroup Group;
  AIWaypoint ForceMove;
  EXPG_GarrisonManager Manager;
@@ -441,6 +453,19 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!found) return false;
   }
   return true;
+ }
+ // Durable Full (0.1.11): a Full-cached garrison has no squad until it wakes.
+ bool GarrisonHeld()
+ {
+  if (!Record || Record.Finished || Record.ReleaseRequested) return false;
+  if (Record.Full && !Record.Group) return true;
+  return Group && Group.EXPG_Active && Manager.Find(Group) == Record;
+ }
+ // A Full-cached garrison has no squad to edit: the record's setting stands in for it.
+ void SetMode(int mode)
+ {
+  if (Record && Record.Group) Record.Group.EXPG_SetSetting(0, mode);
+  else if (Record) Record.CacheMode = mode;
  }
  int LivingCount()
  {
@@ -575,19 +600,27 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnFrame(IEntity owner, float timeSlice)
  {
   if (Finished || Now() < Next) return; Next = Now() + 0.5;
+  if (Record && Record.Group) Group = Record.Group;
   if (Now() - Started > 420) { Check(false, "420 second gameplay deadline; see last phase/status"); ReportActors(); Finish("timeout"); return; }
   if (Phase >= 3 && Phase < 11 && !SameActors()) { Check(false, "expected living actors must remain in the original single group"); Finish("roster changed"); return; }
-  if (Phase >= 3 && (Phase < 8 || Phase >= 11) && (!Group.EXPG_Active || !Manager.Find(Group))) { Check(false, "garrison released before Force Move"); Finish("premature release"); return; }
+  if (Phase >= 3 && (Phase < 8 || Phase >= 11) && !GarrisonHeld()) { Check(false, "garrison released before Force Move"); Finish("premature release"); return; }
   if (Phase == 0)
   {
    array<int> players = {}; GetGame().GetPlayerManager().GetPlayers(players);
    Manager = EXPG_GarrisonManager.Get();
    Observers = ObserversSystem.Cast(GetGame().GetWorld().FindSystem(ObserversSystem));
    if (!Check(Manager && Observers && players.IsEmpty() && EBG_CacheZone.Zones.IsEmpty(), "isolated server with no connected players or Optimizer zones")) { Finish("setup"); return; }
-   Observers.InsertObserverSP(ObserverKey, Point[0], Point[2], null);
    ResourceName house = "{EDBC0E94793BA9F1}Prefabs/Structures/Houses/Village/House_Village_E_1I01/House_Village_E_1I01.et";
-   PrintFormat("[EXPG HOUSE CASE] freshTrim=%1 prefab=%2", EXPG_TEST_FRESH_TRIM, house);
-   Structure = GetGame().SpawnEntityPrefab(Resource.Load(house), GetGame().GetWorld(), Params(Point));
+   if (EXPG_TEST_FRESH_TRIM) GetGame().GetWorld().QueryEntitiesBySphere(Point, 3000, AddSmallHouse);
+   if (SmallHouse)
+   {
+    Structure = SmallHouse;
+    Point = SmallHouse.GetOrigin();
+    house = SCR_ResourceNameUtils.GetPrefabName(SmallHouse);
+   }
+   Observers.InsertObserverSP(ObserverKey, Point[0], Point[2], null);
+   PrintFormat("[EXPG HOUSE CASE] freshTrim=%1 prefab=%2 map=%3", EXPG_TEST_FRESH_TRIM, house, SmallHouse != null);
+   if (!SmallHouse) Structure = GetGame().SpawnEntityPrefab(Resource.Load(house), GetGame().GetWorld(), Params(Point));
    if (!Check(SCR_DestructibleBuildingEntity.Cast(Structure) != null, "native enterable house spawned")) { Finish("building"); return; }
    Manager.Prepare(Structure); Advance(1); return;
   }
@@ -597,9 +630,11 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!plan || !plan.Done) return;
    ReportPlan(plan);
    string reason;
-   if (EXPG_TEST_FRESH_TRIM) ExpectedCount = EXPG_GarrisonManager.PlacementCount(RequestedCount, plan.Slots.Count());
-   bool fits = Manager.CanFit(Structure, RequestedCount, reason) && plan.Slots.Count() >= ExpectedCount && ExpectedCount >= 2;
-   if (EXPG_TEST_FRESH_TRIM && (plan.Slots.Count() != 9 || ExpectedCount != 9)) fits = false;
+   // 0.1.11: the whole squad deploys; soldiers beyond the slots take overflow posts.
+   if (EXPG_TEST_FRESH_TRIM) ExpectedCount = RequestedCount;
+   bool fits = Manager.CanFit(Structure, RequestedCount, reason) && ExpectedCount >= 2 && (EXPG_TEST_FRESH_TRIM || plan.Slots.Count() >= ExpectedCount);
+   // The twelve must overflow the planned posts: fewer slots than soldiers.
+   if (EXPG_TEST_FRESH_TRIM && (plan.Slots.Count() >= ExpectedCount || ExpectedCount != 12)) fits = false;
    PrintFormat("[EXPG CAPACITY CASE] freshTrim=%1 requested=%2 expected=%3 capacity=%4", EXPG_TEST_FRESH_TRIM, RequestedCount, ExpectedCount, plan.Slots.Count());
    if (!Check(fits, "production building plan fits case capacity: " + reason)) { Finish("unsafe building plan"); return; }
    ResourceName squad = "{84E5BBAB25EA23E5}Prefabs/Groups/BLUFOR/Group_US_FireTeam.et";
@@ -620,7 +655,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!Record || !Group.EXPG_Active) { Check(false, "garrison released during initial member completion"); Finish("initialization release"); return; }
    if (!Record || !Record.Ready) return;
    if (!Check(Record.Members.Count() == ExpectedCount && Group.GetAgentsCount() == ExpectedCount, "expected safe roster in original group without splitting")) { Finish("initial roster"); return; }
-   if (EXPG_TEST_FRESH_TRIM && !Check(Group.EXPG_TestTrimResult(), "twelve native admissions reduced to nine original actors, original leader retained, three native deletions acknowledged")) { Finish("fresh trim evidence"); return; }
+   if (EXPG_TEST_FRESH_TRIM && !Check(Group.EXPG_TestTrimResult(), "twelve native admissions all kept on posts (nine planned, three overflow), original leader retained, nobody deleted")) { Finish("fresh trim evidence"); return; }
    foreach (EXPG_GarrisonMember member : Record.Members)
    {
     EXPG_GameplayActor saved = new EXPG_GameplayActor(); saved.Actor = member.CacheMember.Entity;
@@ -676,7 +711,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!Record.Full) return;
    if (Record.Full.GetState() != EBG_FullGroupPhase.CACHED) return;
    FullTransaction = Record.Full;
-   if (!Check(Group.GetAgentsCount() == 0 && FullTransaction.GetMemberCount() == LivingCount(), "Full removes only current survivors and retains the original group")) { Finish("full sleep roster"); return; }
+   if (!Check(!Record.Group && FullTransaction.GetMemberCount() == LivingCount(), "Full removes only current survivors and captures their squad (durable)")) { Finish("full sleep roster"); return; }
    foreach (int i, EXPG_GameplayActor saved : Originals)
    {
     if (saved.Dead) continue;
@@ -688,8 +723,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   if (Phase == 12)
   {
    if (Now() - PhaseStarted < 5) return;
-   if (!Check(Record.Full == FullTransaction && Group.GetAgentsCount() == 0, "Full sleeping roster stays absent for five seconds")) { Finish("full sleep hold"); return; }
-   Group.EXPG_SetSetting(0, 0); Advance(13); return;
+   if (!Check(Record.Full == FullTransaction && !Record.Group, "Full sleeping roster stays absent for five seconds")) { Finish("full sleep hold"); return; }
+   SetMode(0); Advance(13); return;
   }
   if (Phase == 13)
   {

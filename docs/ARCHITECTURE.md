@@ -100,12 +100,14 @@ casualties are claimable during an alarm (body clearance permitting). After
 Fixed guards stay at their assigned position, retaining aim, shooting, rotation
 and stance changes. Overflow patrols walk between claimed interior stops; native
 paths that leave the building are not acceptable. Dwelling and holding
-patrollers are capped like posts (combat moves become stance changes). Explicit fresh editor spawns may
-trim initial surplus to the safe capacity, preserving the leader. A transaction
-tracks exact native-spawned actor identities before editor callbacks; foreign
-additions, removals or same-count substitutions invalidate it. Revalidation
-precedes each deletion; the ordinary adoption path never authorizes trimming.
-Zero safe positions still produce an honest refusal.
+patrollers are capped like posts (combat moves become stance changes). No soldier
+is ever deleted to fit a building (0.1.11): the first squad takes the planned
+posts and patrol starts, and soldiers beyond them follow the reinforcement order
+(free fixed posts, interior patrollers under the free-room rule, more watch
+positions, close rings around the building, the spawn point). The fresh-roster
+transaction still tracks exact native-spawned actor identities before editor
+callbacks; foreign additions, removals or same-count substitutions release the
+squad as ordinary AI. Zero safe positions still produce an honest refusal.
 Force Move ends garrison enforcement once; ordinary simulation resumption is not
 a GM order. One guard's problem never releases the others; it is handled for that
 guard alone. A guard displaced more than 0.5 m (ragdoll, unconsciousness, blast,
@@ -127,8 +129,9 @@ another squad is forgotten; a deleted guard (or one a Full restore did not
 recreate) is dead and never respawned; a lost control is rebound for that guard;
 a floor lost under a post only holds caching. A patroller whose control cannot
 start for 10 s becomes a fixed guard where he stands. A whole garrison is released
-only through `RequestRelease(reason)`: Force Move, the Release attribute, Unit
-Caching regroup or Prepare for Save, a deleted squad, a moved or replaced
+only through `RequestRelease(reason)`: Force Move, the Release attribute, Release
+All Garrisons, Unit Caching regroup or Prepare for Save (CDF legacy mode only), a
+deleted squad (also a recreated one deleted during a Full restore), a moved or replaced
 building, no surviving guard, or a refused initialization. `FinishRelease` logs
 `[EXPG Garrison] group=... released (reason)` and the group status keeps
 `Released: reason`, which the Game Master's status attribute still shows.
@@ -159,8 +162,15 @@ Version 0.0.1 supports Off, Simulation and Full (default), using each garrison's
 wake and sleep distances. Simulation retains the native group and original actors,
 pauses their simulation and resumes those same actors; no soldiers are deleted
 or recreated. Equipment and casualty state remain on the retained actors.
-Full reuses Optimizer's standalone `EBG_PrefabFullCache` transaction, retaining
-the original native group and shared logical survivor records. Only current
+Full reuses Optimizer's `EBG_PrefabFullCache` transaction in its durable form
+(0.1.11): the squad is captured (`EBG_CacheGroupSnapshot`, with its orders and
+the squad overrides) and deleted with the survivors, and recreated at wake; the
+recreated squad is rebound to the record in its spawning call
+(`AdoptRestoredGroup`: settings, status, Force Move subscription, save
+exclusion). Settings live in the record (`CacheMode`, `WakeDistance`,
+`SleepDistance`), mirrored from the squad while it exists. A squad that cannot
+be captured (unsupported orders or AI settings, editor protection) is cached in
+Simulation instead, and Full is retried ten minutes later. Only current
 survivors are captured; recreated actors use prefab-default kits and health.
 Post identity and patrol route state survive actor replacement, including a
 guard's anchored or off-plan post. New actors receive an owned LOD hold, then
@@ -175,9 +185,60 @@ An ungrouped newly created survivor whose first native group admission failed
 remains held for recovery, distinct from an actor transferred externally. Original-group
 deletion or foreign membership during restoration remains a recovery hold,
 including save refusal, rather than silently creating another group.
-Cold save/load restoration of the garrison ledger remains unsupported.
 If safe ownership cannot be established, retain live AI and report the refusal.
-No CDF-specific dependency or persistence guarantee is added to the core.
+
+## Garrison persistence (0.1.11)
+
+The garrison owns its soldiers in every save. A Ready garrison's squad, waypoints
+and living guards are kept out of native persistence (`StopTracking`, repeated in
+`SCR_PersistenceSystem.GetOnBeforeSave`) and, with the EXPBG CDF Compat bridge,
+out of CDF (`NON_SERIALIZABLE`; the bridge's `IsManaged` makes CDF clear them on
+load) by `EXPG_SaveExclusion`, the Ambient Civilians seam. Whatever stops being
+owned (possessed, surrendered, regrouped, dead, released) is handed back within a
+second; only flags set there are cleared. A squad the editor protects from
+deletion is not portable and saves as an ordinary squad.
+
+The ledger (`EXPG_Snapshot.c`, schema 1) records per garrison: token,
+`GeneratedBy` (reserved for the Random Garrison module), record order, building
+(prefab and transform, found again with the Ambient Destruction identity rule),
+cache mode and distances, cache state (awake, Simulation, Full), release request,
+leader, the squad (`EBG_CacheGroupSnapshot.CaptureForLedger`, tolerant: orders it
+cannot own are left out) and one row per member, casualties included: post kind,
+fixed or patrolling, saved node (a hint), post, look and last position in
+building-local coordinates (world fallback), prefab, author and the AI Surrender
+and AI Global Skills soldier overrides (module seams `CaptureCarry`/`FillCarry`).
+Not saved: controls, reservations, parks, holds, Simulation snapshots, timers,
+status, creator. Limits: 32 members, 64 buildings, 1024 garrisons, 16 MB.
+
+Carriers: `EXPG_GarrisonPersistenceState` with `EXPG_GarrisonPersistenceSerializer`
+(merged `GameMaster.conf`; an unreadable ledger never fails the native load, Game
+Masters are told) and the EXPBG CDF Compat bridge (world-state envelope
+`expgGarrisons`). `EXPG_GarrisonPersistence` is the API: `CanExport`, `Export`,
+`ExportJson`, `OwnsForSave`, `SyncSaveExclusion`, `BeginImport`,
+`DiscardForImport`, `QueueImport`, `FinishImport`, `EndImport`, `ParseJson`,
+`Notify`. Modes (`PersistenceMode`): native (no CDF), CDF bridged
+(`CdfBridgeVersion() == BRIDGE_API`, overridden by the bridge) and CDF legacy
+(0.1.8 rules for CDF; the native ledger still works).
+
+Save: nothing is spawned or woken; awake and Simulation garrisons are read from
+their actors, Full ones from their transaction (rows not yet recreated from the
+transaction); a guard far from his post is saved on it. A queued import is written
+back verbatim. Saves are refused only while a load replaces the garrisons (and in
+legacy mode for CDF while one is active).
+
+Load: Add Garrison is refused meanwhile (`IsImporting`, also while a native load
+waits for persistence to become active). A CDF load with clearBeforeLoad discards
+every old garrison without waking or respawning anyone. Each saved garrison
+becomes a record with a Full CACHED transaction made from the ledger (dead rows
+stay dead) and nothing in the world; it waits for its building's analysis (first
+when it must wake), remaps posts and stops by position (saved node within 0.1 m,
+else the nearest standing node within 0.25 m, else an off-plan post; a stop that
+cannot be found becomes a fixed post) and then wakes (saved awake, or Simulation,
+which caches again at once when no player is near) or stays Full cached until a
+player comes within wake distance. Survivors are pinned (maximum AI LOD) in their
+spawning call before they join the squad and released only after they are bound
+to their posts. A missing or ambiguous building restores the survivors as an
+ordinary squad at their saved world positions.
 
 ## Boundaries
 

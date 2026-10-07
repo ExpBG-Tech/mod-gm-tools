@@ -31,7 +31,8 @@ function Test-GameplayEvidence([string]$Text, [bool]$Trim) {
  $count = [int]$case.Groups[1].Value
  $capacity = [int]$case.Groups[2].Value
  if ($Trim) {
-  if ($count -ne 9 -or $capacity -ne 9 -or $Text -notmatch '\[EXPG TRIM RESULT\] admitted=12 before=12 retained=9 acknowledged=3 deleted=3 leaderPreserved=1 originals=1') { return $false }
+  # 0.1.11: a fresh squad is never trimmed; all twelve deploy on nine planned posts plus overflow posts.
+  if ($count -ne 12 -or $capacity -lt 1 -or $capacity -ge 12 -or $Text -notmatch '\[EXPG TRIM RESULT\] admitted=12 before=12 retained=12 acknowledged=0 deleted=0 leaderPreserved=1 originals=1') { return $false }
  } elseif ($count -ne 4 -or $capacity -lt 4) { return $false }
  $survivors = $count - 1
  return $Text -match "\[EXPG GAMEPLAY RESULT\] phase=10 checks=\d+ failures=0 actors=$count fixedPosts=[1-9]\d* reason=completed" -and

@@ -59,18 +59,21 @@ garrison. The fixture's own deadline is 420 seconds.
 
 The terminal `actors=4` counts original logical member records, including the
 record of the casualty. It does not mean four actors survived the second cycle.
-The four-position gate remains explicit even though fresh squad trimming exists;
-this test must not hide a planner regression by reducing its requested roster.
+The four-position gate remains explicit; this test must not hide a planner
+regression by reducing its requested roster.
 
 The separate `-FreshTrim` fixture enables the production fresh-roster transaction
 immediately after native spawning. A test-only prefab derives from the native US
 RifleSquad and requests twelve real actors (one squad leader and eleven riflemen).
-The real Village house must independently measure nine safe slots. Read-only
-hooks record native admissions, the full roster and leader before trimming, and
-acknowledged native removals. Acceptance requires nine retained original actors,
-the same leader and three deleted original actors absent from the world. Full
-cycles must then restore nine and eight survivors. The ordinary case continues
-to require four positions. Both cases retain one native group.
+The fixture uses a small map house (House_Village_E_1I02, the 0.1.10 live case), which must measure fewer than twelve safe slots. Since 0.1.11
+the first squad is never trimmed: soldiers beyond the nine planned posts take the
+reinforcement order. Read-only hooks record native admissions, the full roster and
+leader, and any native removal. Acceptance requires all twelve original actors
+kept (`[EXPG TRIM RESULT] admitted=12 before=12 retained=12 acknowledged=0
+deleted=0`), the same leader, and Full cycles restoring twelve and eleven
+survivors. The ordinary case continues to require four positions. Since 0.1.11
+Full is durable: the squad is recreated at each wake, so the fixture follows the
+record's squad.
 
 Earlier GuardHouse and Shed candidates measured 23 and zero slots respectively;
 neither proves roster reduction. The custom prefab's inherited editor budget
@@ -533,3 +536,33 @@ Source reviewed; native execution pending.
 ```powershell
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ETW_TimeWeatherGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ETW RESULT\] checks=[1-9]\d* failures=0 rollover=1 skip=1 broadcasts=3 gradual=1 finished=1 interrupt=1 skipFinish=1 foreign=1 smooth=[01] reason=complete'
 ```
+
+
+## Garrison ledger round trip (0.1.11)
+
+`tests/EXPG_LedgerGameplay.c` (driver class names fixed for the runner):
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_LedgerGameplay.c -ExpectResult '\[EXPG LEDGER RESULT\] checks=[1-9]\d* failures=0 garrisons=3 buildings=2 awake=1 simulation=1 full=1 posts=1 patrollers=[1-9]\d* respawnedDead=0 duplicates=0 aiBeforeBind=0 overrides=1 excluded=1 nativeLedger=1 nativeSave=(1|na) fullWoke=1 reason=completed' -TimeoutSeconds 600 -OrchestratorSlotGranted
+```
+
+Production Add Garrison server calls on a map town house (garrison A, caching Off
+so awake; garrison C, Full, added second; a test seam holds the house's free fixed
+posts with stand-in reservations while C is placed, so C takes the reinforcement
+order's interior patrols) and a spawned village house (garrison B, Simulation).
+One soldier of A and one of C are killed; A's first soldier gets an AI Global
+Skills ROE override and B's squad an AI Surrender override. With no player B and
+C cache. Save: every owned entity is out of native tracking, the CDF-format ledger
+is written and read back, the registered native state serializes through
+`PersistenceSystem.Serialize`, and a native save point is requested when saving
+is enabled (`nativeSave=1`; `na` when the world has saving off). Clear as a load
+does (`BeginImport`, squads deleted, `DiscardForImport`), then the ledger is read
+through the native serializer's read path (`DeserializeNative`; a live
+`PersistenceSystem.DeserializeLoad` of the registered state crashed the engine and
+is not used) and imported by the garrison pump. Every frame, a restored soldier
+whose AI is not pinned must already be bound (`aiBeforeBind`). Checks: same tokens
+and buildings, alive members (casualties never respawned), posts and stops within
+0.3 m in building-local coordinates, patrollers, A awake, B Simulation again, C
+Full with nothing in the world, both overrides, exclusion of the restored squads;
+then C is woken onto its posts. Not covered: GM UI, a cold server restart, CDF
+(see EXPBG CDF Compat `tests/Run-CdfRoundTrip.ps1`), multiplayer.

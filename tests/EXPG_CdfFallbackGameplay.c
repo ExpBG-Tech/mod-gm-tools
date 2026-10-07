@@ -168,9 +168,13 @@ class EXPG_GarrisonGameplay : GenericEntity
   s_Presence.SetOrigin(point);
   PrintFormat("[EXPG CDF FALLBACK PRESENCE] east=%1 at=%2", east, point);
  }
+ // Durable Full (0.1.11): a Full-cached garrison has no squad until it wakes; the
+ // record recreates it and Group follows Record.Group (EOnFrame).
  bool Active()
  {
-  return Group && Group.EXPG_Active && Record && Manager.Find(Group) == Record && !Record.ReleaseRequested;
+  if (!Record || Record.Finished || Record.ReleaseRequested) return false;
+  if (Record.Full && !Record.Group) return true;
+  return Group && Group.EXPG_Active && Manager.Find(Group) == Record;
  }
  bool Awake() { return Record && !Record.Full && !Record.Simulation; }
  bool SimulationAsleep() { return Record && !Record.Full && Record.Simulation && Record.Simulation.Suspended; }
@@ -278,6 +282,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   if (Finished || Now() < Next) return;
   Next = Now() + 0.5;
+  if (Record && Record.Group) Group = Record.Group;
   if (Now() - Started > FIXTURE_SECONDS) { Check(false, string.Format("%1 second deadline; last phase %2", FIXTURE_SECONDS, Phase)); PostsHeld(true); LogZone("deadline"); Finish("timeout"); return; }
   if (EXPG_GarrisonRecord.EXPG_TestRefusals > 0) { Check(false, "no garrison status said cache held, refused, retained or released its survivors"); Finish("refusal"); return; }
   if (Record && Record.Ready && !Active()) { Check(false, "garrison stays assigned for the whole run: " + Record.Status); Finish("premature release"); return; }
@@ -330,8 +335,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    // Case 1: CDF absent, presence 1000 m away (beyond the 400 m sleep distance).
    if (!FullAsleep()) { Waited(100, "garrison Full-cached within 100 seconds without CDF: " + Record.Status); return; }
-   if (!Check(!Record.Simulation && Group.GetAgentsCount() == 0 && Record.Status.Contains("Full cached"), "without CDF the garrison Full-caches and its soldiers are removed until wake")) { Finish("full sleep"); return; }
-   Check(EXPG_GarrisonManager.DescribeCache(Group) == "Full cached", "Garrison describes its squad as Full cached: " + EXPG_GarrisonManager.DescribeCache(Group));
+   if (!Check(!Record.Simulation && !Record.Group && Record.Status.Contains("Full cached"), "without CDF the garrison Full-caches; its soldiers and squad are removed until wake")) { Finish("full sleep"); return; }
+   Check(Manager.CacheState(Record) == "Full cached", "Garrison describes its garrison as Full cached: " + Manager.CacheState(Record));
    PlacePresence(0);
    Advance(4);
    return;
