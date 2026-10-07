@@ -54,9 +54,14 @@ class EAC_PedestrianSpawner
  // comes round again, which is the rate limit, so neither needs per-resident
  // state and neither can hammer one stuck record.
  protected int m_ServiceCursor, m_ForceCursor;
- // The 1 Hz gate on the maintenance batch and the 0.5 Hz half of the split order
- // sweep.
- protected float m_NextService, m_NextFarSweep;
+ // The 1 Hz gate on the maintenance batch.
+ protected float m_NextService;
+ // The 0.5 Hz half of the split order sweep (perf plan WP6, civilians-b-06): a
+ // pass counter, 0-3, advanced once per MonitorOrders pass. A far resident is
+ // visited on one pass in four, chosen by its id, so the far population is
+ // spread over four ticks instead of landing on one with ServiceBatch and
+ // ForceIdle. It replaces the time gate that visited every far resident at once.
+ protected int m_MonitorTick;
  // Reused by every waypoint read in the hot sweeps. GetWaypoints inserts, so each
  // borrower clears it first. One array for the life of the spawner instead of one
  // allocation per tracked resident per half second (188 per second at the city
@@ -70,6 +75,10 @@ class EAC_PedestrianSpawner
  // plain entity pointers.
  protected static ref TraceParam s_HiddenTrace;
  protected static ref array<IEntity> s_HiddenExcluded;
+ // Perf plan WP6 (civilians-b-07). IsCivilian's weapon and inventory read, which
+ // allocated a fresh array per call. Same reasoning as the two above: the method
+ // is static, never re-entered, and the array is cleared on every exit.
+ protected static ref array<IEntity> s_CarriedScratch;
 
  // Residents this near any observer are monitored at the full 2 Hz: a gunshot
  // reaction a player can watch must not wait two seconds. Everyone else is swept
@@ -289,27 +298,63 @@ class EAC_PedestrianSpawner
  static int GetHiddenReason(BaseWorld world, vector position, array<IEntity> observers, IEntity exclude = null, float minimumDistance = 50)
  {
 		EXPBG_LazyStatics_EAC_PedestrianSpawner();
-  if (!world) return EAC_ESpawnReason.UNKNOWN_OBSERVER;
+  if (!world)
+   return EAC_ESpawnReason.UNKNOWN_OBSERVER;
   int reason = GetObserverReason(world, observers);
-  if (reason != EAC_ESpawnReason.NONE) return reason;
-  foreach (IEntity observer : observers)
+  if (reason != EAC_ESpawnReason.NONE)
+   return reason;
+  // Perf plan WP6 (civilians-b-05). The minimum-distance rule is tested for every
+  // observer before any trace, then the nearest observer - the likeliest to see
+  // the spot - is traced first and the rest in list order. A position is hidden
+  // only when no observer is too near and every trace is blocked, and that
+  // verdict does not depend on the order. Only a refusal's reason can differ:
+  // TOO_NEAR where a farther observer earlier in the list used to report
+  // VISIBLE. No distance cap: every observer is still traced on success.
+  int nearest = -1;
+  float nearestDistance;
+  for (int index = 0; index < observers.Count(); index++)
   {
-   ChimeraCharacter character = ChimeraCharacter.Cast(observer);
-   if (vector.Distance(character.GetOrigin(), position) < minimumDistance) return EAC_ESpawnReason.TOO_NEAR;
-   s_HiddenTrace.Start = character.EyePosition();
-   s_HiddenTrace.Flags = TraceFlags.WORLD | TraceFlags.ENTS | TraceFlags.VISIBILITY | TraceFlags.ANY_CONTACT;
-   s_HiddenExcluded.Clear(); s_HiddenExcluded.Insert(observer);
-   if (exclude) s_HiddenExcluded.Insert(exclude);
-   IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(observer);
-   if (vehicle) s_HiddenExcluded.Insert(vehicle);
-   s_HiddenTrace.ExcludeArray = s_HiddenExcluded;
-   for (int sample = 0; sample < 3; sample++)
+   ChimeraCharacter watcher = ChimeraCharacter.Cast(observers[index]);
+   float distance = vector.Distance(watcher.GetOrigin(), position);
+   if (distance < minimumDistance)
+    return EAC_ESpawnReason.TOO_NEAR;
+   if (nearest < 0 || distance < nearestDistance)
    {
-    s_HiddenTrace.End = position + Vector(0, 0.2 + sample * 0.75, 0);
-    if (world.TraceMove(s_HiddenTrace, null) >= 1) return EAC_ESpawnReason.VISIBLE;
+    nearest = index;
+    nearestDistance = distance;
    }
   }
+  if (nearest >= 0 && !HiddenFrom(world, position, observers[nearest], exclude))
+   return EAC_ESpawnReason.VISIBLE;
+  for (int other = 0; other < observers.Count(); other++)
+  {
+   if (other == nearest) continue;
+   if (!HiddenFrom(world, position, observers[other], exclude))
+    return EAC_ESpawnReason.VISIBLE;
+  }
   return EAC_ESpawnReason.NONE;
+ }
+
+ // The three collision-and-visibility traces from one observer's eye to the
+ // spot (feet, waist, head height), unchanged. True when all three are blocked.
+ // GetObserverReason has already proved the observer a live character.
+ protected static bool HiddenFrom(BaseWorld world, vector position, IEntity observer, IEntity exclude)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(observer);
+  s_HiddenTrace.Start = character.EyePosition();
+  s_HiddenTrace.Flags = TraceFlags.WORLD | TraceFlags.ENTS | TraceFlags.VISIBILITY | TraceFlags.ANY_CONTACT;
+  s_HiddenExcluded.Clear(); s_HiddenExcluded.Insert(observer);
+  if (exclude) s_HiddenExcluded.Insert(exclude);
+  IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(observer);
+  if (vehicle) s_HiddenExcluded.Insert(vehicle);
+  s_HiddenTrace.ExcludeArray = s_HiddenExcluded;
+  for (int sample = 0; sample < 3; sample++)
+  {
+   s_HiddenTrace.End = position + Vector(0, 0.2 + sample * 0.75, 0);
+   if (world.TraceMove(s_HiddenTrace, null) >= 1)
+    return false;
+  }
+  return true;
  }
 
  static bool IsRelevant(EAC_AmbientModule module, vector position, array<IEntity> observers, bool indoors = false)
@@ -434,19 +479,69 @@ class EAC_PedestrianSpawner
   return true;
  }
 
+ // The same check over the components EAC_PedestrianActivation.Bind resolved
+ // (perf plan WP6, civilians-b-07), for the monitors that visit a resident twice
+ // a second. Every live condition above is still evaluated on every call, in the
+ // same order; only the three FindComponent lookups come from the activation,
+ // which runs them itself for any actor other than its bound character.
+ static bool HasCivilianControl(IEntity actor, SCR_AIGroup group, EAC_PedestrianActivation activation)
+ {
+  if (!activation)
+   return HasCivilianControl(actor, group);
+  if (!actor || !group || group.GetAgentsCount() != 1 || !group.GetFaction() || group.GetFaction().GetFactionKey() != EAC_AmbientModule.CIV_FACTION)
+   return false;
+  CharacterControllerComponent controller = activation.CachedController(actor);
+  FactionAffiliationComponent affiliation = activation.CachedAffiliation(actor);
+  AIControlComponent control = activation.CachedAIControl(actor);
+  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE || !affiliation || !affiliation.GetAffiliatedFaction() || affiliation.GetAffiliatedFaction().GetFactionKey() != EAC_AmbientModule.CIV_FACTION || !control || !control.GetAIAgent() || control.GetAIAgent().GetParentGroup() != group)
+   return false;
+  if (!SCR_AICharacterSettingsComponent.FindOnControlledEntity(actor))
+   return false;
+  return true;
+ }
+
  static bool IsCivilian(IEntity actor, SCR_AIGroup group)
  {
   if (!HasCivilianControl(actor, group)) return false;
+  return CarriesNoWeapon(actor);
+ }
+
+ // IsCivilian over the activation's cached components (civilians-b-07).
+ static bool IsCivilian(IEntity actor, SCR_AIGroup group, EAC_PedestrianActivation activation)
+ {
+  if (!HasCivilianControl(actor, group, activation))
+   return false;
+  return CarriesNoWeapon(actor);
+ }
+
+ // IsCivilian's equipment half, in its original order, over one reused array.
+ protected static bool CarriesNoWeapon(IEntity actor)
+ {
+		EXPBG_LazyStatics_EAC_PedestrianSpawner();
   BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(actor.FindComponent(BaseWeaponManagerComponent));
   InventoryStorageManagerComponent inventory = InventoryStorageManagerComponent.Cast(actor.FindComponent(InventoryStorageManagerComponent));
-  if (!weapons || !inventory || inventory.GetGrenadesCount() != 0) return false;
-  array<IEntity> carried = {}; weapons.GetWeaponsList(carried);
-  if (!carried.IsEmpty()) return false;
-  inventory.GetItems(carried, EStoragePurpose.PURPOSE_ANY);
-  if (carried.Count() > 128) return false;
-  foreach (IEntity item : carried)
-   if (item && item.FindComponent(BaseWeaponComponent)) return false;
-  return true;
+  if (!weapons || !inventory || inventory.GetGrenadesCount() != 0)
+   return false;
+  s_CarriedScratch.Clear(); weapons.GetWeaponsList(s_CarriedScratch);
+  bool unarmed = s_CarriedScratch.IsEmpty();
+  if (unarmed)
+  {
+   inventory.GetItems(s_CarriedScratch, EStoragePurpose.PURPOSE_ANY);
+   if (s_CarriedScratch.Count() > 128) unarmed = false;
+  }
+  if (unarmed)
+  {
+   foreach (IEntity item : s_CarriedScratch)
+   {
+    if (item && item.FindComponent(BaseWeaponComponent))
+    {
+     unarmed = false;
+     break;
+    }
+   }
+  }
+  s_CarriedScratch.Clear();
+  return unarmed;
  }
 
  protected void ReleaseTracking(EAC_PedestrianActivation activation)
@@ -935,6 +1030,19 @@ class EAC_PedestrianSpawner
   return false;
  }
 
+ // Perf plan WP6 (civilians-b-06). Whether a resident beyond REACTIVE_RADIUS is
+ // visited on this pass: on one pass in four, as under the old 2 s far sweep,
+ // but phased by resident id so a quarter of the far population is visited per
+ // pass instead of all of it on one pass. The phase of each resident's far
+ // sample moves once; its cadence does not.
+ protected bool FarTurn(EAC_PedestrianActivation activation)
+ {
+  int phase;
+  if (activation.Claim && activation.Claim.Resident) phase = activation.Claim.Resident.Id % 4;
+  if (phase < 0) phase += 4;
+  return (phase + m_MonitorTick) % 4 == 0;
+ }
+
  // Separate fast order safety from staggered geometry, inventory and recovery work.
  void MonitorOrders(EAC_AmbientModule module, array<IEntity> observers)
  {
@@ -942,10 +1050,9 @@ class EAC_PedestrianSpawner
   float now = m_World.GetWorldTime() * 0.001;
   if (now < m_NextOrderMonitor) return;
   m_NextOrderMonitor = now + 0.5;
-  // The 0.5 Hz half of the split. A far resident is visited on this tick and
-  // skipped on the next three; a near one is visited every tick.
-  bool farSweep = now >= m_NextFarSweep;
-  if (farSweep) m_NextFarSweep = now + 2;
+  // The 0.5 Hz half of the split. A far resident is visited on one pass in four
+  // and skipped on the other three (FarTurn); a near one is visited every pass.
+  m_MonitorTick = (m_MonitorTick + 1) % 4;
   // Re-synced from the tracked list on every pass, so the maintained count this
   // sweep hands to TryActivity is the truth as of this tick however the routine
   // side changed it (audit item 18). One null compare per tracked record.
@@ -964,7 +1071,7 @@ class EAC_PedestrianSpawner
    // (two seconds instead of half a second) and nothing else.
    IEntity monitored;
    if (activation.Claim) monitored = activation.Claim.Character;
-   if (!farSweep && monitored && !NearObserver(observers, monitored.GetOrigin())) continue;
+   if (monitored && !FarTurn(activation) && !NearObserver(observers, monitored.GetOrigin())) continue;
    EAC_CivilianDanger.Monitor(module, activation, now);
    activation.Emerge.Monitor(module, activation, now);
    if (activation.Activity && activation.Activity.Monitor(module, now))
@@ -1252,13 +1359,17 @@ class EAC_PedestrianSpawner
   if (cacheTick)
   {
    m_NextCacheStep = cacheNow + 0.5;
+   // Perf plan WP6 (civilians-b-12). KnownObservers reads only the module's world
+   // and this tick's observer list, neither of which the loop below changes, so
+   // one verdict serves every resident instead of one re-check each.
+   bool observersKnown = EAC_PedestrianCaching.KnownObservers(module.GetWorld(), observers);
    foreach (EAC_PedestrianActivation active : m_Tracked)
    {
     // One distance sweep per tracked resident per tick, shared by the cache
     // sampler and the routine's own distance stop; it used to be computed twice,
     // each one a distance per observer (audit item 17).
     bool distant;
-    if (active.Claim) distant = EAC_PedestrianCaching.Distant(module, active.Claim.Character, observers);
+    if (active.Claim) distant = EAC_PedestrianCaching.Distant(module, active.Claim.Character, observers, observersKnown);
     EAC_PedestrianCaching.Sample(module, active, observers, cacheNow, distant);
     if (active.Activity && distant) active.Activity.RequestStop();
    }
@@ -1424,7 +1535,17 @@ class EAC_PedestrianSpawner
    if (reason != EAC_ESpawnReason.NONE) { m_Diagnostics.Record(reason); continue; }
    // One count per candidate, shared by the ceiling and the floor.
    vector neighbourhood = home.BuildingEntity.GetOrigin();
-   int localUsed = CountLocalOccupants(module, neighbourhood);
+   // Perf plan WP6 (civilians-b-12). The ceiling and the floor below only ask
+   // whether the count is under LocalPopulationLimit or MinLocalPopulation, so
+   // counting stops one past the larger of the two: both decide exactly as on
+   // the full count. With debug on, the count is exact (no stop), so the
+   // local_floor figure of the [EAC] summary (m_LastLocalCount) stays the real
+   // occupancy of a saturated neighbourhood.
+   int localStop = module.LocalPopulationLimit;
+   if (module.MinLocalPopulation > localStop) localStop = module.MinLocalPopulation;
+   localStop++;
+   if (module.DebugLevel > 0) localStop = -1;
+   int localUsed = CountLocalOccupants(module, neighbourhood, localStop);
    m_LastLocalCount = localUsed;
    if (!HasLocalCapacityFor(module, localUsed, 1))
    {
@@ -1479,12 +1600,18 @@ class EAC_PedestrianSpawner
  // (HasLocalCapacity) and the floor (IsBelowLocalFloor) so the two can never
  // disagree about how many people are already there. At most 200 retained active
  // records; the cached count is O(1) and this is never a world scan.
- int CountLocalOccupants(EAC_AmbientModule module, vector position)
+ // stopAt (perf plan WP6, civilians-b-12): when it is zero or more, counting ends
+ // as soon as the count reaches it, and the result is then at least stopAt
+ // rather than exact. -1, the default, counts everything.
+ int CountLocalOccupants(EAC_AmbientModule module, vector position, int stopAt = -1)
  {
-  if (!module) return 0;
+  if (!module)
+   return 0;
   int used;
   EAC_TrafficDirector traffic = EAC_TrafficDirector.Get();
   if (traffic) used = traffic.CountNearbyOccupants(position, module.LocalPopulationRadius);
+  if (stopAt >= 0 && used >= stopAt)
+   return used;
   float radiusSquared = module.LocalPopulationRadius * module.LocalPopulationRadius;
   foreach (EAC_PedestrianActivation activation : m_Tracked)
   {
@@ -1492,7 +1619,12 @@ class EAC_PedestrianSpawner
    vector existing = activation.Position;
    if (activation.Claim.Character) existing = activation.Claim.Character.GetOrigin();
    vector delta = position - existing; delta[1] = 0;
-   if (delta.LengthSq() <= radiusSquared) used++;
+   if (delta.LengthSq() <= radiusSquared)
+   {
+    used++;
+    if (stopAt >= 0 && used >= stopAt)
+     return used;
+   }
   }
   return used;
  }
@@ -1649,5 +1781,7 @@ class EAC_PedestrianSpawner
 			s_HiddenTrace = new TraceParam();
 		if (!s_HiddenExcluded)
 			s_HiddenExcluded = new array<IEntity>();
+		if (!s_CarriedScratch)
+			s_CarriedScratch = new array<IEntity>();
 	}
 }

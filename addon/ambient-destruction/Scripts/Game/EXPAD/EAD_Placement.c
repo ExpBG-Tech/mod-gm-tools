@@ -1,5 +1,37 @@
+// Prefab path classes, from the lower-cased path text alone (EAD_Placement.PathClasses).
+enum EAD_PathClass
+{
+ WALL_EXCLUDED = 1,     // StructuralWall: fence, railing, gate, building parts
+ STRUCTURAL = 2,        // StructuralWall: structures or walls folder
+ CONTEXT_EXCLUDED = 4,  // BuildingContext: fence, walls, building parts or addons, furniture
+ CONTEXT_INCLUDED = 8,  // BuildingContext: houses, commercial, industrial, military folder
+ REJECTED = 16,         // EAD_Buildings.RejectedPath: ruin or debris, parts, addons, furniture
+ TEMPLATE = 32          // EAD_Buildings.RejectedPath (leaf only): a _base.et template
+}
 class EAD_Placement
 {
+ // Path text -> EAD_PathClass bits. The key is the exact path string, so a stored entry
+ // always equals a fresh evaluation; above the cap, paths are classified without storing.
+ protected static ref map<string, int> s_PathClasses;
+ static int PathClasses(string resource)
+ {
+		EXPBG_LazyStatics_EAD_Placement();
+  int classes;
+  if (s_PathClasses.Find(resource, classes))
+   return classes;
+  string path = resource;
+  path.ToLower();
+  classes = 0;
+  if (path.Contains("fence") || path.Contains("railing") || path.Contains("gate") || path.Contains("/buildingparts/")) classes |= EAD_PathClass.WALL_EXCLUDED;
+  if (path.Contains("/structures/") || path.Contains("/walls/")) classes |= EAD_PathClass.STRUCTURAL;
+  if (path.Contains("fence") || path.Contains("/walls/") || path.Contains("/buildingparts/") || path.Contains("/buildingaddons/") || path.Contains("/furniture/")) classes |= EAD_PathClass.CONTEXT_EXCLUDED;
+  if (path.Contains("/houses/") || path.Contains("/commercial/") || path.Contains("/industrial/") || path.Contains("/military/")) classes |= EAD_PathClass.CONTEXT_INCLUDED;
+  if (path.Contains("/dst/") || path.Contains("ruin") || path.Contains("destroyed") || path.Contains("rubble") || path.Contains("debris") || path.Contains("/buildingparts/") || path.Contains("/buildingaddons/") || path.Contains("/furniture/")) classes |= EAD_PathClass.REJECTED;
+  if (path.Contains("_base.et")) classes |= EAD_PathClass.TEMPLATE;
+  const int memoLimit = 4096;
+  if (s_PathClasses.Count() < memoLimit) s_PathClasses.Insert(resource, classes);
+  return classes;
+ }
  static bool Ground(BaseWorld world, vector point, out vector ground)
  {
   TraceParam trace = new TraceParam();
@@ -225,26 +257,41 @@ class EAD_Placement
   if (EAD_World.Reserved(ground, extent, companion)) return null;
   return record;
  }
+ // Path classes of a static entity that is neither a character nor a vehicle and has
+ // prefab data; -1 otherwise. Per-entity checks stay live, in their original order.
+ protected static int StaticPathClasses(IEntity entity)
+ {
+  if (!entity || ChimeraCharacter.Cast(entity) || Vehicle.Cast(entity))
+   return -1;
+  Physics physics = entity.GetPhysics();
+  if (!physics || physics.IsDynamic())
+   return -1;
+  EntityPrefabData data = entity.GetPrefabData();
+  if (!data)
+   return -1;
+  return PathClasses(data.GetPrefabName());
+ }
+ protected static bool IsStructural(IEntity entity, int classes)
+ {
+  if (classes < 0 || (classes & EAD_PathClass.WALL_EXCLUDED) != 0)
+   return false;
+  return SCR_DestructibleBuildingEntity.Cast(entity) || (classes & EAD_PathClass.STRUCTURAL) != 0;
+ }
  static bool StructuralWall(IEntity entity)
  {
-  if (!entity || ChimeraCharacter.Cast(entity) || Vehicle.Cast(entity)) return false;
-  Physics physics = entity.GetPhysics();
-  if (!physics || physics.IsDynamic()) return false;
-  EntityPrefabData data = entity.GetPrefabData();
-  if (!data) return false;
-  string path = data.GetPrefabName(); path.ToLower();
-  if (path.Contains("fence") || path.Contains("railing") || path.Contains("gate") || path.Contains("/buildingparts/")) return false;
-  return SCR_DestructibleBuildingEntity.Cast(entity) || path.Contains("/structures/") || path.Contains("/walls/");
+  return IsStructural(entity, StaticPathClasses(entity));
  }
  // Building sites exclude perimeter fences, individual fittings and street props.
  static bool BuildingContext(IEntity entity)
  {
-  if (!entity || !entity.GetPrefabData() || !StructuralWall(entity)) return false;
-  string path = entity.GetPrefabData().GetPrefabName(); path.ToLower();
-  if (path.Contains("fence") || path.Contains("/walls/") || path.Contains("/buildingparts/") || path.Contains("/buildingaddons/") || path.Contains("/furniture/")) return false;
+  if (!entity || !entity.GetPrefabData())
+   return false;
+  int classes = StaticPathClasses(entity);
+  if (!IsStructural(entity, classes) || (classes & EAD_PathClass.CONTEXT_EXCLUDED) != 0)
+   return false;
   IEntity parent = entity.GetParent();
   if (parent && SCR_DestructibleBuildingEntity.Cast(parent)) return false;
-  return SCR_DestructibleBuildingEntity.Cast(entity) || path.Contains("/houses/") || path.Contains("/commercial/") || path.Contains("/industrial/") || path.Contains("/military/");
+  return SCR_DestructibleBuildingEntity.Cast(entity) || (classes & EAD_PathClass.CONTEXT_INCLUDED) != 0;
  }
  static EAD_PropRecord AtBuilding(EAD_Zone zone, EAD_Random random, int asset, EAD_BodySite site)
  {
@@ -385,4 +432,13 @@ class EAD_Placement
   }
   return 1;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAD_Placement()
+	{
+		if (!s_PathClasses)
+			s_PathClasses = new map<string, int>();
+	}
 }

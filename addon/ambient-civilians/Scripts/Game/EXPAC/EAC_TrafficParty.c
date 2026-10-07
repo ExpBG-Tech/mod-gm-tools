@@ -94,6 +94,26 @@ class EAC_TrafficParty
  // The car's replication component, resolved once when the car is bound. The
  // per-frame horn read used to resolve it again on every frame.
  protected RplComponent m_CarRpl;
+ // Controlled() runs a dozen times per BOARD..EXIT party per tick (performance
+ // plan civilians-b-08). The group's and the car's replication components and the
+ // car's compartment manager are resolved once per entity instead of on every
+ // call. Each cache remembers the entity it was resolved from and is resolved
+ // again whenever Group or Car is not that entity any more, so it only ever holds
+ // what FindComponent on the current entity returns.
+ protected SCR_AIGroup m_ResolvedGroup;
+ protected RplComponent m_GroupRpl;
+ protected IEntity m_ResolvedCar;
+ protected RplComponent m_ResolvedCarRpl;
+ protected BaseCompartmentManagerComponent m_Compartments;
+ // Controlled()'s compartment list, emptied before every fill. Controlled never
+ // re-enters itself while it walks the list.
+ protected ref array<BaseCompartmentSlot> m_SlotScratch;
+ // The director's Hidden() verdict for this party, valid only inside the one
+ // director Step that reached it (civilians-b-01 a; see EAC_TrafficDirector.Hidden).
+ int HiddenStep;
+ float HiddenTime, HiddenMinimum;
+ vector HiddenAt;
+ bool HiddenVerdict;
 
  bool Owns(IEntity entity)
  {
@@ -143,6 +163,8 @@ class EAC_TrafficParty
   CarControl = CarControllerComponent.Cast(Car.FindComponent(CarControllerComponent));
   m_Events = EventHandlerManagerComponent.Cast(Car.FindComponent(EventHandlerManagerComponent));
   m_CarRpl = RplComponent.Cast(Car.FindComponent(RplComponent));
+  // Before the Controlled() below, which reads these.
+  ResolveCar();
   if (!Movement || !CarControl || !m_Events) return false;
   m_Events.RegisterScriptHandler("OnCompartmentEntered", this, OnCompartmentEntered, false);
   if (!Controlled()) return false;
@@ -163,23 +185,44 @@ class EAC_TrafficParty
  {
   if (m_Events) m_Events.RemoveScriptHandler("OnCompartmentEntered", this, OnCompartmentEntered, false);
   m_Events = null; Movement = null; CarControl = null; m_CarRpl = null;
+  m_ResolvedCar = null; m_ResolvedCarRpl = null; m_Compartments = null;
  }
 
  void ~EAC_TrafficParty() { UnbindCar(); }
 
+ // The only writer of the car caches Controlled() reads (see m_ResolvedCar).
+ protected void ResolveCar()
+ {
+  m_ResolvedCar = Car; m_ResolvedCarRpl = null; m_Compartments = null;
+  if (!Car) return;
+  m_ResolvedCarRpl = RplComponent.Cast(Car.FindComponent(RplComponent));
+  m_Compartments = BaseCompartmentManagerComponent.Cast(Car.FindComponent(BaseCompartmentManagerComponent));
+ }
+
  bool Controlled()
  {
   if (!Replication.IsServer() || PlayerTouched || !Group || Group.GetPlayerCount() != 0) return false;
-  RplComponent groupRpl = RplComponent.Cast(Group.FindComponent(RplComponent));
+  // Resolved once per group: NEW spawns it, and a session fixture assigns one directly.
+  if (m_ResolvedGroup != Group)
+  {
+   m_ResolvedGroup = Group;
+   m_GroupRpl = RplComponent.Cast(Group.FindComponent(RplComponent));
+  }
+  RplComponent groupRpl = m_GroupRpl;
   if (!groupRpl || groupRpl.IsProxy() || !groupRpl.IsOwner()) { PlayerTouched = true; return false; }
   if (Group.GetAgentsCount() > Crew.Count()) { PlayerTouched = true; return false; }
   if (Car)
   {
-   RplComponent rpl = RplComponent.Cast(Car.FindComponent(RplComponent));
+   // BindCar resolves these; a car that was never bound, or a different car, is
+   // resolved here instead, so the answer is always that of the current Car.
+   if (m_ResolvedCar != Car) ResolveCar();
+   RplComponent rpl = m_ResolvedCarRpl;
    if (!rpl || rpl.IsProxy() || !rpl.IsOwner()) { PlayerTouched = true; return false; }
-   BaseCompartmentManagerComponent manager = BaseCompartmentManagerComponent.Cast(Car.FindComponent(BaseCompartmentManagerComponent));
+   BaseCompartmentManagerComponent manager = m_Compartments;
    if (!manager) return false;
-   array<BaseCompartmentSlot> slots = {}; manager.GetCompartments(slots);
+   if (!m_SlotScratch) m_SlotScratch = new array<BaseCompartmentSlot>();
+   array<BaseCompartmentSlot> slots = m_SlotScratch;
+   slots.Clear(); manager.GetCompartments(slots);
    if (slots.Count() > 16) return false;
    foreach (BaseCompartmentSlot slot : slots)
    {

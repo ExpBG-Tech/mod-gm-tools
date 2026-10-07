@@ -2,7 +2,7 @@
 // player character (the host's own, injected through EBG_CacheManager.UpdatePlayers) and
 // GM-placed AI next to a Full cache zone with per-group activation and the module's
 // default radii (affected 300 m, wake 700 m, sleep 900 m); clear delay 5 s.
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete' -OrchestratorSlotGranted
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete mismatches=0' -OrchestratorSlotGranted
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed.
 // Cases, in order:
 //  1. Enrollment and its explanation: a free USSR squad enrolls; a squad marked Exclude
@@ -50,6 +50,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
+  EBG_DebugChecks.Enabled = true; EBG_DebugChecks.Mismatches = 0; // indexes also run their old full scans
   s_Presence = {};
   Started = Now();
   Next = Started + 10;
@@ -68,7 +69,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   Finished = true;
   if (s_Presence) s_Presence.Clear();
   ClearEventMask(EntityEvent.FRAME);
-  PrintFormat("[EBG LOCAL CACHE RESULT] checks=%1 failures=%2 reason=%3", Checks, Failures, reason);
+  Check(EBG_DebugChecks.Mismatches == 0, "index cross-checks matched their old full scans");
+  PrintFormat("[EBG LOCAL CACHE RESULT] checks=%1 failures=%2 reason=%3 mismatches=%4", Checks, Failures, reason, EBG_DebugChecks.Mismatches);
   GetGame().RequestClose();
  }
  vector Ground(vector p, float lift) { p[1] = GetGame().GetWorld().GetSurfaceY(p[0], p[2]) + lift; return p; }

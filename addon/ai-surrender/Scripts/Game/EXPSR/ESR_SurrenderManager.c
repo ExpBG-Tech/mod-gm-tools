@@ -154,6 +154,9 @@ class ESR_SurrenderManager
  static const ResourceName POINT_PREFAB = "{B412A163F3014DFE}Prefabs/EXPSR/ESR_InterrogationPoint.et";
  static const string CIVILIAN_FACTION = "CIV";
  static const string INTEL_MARKER_TEXT = "Intel (interrogation)";
+ // Squad and intel markers published this session (lifetime 0 keeps them for good):
+ // past this many the oldest one still on the map is removed.
+ static const int MAX_MARKERS = 128;
 
  // Commander grenade. He crouches, takes 1-2.5 s, places the grenade at his feet and it
  // goes live one second later, as the vanilla scenario action arms a placed grenade
@@ -182,6 +185,8 @@ class ESR_SurrenderManager
  protected static ref array<ref ESR_SquadRecord> s_aSquads;
  protected static ref array<ref ESR_Prisoner> s_aPrisoners;
  protected static ref array<ref ESR_Commander> s_aCommanders;
+ // Server: ids of the markers PublishMarker created in this world, oldest first.
+ protected static ref array<int> s_aMarkerIds;
 
  //------------------------------------------------------------------------------------------------
  // State and switches
@@ -229,6 +234,9 @@ class ESR_SurrenderManager
   for (int i = s_aQueue.Count() - 1; i >= 0; i--) { if (!s_aQueue[i]) s_aQueue.Remove(i); }
   for (int j = s_aSquads.Count() - 1; j >= 0; j--) { if (!s_aSquads[j] || !s_aSquads[j].Group) s_aSquads.Remove(j); }
   for (int k = s_aPrisoners.Count() - 1; k >= 0; k--) { if (!s_aPrisoners[k] || !s_aPrisoners[k].Character) ReleaseAt(k, "stale"); }
+  // Marker ids are numbered per world by its marker manager: an earlier world's ids
+  // could name someone else's marker here.
+  s_aMarkerIds.Clear();
   // Commander timers are keyed by record id: a stale one finds no record and ends.
   PruneCommanders();
   if (!s_aQueue.IsEmpty()) ScheduleQueue();
@@ -1198,6 +1206,8 @@ class ESR_SurrenderManager
    if (controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious() || IsPlayerCharacter(prisoner.Character))
    {
     if (prisoner.AceMode && !IsPlayerCharacter(prisoner.Character)) KeepCivilian(prisoner.Character);
+    // His point still follows his face (a dedicated server has no frame follow).
+    if (prisoner.Point) prisoner.Point.Follow();
     continue;
    }
    AIControlComponent control = AIControlComponent.Cast(prisoner.Character.FindComponent(AIControlComponent));
@@ -1209,14 +1219,19 @@ class ESR_SurrenderManager
     if (!AceUpkeep(prisoner)) { ReleaseAt(i, "ace-release"); continue; }
    }
    else if (scripted && !scripted.IsLoitering() && prisoner.PoseTries < MAX_POSE_TRIES) ApplyPose(prisoner.Character);
-   // The point follows his face on every machine (Game Master moves included); a point
-   // that lost him is spawned again.
+   // The point follows his face on every machine (Game Master moves included): clients
+   // from its own frame tick, a dedicated server (which has none) from here. A point
+   // that still misses his face (his head bone cannot be read) is spawned again.
    vector face = PointPosition(prisoner);
    if (!prisoner.Point) SpawnPoint(prisoner);
-   else if (vector.DistanceSq(prisoner.Point.GetOrigin(), face) > 1)
+   else
    {
-    DeletePoint(prisoner);
-    SpawnPoint(prisoner);
+    prisoner.Point.Follow();
+    if (vector.DistanceSq(prisoner.Point.GetOrigin(), face) > 1)
+    {
+     DeletePoint(prisoner);
+     SpawnPoint(prisoner);
+    }
    }
   }
   StartUpkeep();
@@ -1391,7 +1406,8 @@ class ESR_SurrenderManager
 
  // A player-owned static marker, as if the interrogator had placed it: his faction sees
  // it, he can delete it from the map, and it is part of the marker manager's JIP state.
- // The marker lifetime setting removes it on the server.
+ // The marker lifetime setting removes it on the server, and so does the MAX_MARKERS cap
+ // (TrackMarker).
  protected static int PublishMarker(notnull SCR_MapMarkerManagerComponent markers, notnull SCR_MapMarkerBase marker, vector center, string text, IEntity user, int playerId)
  {
   int x = center[0];
@@ -1416,19 +1432,48 @@ class ESR_SurrenderManager
    float due = Now() + lifetime * 60;
    GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.RemoveMarker, lifetime * 60000, false, marker.GetMarkerID(), due);
   }
-  return marker.GetMarkerID();
+  int markerId = marker.GetMarkerID();
+  TrackMarker(markerId);
+  return markerId;
+ }
+
+ // Server, once per published marker, constant work: these markers bypass the vanilla
+ // per-player limit and usually only the interrogator may delete them, so the session
+ // keeps at most MAX_MARKERS ids. Past that the oldest id is dropped; its marker is
+ // removed if it is still there (the FIFO vanilla applies to placed markers), and an id
+ // whose marker is already gone (deleted from the map, expired) costs nothing more.
+ protected static void TrackMarker(int markerId)
+ {
+  EXPBG_LazyStatics_ESR_SurrenderManager();
+  if (markerId < 0) return;
+  s_aMarkerIds.Insert(markerId);
+  if (s_aMarkerIds.Count() <= MAX_MARKERS) return;
+  int oldest = s_aMarkerIds[0];
+  s_aMarkerIds.RemoveOrdered(0);
+  if (DropMarker(oldest)) Trace(string.Format("prisoner marker %1 removed: more than %2 published", oldest, MAX_MARKERS));
  }
 
  protected static void RemoveMarker(int markerId, float due)
  {
   // A timer from an earlier world (world time restarted) must not remove a new marker.
   if (Now() + 1 < due || markerId < 0) return;
+  if (DropMarker(markerId)) Trace(string.Format("intel marker %1 expired", markerId));
+ }
+
+ // Server: removes a published marker that is still on the map (or disabled). False when
+ // it is already gone or there is no marker manager.
+ protected static bool DropMarker(int markerId)
+ {
+  if (markerId < 0)
+   return false;
   SCR_MapMarkerManagerComponent markers = SCR_MapMarkerManagerComponent.GetInstance();
-  if (!markers) return;
-  if (!markers.GetStaticMarkerByID(markerId) && !markers.GetDisabledMarkerByID(markerId)) return;
+  if (!markers)
+   return false;
+  if (!markers.GetStaticMarkerByID(markerId) && !markers.GetDisabledMarkerByID(markerId))
+   return false;
   markers.OnRemoveSynchedMarker(markerId);
   markers.OnAskRemoveStaticMarker(markerId);
-  Trace(string.Format("intel marker %1 expired", markerId));
+  return true;
  }
 
 	//------------------------------------------------------------------------------------------------
@@ -1444,6 +1489,8 @@ class ESR_SurrenderManager
 			s_aPrisoners = new array<ref ESR_Prisoner>();
 		if (!s_aCommanders)
 			s_aCommanders = new array<ref ESR_Commander>();
+		if (!s_aMarkerIds)
+			s_aMarkerIds = new array<int>();
 	}
 }
 

@@ -3,6 +3,10 @@
 class EBG_SimulationPart
 {
  IEntity Entity;
+ // The character whose snapshot array holds this part (weak), and the EntityID under
+ // which SCR_ChimeraCharacter indexes it. Kept at every insert, move and removal.
+ SCR_ChimeraCharacter Owner;
+ EntityID Key;
  EntityFlags Flags;
  bool PhysicsCaptured;
  SimulationState Simulation;
@@ -116,15 +120,69 @@ modded class SCR_ChimeraCharacter
 {
  // Local owners with retained snapshots only; never a world/entity scan.
  protected static ref array<SCR_ChimeraCharacter> s_EBG_SimulationOwners;
+ // EntityID -> the part holding that entity's snapshot, in whichever owner's array.
+ // Weak values: the owners' arrays keep the parts alive. Every part is created once
+ // (EBG_CaptureSimulationTreeIndexed) and only moved between owners, never copied, so
+ // this answers EBG_FindSimulationPartOwner without scanning every owner and part.
+ protected static ref map<EntityID, EBG_SimulationPart> s_EBG_PartIndex;
+ // Round-robin position of the stale-owner pruning done on each owner insert.
+ protected static int s_EBG_OwnerPruneCursor;
  [RplProp(onRplName: "EBG_OnSimulationState"), NonSerialized()]
  protected bool m_EBG_SimulationCached;
  [NonSerialized()]
  protected bool m_EBG_SimulationInitialized;
+ // True exactly while this character is in s_EBG_SimulationOwners.
+ [NonSerialized()]
+ protected bool m_EBG_SimulationListed;
  protected ref array<ref EBG_SimulationPart> m_EBG_SimulationParts;
  bool EBG_IsSimulationCached() { return m_EBG_SimulationCached; }
  bool EBG_HasSimulationInitialized() { return m_EBG_SimulationInitialized; }
+ // The part index stays: unlisted owners are never returned, and each character's
+ // destructor drops the keys of the parts that die with it.
  static void EBG_ClearSimulationOwnersForWorldCleanup() {
-		EXPBG_LazyStatics_SCR_ChimeraCharacter(); s_EBG_SimulationOwners.Clear(); }
+		EXPBG_LazyStatics_SCR_ChimeraCharacter();
+  foreach (SCR_ChimeraCharacter listed : s_EBG_SimulationOwners)
+   if (listed) listed.m_EBG_SimulationListed = false;
+  s_EBG_SimulationOwners.Clear(); s_EBG_OwnerPruneCursor = 0; }
+ // Adds an owner once and prunes one stale entry per call (round robin): the old
+ // lookup scan pruned null or empty owners on every inventory event instead.
+ protected static void EBG_ListSimulationOwner(SCR_ChimeraCharacter owner)
+ {
+  EXPBG_LazyStatics_SCR_ChimeraCharacter();
+  int count = s_EBG_SimulationOwners.Count();
+  if (count > 0)
+  {
+   if (s_EBG_OwnerPruneCursor >= count) s_EBG_OwnerPruneCursor = 0;
+   SCR_ChimeraCharacter stale = s_EBG_SimulationOwners[s_EBG_OwnerPruneCursor];
+   if (stale != owner && (!stale || !stale.m_EBG_SimulationParts || stale.m_EBG_SimulationParts.IsEmpty()))
+   {
+    if (stale) stale.m_EBG_SimulationListed = false;
+    s_EBG_SimulationOwners.Remove(s_EBG_OwnerPruneCursor);
+   }
+   else s_EBG_OwnerPruneCursor++;
+  }
+  if (!owner || owner.m_EBG_SimulationListed) return;
+  owner.m_EBG_SimulationListed = true;
+  s_EBG_SimulationOwners.Insert(owner);
+ }
+ protected static void EBG_UnlistSimulationOwner(SCR_ChimeraCharacter owner)
+ {
+  EXPBG_LazyStatics_SCR_ChimeraCharacter();
+  s_EBG_SimulationOwners.RemoveItem(owner);
+  if (owner) owner.m_EBG_SimulationListed = false;
+ }
+ protected static void EBG_IndexSimulationPart(EBG_SimulationPart part)
+ {
+  EXPBG_LazyStatics_SCR_ChimeraCharacter();
+  part.Key = part.Entity.GetID();
+  s_EBG_PartIndex.Set(part.Key, part);
+ }
+ // A part leaving every snapshot. Its key may already belong to a newer part.
+ protected static void EBG_UnindexSimulationPart(EBG_SimulationPart part)
+ {
+  EXPBG_LazyStatics_SCR_ChimeraCharacter();
+  if (part && s_EBG_PartIndex.Get(part.Key) == part) s_EBG_PartIndex.Remove(part.Key);
+ }
  static SCR_ChimeraCharacter EBG_FindSimulationIdentityOwner(CharacterIdentityComponent identity)
  {
 		EXPBG_LazyStatics_SCR_ChimeraCharacter();
@@ -144,16 +202,46 @@ modded class SCR_ChimeraCharacter
   }
   return null;
  }
+ // Runs on every inventory event of any character, on server and clients, and for
+ // every newly captured entity: one index lookup plus the owner's own part check.
  static SCR_ChimeraCharacter EBG_FindSimulationPartOwner(IEntity entity)
  {
 		EXPBG_LazyStatics_SCR_ChimeraCharacter();
   if (!entity) return null;
+  EntityID key = entity.GetID();
+  SCR_ChimeraCharacter found;
+  EBG_SimulationPart part = s_EBG_PartIndex.Get(key);
+  if (part)
+  {
+   SCR_ChimeraCharacter holder = part.Owner;
+   // A deleted or reused id, or a part no longer in its owner's snapshot: stale key.
+   if (part.Entity != entity || !holder || !holder.m_EBG_SimulationParts || !holder.m_EBG_SimulationParts.Contains(part))
+    s_EBG_PartIndex.Remove(key);
+   else if (holder.m_EBG_SimulationListed)
+    found = holder;
+  }
+  if (EBG_DebugChecks.Enabled)
+  {
+   SCR_ChimeraCharacter scanned = EBG_ScanSimulationPartOwner(entity);
+   if (scanned != found) EBG_DebugChecks.Mismatch(string.Format("simulation part owner entity=%1 index=%2 scan=%3", entity, found, scanned));
+  }
+  return found;
+ }
+ // The pre-0.1.15 lookup over every listed owner and part, without its pruning side
+ // effect. Debug cross-check only (EBG_DebugChecks.Enabled).
+ protected static SCR_ChimeraCharacter EBG_ScanSimulationPartOwner(IEntity entity)
+ {
   for (int i = s_EBG_SimulationOwners.Count() - 1; i >= 0; i--)
   {
    SCR_ChimeraCharacter owner = s_EBG_SimulationOwners[i];
-   if (!owner || !owner.m_EBG_SimulationParts || owner.m_EBG_SimulationParts.IsEmpty())
-   { s_EBG_SimulationOwners.Remove(i); continue; }
-   foreach (EBG_SimulationPart part : owner.m_EBG_SimulationParts) if (part.Entity == entity) return owner;
+   if (!owner || !owner.m_EBG_SimulationParts) continue;
+   foreach (EBG_SimulationPart part : owner.m_EBG_SimulationParts)
+   {
+    if (part.Entity == entity)
+    {
+     return owner;
+    }
+   }
   }
   return null;
  }
@@ -218,11 +306,12 @@ modded class SCR_ChimeraCharacter
    SCR_ChimeraCharacter previousOwner = EBG_FindSimulationPartOwner(entity);
    if (previousOwner && previousOwner != this) part = previousOwner.EBG_TakeSimulationPart(entity);
    if (part) part.RebaseTransferredStorage();
-   if (!part) { part = new EBG_SimulationPart(); part.Capture(entity); }
+   if (!part) { part = new EBG_SimulationPart(); part.Capture(entity); EBG_IndexSimulationPart(part); }
+   part.Owner = this;
    m_EBG_SimulationParts.Insert(part);
    captured.Insert(entity, true);
   }
-  if (first && !s_EBG_SimulationOwners.Contains(this)) s_EBG_SimulationOwners.Insert(this);
+  if (first) EBG_ListSimulationOwner(this);
   IEntity child = entity.GetChildren();
   while (child)
   {
@@ -254,8 +343,9 @@ modded class SCR_ChimeraCharacter
    {
     part.Restore();
    }
+   foreach (EBG_SimulationPart released : m_EBG_SimulationParts) EBG_UnindexSimulationPart(released);
    m_EBG_SimulationParts = null;
-   s_EBG_SimulationOwners.RemoveItem(this);
+   EBG_UnlistSimulationOwner(this);
   }
  }
  protected void EBG_ReconcileSimulationParts()
@@ -265,7 +355,7 @@ modded class SCR_ChimeraCharacter
   for (int i = m_EBG_SimulationParts.Count() - 1; i >= 0; i--)
   {
    ref EBG_SimulationPart part = m_EBG_SimulationParts[i];
-   if (!part.Entity || part.Entity.IsDeleted()) { m_EBG_SimulationParts.Remove(i); continue; }
+   if (!part.Entity || part.Entity.IsDeleted()) { m_EBG_SimulationParts.Remove(i); EBG_UnindexSimulationPart(part); continue; }
    SCR_ChimeraCharacter holder = EBG_SimulationHolder(part.Entity);
    if (holder == this && EBG_IsSimulationTreePart(part.Entity))
    {
@@ -277,13 +367,15 @@ modded class SCR_ChimeraCharacter
    {
     // Transfer the original baseline, never recapture somebody else's hidden state.
     if (!holder.m_EBG_SimulationParts) holder.m_EBG_SimulationParts = {};
+    part.Owner = holder;
     holder.m_EBG_SimulationParts.Insert(part);
-    if (!s_EBG_SimulationOwners.Contains(holder)) s_EBG_SimulationOwners.Insert(holder);
+    EBG_ListSimulationOwner(holder);
     part.RebaseTransferredStorage();
     part.Hide();
    }
    else
    {
+    EBG_UnindexSimulationPart(part);
     part.RestoreReleased();
    }
   }
@@ -331,7 +423,12 @@ modded class SCR_ChimeraCharacter
  void ~SCR_ChimeraCharacter()
  {
 		EXPBG_LazyStatics_SCR_ChimeraCharacter();
-  s_EBG_SimulationOwners.RemoveItem(this);
+  EBG_UnlistSimulationOwner(this);
+  // This character's parts die with it; drop their index keys too.
+  if (m_EBG_SimulationParts)
+  {
+   foreach (EBG_SimulationPart part : m_EBG_SimulationParts) EBG_UnindexSimulationPart(part);
+  }
   if (!GetGame()) return;
   GetGame().GetCallqueue().Remove(EBG_FinishSimulationChange);
   GetGame().GetCallqueue().Remove(EBG_OnSimulationState);
@@ -344,6 +441,8 @@ modded class SCR_ChimeraCharacter
 	{
 		if (!s_EBG_SimulationOwners)
 			s_EBG_SimulationOwners = new array<SCR_ChimeraCharacter>();
+		if (!s_EBG_PartIndex)
+			s_EBG_PartIndex = new map<EntityID, EBG_SimulationPart>();
 	}
 }
 
@@ -482,9 +581,10 @@ class EBG_SimulationCache
    foreach (Managed component : components)
    {
     if (!component) continue;
-    string type = component.Type().ToString();
     // Include installed and future subclasses without requiring RHS at compile time.
     if (!component.Type().IsInherited(rhsDevice)) continue;
+    // Named only for RHS devices: every other component skips the string.
+    string type = component.Type().ToString();
     bool powered, suspended;
     if (!GetGame().GetScriptModule().Call(component, "IsTurnedOn", false, powered)) return "RHS device IsTurnedOn unreadable: " + type;
     if (powered) return "Powered RHS device: " + type;

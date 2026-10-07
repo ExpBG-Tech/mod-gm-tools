@@ -6,7 +6,9 @@
 // that target. It sits just in front of the prisoner's face and follows his head bone on
 // every machine (seated, standing in ACE's surrender pose, moved or carried): looking at
 // his face selects Interrogate, while the medical contexts on his torso and limbs
-// (vanilla, ACE Medical) stay clear of it.
+// (vanilla, ACE Medical) stay clear of it. Clients follow every frame tick (ten times a
+// second within 20 m of the local player, once a second farther away); a dedicated
+// server, where nobody aims an interaction cast, follows in the manager's upkeep only.
 [EntityEditorProps(category: "EXPBG/AI Surrender", description: "Runtime interrogation point of a surrendered soldier; spawned by the server")]
 class ESR_InterrogationPointClass : GenericEntityClass {}
 
@@ -21,6 +23,10 @@ class ESR_InterrogationPoint : GenericEntity
  static const float FACE_UP = 0.07;
  static const float FACE_FORWARD = 0.16;
  static const float FOLLOW_INTERVAL = 0.1;
+ // Farther than this from the local player the point follows once a second: the
+ // interaction cast reaches 3 m, and closing 20 m to 3 m takes a sprinting player over 2 s.
+ static const float NEAR_DISTANCE = 20;
+ static const float FAR_FOLLOW_INTERVAL = 1;
  static const float FOLLOW_TOLERANCE = 0.02;
  // A bone reading farther than this from the prisoner's origin is not trusted.
  static const float MAX_FACE_DISTANCE = 2.5;
@@ -46,6 +52,10 @@ class ESR_InterrogationPoint : GenericEntity
  protected float m_fFollowIn;
  protected vector m_vStreamAnchor;
  protected bool m_bAnchored;
+ // Follow's head bone, looked up once per prisoner entity: a bone index is fixed for his
+ // skeleton, and a prisoner streamed in again is a new entity that looks it up anew.
+ protected SCR_ChimeraCharacter m_HeadOwner; // weak
+ protected TNodeId m_iHeadBone;
 
  void ESR_InterrogationPoint(IEntitySource src, IEntity parent)
  {
@@ -61,6 +71,9 @@ class ESR_InterrogationPoint : GenericEntity
    ClearEventMask(EntityEvent.FRAME);
    return;
   }
+  // Dedicated server: nobody aims an interaction cast here and the point only feeds
+  // streaming relevance, so it has no frame follow; ESR_SurrenderManager.Upkeep moves it.
+  if (System.IsConsoleApp()) ClearEventMask(EntityEvent.FRAME);
   if (m_bCollider) return;
   autoptr PhysicsGeomDef geoms[] = {PhysicsGeomDef("", PhysicsGeom.CreateSphere(COLLIDER_RADIUS), "material/default", EPhysicsLayerDefs.Interaction)};
   m_bCollider = Physics.CreateStaticEx(this, geoms) != null;
@@ -70,8 +83,18 @@ class ESR_InterrogationPoint : GenericEntity
  {
   m_fFollowIn -= timeSlice;
   if (m_fFollowIn > 0) return;
-  m_fFollowIn = FOLLOW_INTERVAL;
+  m_fFollowIn = FollowInterval();
   Follow();
+ }
+
+ // Clients and a listen-server host: ten times a second while the local player's
+ // controlled entity is within NEAR_DISTANCE of the point, once a second otherwise.
+ protected float FollowInterval()
+ {
+  IEntity viewer = SCR_PlayerController.GetLocalControlledEntity();
+  if (viewer && vector.DistanceSq(viewer.GetOrigin(), GetOrigin()) < NEAR_DISTANCE * NEAR_DISTANCE)
+   return FOLLOW_INTERVAL;
+  return FAR_FOLLOW_INTERVAL;
  }
 
  // The prisoner's face from his animated head bone: eye height, just in front of the
@@ -81,28 +104,67 @@ class ESR_InterrogationPoint : GenericEntity
   if (!character) return false;
   Animation animation = character.GetAnimation();
   if (!animation) return false;
-  TNodeId bone = animation.GetBoneIndex(HEAD_BONE);
-  if (bone < 0) return false;
+  vector candidate;
+  if (!FaceFromBone(character, animation, animation.GetBoneIndex(HEAD_BONE), candidate))
+   return false;
+  face = candidate;
+  return true;
+ }
+
+ // FacePosition with the head bone already looked up.
+ protected static bool FaceFromBone(IEntity character, Animation animation, TNodeId bone, out vector face)
+ {
+  if (bone < 0)
+   return false;
   vector head[4];
-  if (!animation.GetBoneMatrix(bone, head)) return false;
+  if (!animation.GetBoneMatrix(bone, head))
+   return false;
   vector world[4];
   character.GetWorldTransform(world);
   Math3D.MatrixMultiply4(world, head, head);
   vector candidate = head[3] + head[1] * FACE_UP - head[2] * FACE_FORWARD;
   // A NaN reading fails this comparison too.
   float distanceSq = vector.DistanceSq(candidate, character.GetOrigin());
-  if (!(distanceSq <= MAX_FACE_DISTANCE * MAX_FACE_DISTANCE)) return false;
+  if (!(distanceSq <= MAX_FACE_DISTANCE * MAX_FACE_DISTANCE))
+   return false;
   face = candidate;
   return true;
  }
 
- // Any machine, ten times a second: keep the point on the prisoner's face while he sits
- // down, stands, is moved by a Game Master or carried. False while his head cannot be
- // read (not streamed in here); the point then stays where it was.
+ // FacePosition(GetPrisoner()) for Follow, with the head bone kept per prisoner entity.
+ protected bool PrisonerFace(out vector face)
+ {
+  SCR_ChimeraCharacter prisoner = GetPrisoner();
+  if (!prisoner)
+   return false;
+  Animation animation = prisoner.GetAnimation();
+  if (!animation)
+   return false;
+  if (prisoner != m_HeadOwner)
+  {
+   TNodeId bone = animation.GetBoneIndex(HEAD_BONE);
+   // Only a bone that was found is kept; a missing one is looked up again next time.
+   if (bone < 0)
+    return false;
+   m_iHeadBone = bone;
+   m_HeadOwner = prisoner;
+  }
+  vector candidate;
+  if (!FaceFromBone(prisoner, animation, m_iHeadBone, candidate))
+   return false;
+  face = candidate;
+  return true;
+ }
+
+ // Keep the point on the prisoner's face while he sits down, stands, is moved by a Game
+ // Master or carried: clients from EOnFrame, a dedicated server from the manager's
+ // upkeep. False while his head cannot be read (not streamed in here); the point then
+ // stays where it was.
  bool Follow()
  {
   vector face;
-  if (!FacePosition(GetPrisoner(), face)) return false;
+  if (!PrisonerFace(face))
+   return false;
   vector previous = GetOrigin();
   if (vector.DistanceSq(previous, face) <= FOLLOW_TOLERANCE * FOLLOW_TOLERANCE) return true;
   vector transform[4];

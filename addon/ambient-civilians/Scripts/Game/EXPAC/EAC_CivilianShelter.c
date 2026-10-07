@@ -365,13 +365,9 @@ class EAC_CivilianShelter
   // points per sheltering or emerging resident per tick; EAC_RoutineEmerge reaches
   // this same function, so both callers get the skip from here.
   if (!EAC_ExclusionZone.AnyTransitBlocked()) return true;
-  vector previous = from;
-  foreach (vector point : route)
-  {
-   if (!EAC_ExclusionZone.IsTransitAllowed(previous, point)) return false;
-   previous = point;
-  }
-  return true;
+  // Perf plan WP6 (civilians-a-01): the same AND of IsTransitAllowed over every
+  // segment from `from` through the route, as one verdict.
+  return EAC_ExclusionZone.IsRouteAllowed(from, route);
  }
 
  // Footprint candidates are accepted only with native navmesh, clear body volume
@@ -466,10 +462,49 @@ class EAC_CivilianShelter
   IEntity actor = claim.Character;
   CharacterControllerComponent controller = CharacterControllerComponent.Cast(actor.FindComponent(CharacterControllerComponent));
   if (!controller || controller.IsPlayerControlled() || SCR_PossessingManagerComponent.GetPlayerIdFromControlledEntity(actor) != 0 || !claim.OptimizerMember || claim.OptimizerMember.WasPlayer || CompartmentAccessComponent.GetVehicleIn(actor)) { Stop("actor guard"); return; }
+  Respond(module, activation, now, claim, actor, controller);
+ }
+
+ // EAC_CivilianDanger.Monitor's call (perf plan WP6, civilians-a-02). Danger runs
+ // it straight after proving, in the same call chain and on the same tick, every
+ // guard above that costs a lookup: the active module, the resident activation,
+ // HasCivilianControl, the controller and IsPlayerControlled, and the possession
+ // query. Nothing between those checks and this call can change them (it stops a
+ // walk and an activity: waypoints and a loiter request). The possession query
+ // walks every connected player for an AI actor, so it is no longer asked twice.
+ // The field checks stay because they are free, and GetVehicleIn stays because
+ // Danger does not test it.
+ void Monitor(EAC_AmbientModule module, EAC_PedestrianActivation activation, float now, CharacterControllerComponent controller)
+ {
+  if (!activation) { Stop("module guard"); return; }
+  EAC_ResidentClaim claim = activation.Claim;
+  if (!claim || !claim.Character || claim.Cache || activation.PlayerTouched || !claim.Committed) { Stop("claim guard"); return; }
+  IEntity actor = claim.Character;
+  if (!controller || !claim.OptimizerMember || claim.OptimizerMember.WasPlayer || CompartmentAccessComponent.GetVehicleIn(actor)) { Stop("actor guard"); return; }
+  Respond(module, activation, now, claim, actor, controller);
+ }
+
+ // The compartment component the native character keeps, or the FindComponent
+ // the response used before (civilians-a-02).
+ protected static CompartmentAccessComponent FindAccess(IEntity actor)
+ {
+  ChimeraCharacter character = ChimeraCharacter.Cast(actor);
+  if (character)
+  {
+   CompartmentAccessComponent fromCharacter = character.GetCompartmentAccessComponent();
+   if (fromCharacter)
+    return fromCharacter;
+  }
+  return CompartmentAccessComponent.Cast(actor.FindComponent(CompartmentAccessComponent));
+ }
+
+ // The response itself, after either Monitor's guards.
+ protected void Respond(EAC_AmbientModule module, EAC_PedestrianActivation activation, float now, EAC_ResidentClaim claim, IEntity actor, CharacterControllerComponent controller)
+ {
   // Retained furniture cleanup is not an actor command. Wait only for native
   // occupation/entry/exit, then allow danger response while props stay protected.
   SCR_CharacterControllerComponent loiterController = SCR_CharacterControllerComponent.Cast(controller);
-  CompartmentAccessComponent access = CompartmentAccessComponent.Cast(actor.FindComponent(CompartmentAccessComponent));
+  CompartmentAccessComponent access = FindAccess(actor);
   if (claim.AlarmUntil <= now)
   {
    // The alarm is over: the resident is no longer sheltering from anything, so
@@ -540,7 +575,7 @@ class EAC_CivilianShelter
     if (Verbose()) m_LastProbe = "shelter move failed at " + failedAt.ToString() + " permanent=" + failedForGood.ToString();
     ClearOrder(); if (!Pose(false)) return; RequestProne(actor, controller, now); m_NextAttempt = now + 5; return;
    }
-   AICharacterMovementComponent movement = AICharacterMovementComponent.Cast(actor.FindComponent(AICharacterMovementComponent));
+   AICharacterMovementComponent movement = activation.CachedMovement(actor);
    m_ScratchRoute.Clear(); if (movement) movement.GetCurrentPath(m_ScratchRoute);
    bool allowed = movement && RouteAllowed(actor.GetOrigin(), m_Destination, m_ScratchRoute);
    // Reject an invalid/excluded route before arrival can mark it sheltered.

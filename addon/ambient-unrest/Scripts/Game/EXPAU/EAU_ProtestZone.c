@@ -5,6 +5,8 @@ class EAU_ProtestZoneClass : GenericEntityClass {}
 class EAU_Protester
 {
  SCR_ChimeraCharacter Actor;
+ // The actor's AI control (weak), found once at spawn; Observe looks it up again only while unset.
+ AIControlComponent Control;
  ResourceName Prefab;
  vector Spot;
  // Spawn facing (entity yaw, 0-360); the protester turns back to it when no player is in sight.
@@ -609,7 +611,12 @@ class EAU_ProtestZone : GenericEntity
     }
    }
    // Static by design: no movement, no stance change and no danger reaction.
-   AIControlComponent control = AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
+   AIControlComponent control = member.Control;
+   if (!control)
+   {
+    control = AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
+    member.Control = control;
+   }
    if (control && control.IsAIActivated()) control.DeactivateAI();
   }
   if (m_Group && m_Group.IsAIActivated()) m_Group.DeactivateAI();
@@ -795,6 +802,7 @@ class EAU_ProtestZone : GenericEntity
   FactionAffiliationComponent affiliation = FactionAffiliationComponent.Cast(actor.FindComponent(FactionAffiliationComponent));
   if (affiliation) affiliation.SetAffiliatedFactionByKey(CIV_FACTION);
   AIControlComponent control = AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
+  member.Control = control;
   if (control)
   {
    AIAgent agent = control.GetControlAIAgent();

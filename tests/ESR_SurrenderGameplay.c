@@ -34,8 +34,9 @@ class EXPG_GarrisonGameplay : GenericEntity
  // Face case: the teleported prisoner's point and his spot before the move.
  ESR_InterrogationPoint MovedPoint;
  vector MovedFrom;
- // Face case: his face on the previous step, to measure only once it holds still.
- vector SettleFace;
+ // Face case: faces on the previous step and when one last moved (FacesSettled).
+ ref array<vector> SettleFaces = {};
+ float SettleMovedAt = -1;
  // Unit Caching case: dry land used by the unit-cleanup fixture, far from both squads.
  vector CacheOffset = "-600 0 -600";
  SCR_AIGroup CacheSquad;
@@ -145,6 +146,24 @@ class EXPG_GarrisonGameplay : GenericEntity
   SCR_MapMarkerManagerComponent markers = SCR_MapMarkerManagerComponent.GetInstance();
   if (!markers) return -1;
   return markers.GetStaticMarkers().Count();
+ }
+
+ // A dedicated server moves interrogation points only in the manager's 5 s upkeep
+ // (clients follow every frame tick), so the server's points are measured once every face
+ // has held still (reads 0.5 s apart within 3 cm) for one upkeep interval plus a margin.
+ bool FacesSettled(array<ESR_Prisoner> prisoners)
+ {
+  bool moved = SettleMovedAt < 0 || SettleFaces.Count() != prisoners.Count();
+  SettleFaces.Resize(prisoners.Count());
+  for (int i = 0; i < prisoners.Count(); i++)
+  {
+   vector face = SettleFaces[i];
+   if (prisoners[i] && prisoners[i].Character) face = ESR_SurrenderManager.PointPosition(prisoners[i]);
+   if (vector.Distance(face, SettleFaces[i]) > 0.03) moved = true;
+   SettleFaces[i] = face;
+  }
+  if (moved) SettleMovedAt = Now();
+  return Now() - SettleMovedAt >= ESR_SurrenderManager.UPKEEP_MS * 0.001 + 0.5;
  }
 
  // Face case: the Interrogate action's context sits on the prisoner's face, within 0.25 m
@@ -292,8 +311,12 @@ class EXPG_GarrisonGameplay : GenericEntity
     if (Now() - PhaseAt > 10) { Check(false, string.Format("four survivors surrendered (got %1)", ESR_SurrenderManager.PrisonerCount())); Finish("surrender"); }
     return;
    }
-   // Weapon drops and the sit-down are scheduled; give them time.
+   // Weapon drops and the sit-down are scheduled; give them time, then let one server
+   // upkeep move the points after the faces settled (FacesSettled), at most until 30 s.
    if (Now() - PhaseAt < 8) return;
+   array<ESR_Prisoner> seated = {};
+   for (int s = 0; s < ESR_SurrenderManager.PrisonerCount(); s++) seated.Insert(ESR_SurrenderManager.GetPrisonerAt(s));
+   if (!FacesSettled(seated) && Now() - PhaseAt < 30) return;
    Check(ESR_SurrenderManager.PrisonerCount() == SIZE - 2, "exactly the four able survivors surrendered");
    int outsideGroup, passive, unarmed, civilian, points, sitting, aceHeld;
    bool ace = ESR_AceCaptives.Available();
@@ -347,20 +370,21 @@ class EXPG_GarrisonGameplay : GenericEntity
     MovedPoint = Talker.Point;
     Talker.Character.Teleport(moved);
    }
+   SettleMovedAt = -1;
    Phase = 3; PhaseAt = Now(); return;
   }
   if (Phase == 3)
   {
    // The move may end his sit and the 5 s upkeep sit him down again; a face still in
-   // that animation outruns the 0.1 s follow. Measured once his face holds still (two
-   // reads 0.5 s apart within 3 cm), 8 to 20 s after the move.
+   // that animation outruns any follow, and a dedicated server follows in that upkeep
+   // only. Measured once his face has held still for one upkeep interval (FacesSettled),
+   // 8 to 26 s after the move.
    if (Now() - PhaseAt < 8) return;
    if (Talker && Talker.Character)
    {
-    vector settleNow = ESR_SurrenderManager.PointPosition(Talker);
-    bool still = vector.Distance(settleNow, SettleFace) <= 0.03;
-    SettleFace = settleNow;
-    if (!still && Now() - PhaseAt < 20) return;
+    array<ESR_Prisoner> movedOne = {Talker};
+    bool still = FacesSettled(movedOne);
+    if (!still && Now() - PhaseAt < 26) return;
     float movedBy = vector.Distance(Talker.Character.GetOrigin(), MovedFrom);
     PrintFormat("[ESR TEST FACE] teleport movedBy=%1 samePoint=%2 still=%3 after=%4", movedBy, Talker.Point == MovedPoint, still, Now() - PhaseAt);
     Check(movedBy > 0.5 && Talker.Point == MovedPoint && FaceReady(Talker, "after a 0.8 m teleport"), "the same interrogation point follows a moved prisoner's face");

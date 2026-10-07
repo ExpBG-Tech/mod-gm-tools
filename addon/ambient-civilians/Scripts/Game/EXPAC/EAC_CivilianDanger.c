@@ -21,11 +21,22 @@ class EAC_CivilianDanger
  static bool HasCombatThreat(IEntity actor)
  {
   if (!actor) return true;
-  AIControlComponent control = AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
+  // Perf plan WP6 (civilians-a-02): one cast, then the components the native
+  // character already holds. A missing one falls back to the FindComponent this
+  // used before, so "missing component means threat" below is unchanged.
+  ChimeraCharacter character = ChimeraCharacter.Cast(actor);
+  AIControlComponent control;
+  SCR_CharacterDamageManagerComponent damage;
+  if (character)
+  {
+   control = character.GetAIControlComponent();
+   damage = SCR_CharacterDamageManagerComponent.Cast(character.GetDamageManager());
+  }
+  if (!control) control = AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
   if (!control || !control.GetAIAgent()) return true;
   AIAgent agent = control.GetAIAgent();
   SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
-  SCR_CharacterDamageManagerComponent damage = SCR_CharacterDamageManagerComponent.Cast(actor.FindComponent(SCR_CharacterDamageManagerComponent));
+  if (!damage) damage = SCR_CharacterDamageManagerComponent.Cast(actor.FindComponent(SCR_CharacterDamageManagerComponent));
   // Native injury threat can outlive treatment. Active bleeding remains unsafe,
   // while stable old wounds must not create a permanent routine/cache veto.
   // The optimizer's queue veto also covers doors, horns and vehicle avoidance.
@@ -81,8 +92,11 @@ class EAC_CivilianDanger
   if (!Replication.IsServer() || !activation) return;
   if (!module || module != EAC_AmbientModule.GetActive()) { activation.Shelter.Stop("danger module guard"); return; }
   EAC_ResidentClaim claim = activation.Claim;
-  if (!claim || !claim.Committed || claim.Cache || activation.PlayerTouched || module.GetResidentActivation(claim.Home, claim.Resident) != claim || !EAC_PedestrianSpawner.HasCivilianControl(claim.Character, claim.Group)) { activation.Shelter.Stop("danger claim guard"); return; }
-  CharacterControllerComponent controller = CharacterControllerComponent.Cast(claim.Character.FindComponent(CharacterControllerComponent));
+  // Perf plan WP6 (civilians-a-02, b-07): the component lookups come from the
+  // activation's Bind-time cache (FindComponent for any other actor); every live
+  // condition is still evaluated here on every visit.
+  if (!claim || !claim.Committed || claim.Cache || activation.PlayerTouched || module.GetResidentActivation(claim.Home, claim.Resident) != claim || !EAC_PedestrianSpawner.HasCivilianControl(claim.Character, claim.Group, activation)) { activation.Shelter.Stop("danger claim guard"); return; }
+  CharacterControllerComponent controller = activation.CachedController(claim.Character);
   if (controller.IsPlayerControlled() || SCR_PossessingManagerComponent.GetPlayerIdFromControlledEntity(claim.Character) != 0 || !claim.OptimizerMember || claim.OptimizerMember.WasPlayer) { activation.Shelter.Stop("danger actor guard"); return; }
   if (HasCombatThreat(claim.Character))
   {
@@ -92,6 +106,8 @@ class EAC_CivilianDanger
    activation.Walking.Stop();
    if (activation.Activity) activation.Activity.RequestStop(true);
   }
-  activation.Shelter.Monitor(module, activation, now);
+  // The guards above are the ones Shelter.Monitor would repeat; the overload
+  // takes them as proven and keeps only its own compartment check.
+  activation.Shelter.Monitor(module, activation, now, controller);
  }
 }

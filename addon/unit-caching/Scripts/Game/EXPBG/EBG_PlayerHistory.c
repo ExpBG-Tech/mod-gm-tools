@@ -7,6 +7,12 @@ modded class SCR_ChimeraCharacter
  void SCR_ChimeraCharacter(IEntitySource src, IEntity parent) { m_EBG_GMCreated = EBG_MissionPersistence.GMSpawnInProgress(); }
  bool EBG_IsGMCreated() { return m_EBG_GMCreated; }
  void EBG_MarkPlayerControlled() { m_EBG_EverPlayerControlled = true; EBG_MissionPlayerHistory.Mark(this); }
+ // The latch alone. EBG_MissionPlayerHistory.Contains skips its observed-entity scan for
+ // a character without it: only EBG_MarkPlayerControlled lists one, after setting it.
+ bool EBG_IsMarkedPlayer()
+ {
+  return m_EBG_EverPlayerControlled;
+ }
  bool EBG_WasPlayerControlled()
  {
   CharacterControllerComponent controller = GetCharacterController();

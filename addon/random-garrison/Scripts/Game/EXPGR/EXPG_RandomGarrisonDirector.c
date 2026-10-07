@@ -8,7 +8,9 @@ class EXPG_RGBudget
 
 // One server call queue (100 ms) for every Random Garrison zone of the current world:
 // at most 64 zones, round robin, about 2 ms of zone script per tick (at least one
-// zone per tick). Shared limits: one squad spawn every 1.5 s, at most two squads still
+// zone per tick). While every zone is idle (and nothing waits for deletion) it steps
+// them every 2 s instead; a Wake, or work found by a 2 s tick, brings back 100 ms.
+// Shared limits: one squad spawn every 1.5 s, at most two squads still
 // spawning their soldiers, at most three building analyses at a time (the manager's
 // pump runs them; no zone ever steps a plan), one zone per building (claims). It also
 // deletes what deleted zones leave behind (8 entities per tick), keeps squads that
@@ -17,6 +19,11 @@ class EXPG_RGBudget
 class EXPG_RandomGarrisonDirector
 {
  static const int TICK_MS = 100;
+ // Cadence while every zone is idle (status refresh and late work, within 2 s).
+ static const int IDLE_TICK_MS = 2000;
+ // 100 ms ticks kept after each Wake (one status interval), so an edit or a restore
+ // reaches the status as soon as with a permanent 100 ms tick.
+ static const int WAKE_TICKS = 6;
  static const int MAX_ZONES = 64;
  static const int BUDGET_MS = 2;
  static const float SPAWN_INTERVAL = 1.5;
@@ -32,6 +39,10 @@ class EXPG_RandomGarrisonDirector
  protected static ref EXPG_RGBudget s_Budget;
  protected static BaseWorld s_World;
  protected static bool s_Scheduled;
+ // The scheduled repeat is the 100 ms one (false: the 2 s idle one).
+ protected static bool s_bFast;
+ // 100 ms ticks still owed to the last Wake.
+ protected static int s_iWakeTicks;
  protected static bool s_SaveHooked;
  protected static bool s_CapWarned;
  protected static float s_NextSpawn;
@@ -59,6 +70,8 @@ class EXPG_RandomGarrisonDirector
   s_Claims.Clear();
   s_World = world;
   s_Scheduled = false;
+  s_bFast = false;
+  s_iWakeTicks = 0;
   s_SaveHooked = false;
   s_CapWarned = false;
   s_NextSpawn = 0;
@@ -127,20 +140,38 @@ class EXPG_RandomGarrisonDirector
   Wake();
  }
 
+ // Work arrived (or may have): the 100 ms repeat, also in place of the 2 s idle one.
  static void Wake()
  {
-  if (s_Scheduled || !GetGame() || !Replication.IsServer())
+  if (!GetGame() || !Replication.IsServer())
   {
    return;
   }
+  s_iWakeTicks = WAKE_TICKS;
+  if (s_Scheduled && s_bFast)
+  {
+   return;
+  }
+  if (s_Scheduled) { GetGame().GetCallqueue().Remove(Tick); }
   s_Scheduled = true;
+  s_bFast = true;
   GetGame().GetCallqueue().CallLater(Tick, TICK_MS, true);
+ }
+
+ // Every zone is idle: one step every 2 s keeps their status and any late work going.
+ protected static void SlowDown()
+ {
+  GetGame().GetCallqueue().Remove(Tick);
+  s_bFast = false;
+  GetGame().GetCallqueue().CallLater(Tick, IDLE_TICK_MS, true);
  }
 
  protected static void Doze()
  {
   if (GetGame()) { GetGame().GetCallqueue().Remove(Tick); }
   s_Scheduled = false;
+  s_bFast = false;
+  s_iWakeTicks = 0;
  }
 
  protected static void Compact()
@@ -179,19 +210,36 @@ class EXPG_RandomGarrisonDirector
   if (count > 0)
   {
    // Zones are visited round robin; a zone with no work costs a status check only.
-   busy = true;
    int first = s_Cursor % count;
    int visited;
    while (visited < count)
    {
     if (visited > 0 && System.GetTickCount() >= s_Budget.Deadline) { break; }
     EXPG_RandomGarrisonModule zone = s_Zones[(first + visited) % count];
-    if (zone) { zone.Step(now, s_Budget); }
+    if (zone && zone.Step(now, s_Budget)) { busy = true; }
     visited++;
    }
    s_Cursor = (first + visited) % count;
+   // Zones the budget left out take their turn on the next 100 ms tick.
+   if (visited < count) { busy = true; }
   }
-  if (!busy) { Doze(); }
+  if (!busy && count == 0)
+  {
+   Doze();
+   return;
+  }
+  if (s_iWakeTicks > 0)
+  {
+   s_iWakeTicks--;
+   busy = true;
+  }
+  if (busy)
+  {
+   // Work found by a 2 s idle tick: back to 100 ms.
+   if (!s_bFast) { Wake(); }
+   return;
+  }
+  if (s_bFast) { SlowDown(); }
  }
 
  protected static bool ServiceJanitor()

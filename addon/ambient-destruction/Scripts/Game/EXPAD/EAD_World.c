@@ -151,6 +151,11 @@ class EAD_World
   // Finish diagnostics/generation for every zone, but resume reconciliation after
   // the last admitted item so persistent failures cannot starve later zones.
   if (nextWorkCursor >= 0) s_Cursor = nextWorkCursor;
+  // One slot-count broadcast per changed zone per tick, after all of its reconcile work.
+  if (authority)
+  {
+   foreach (EAD_Zone countZone : s_Zones) { if (countZone) countZone.FlushCount(); }
+  }
   if (authority && now >= s_NextBuilding)
   {
    s_NextBuilding = now + 0.25;

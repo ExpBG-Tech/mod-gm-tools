@@ -110,8 +110,8 @@ foreach ($path in @((Join-Path $scripts 'EBG_CacheManager.c'), (Join-Path $scrip
 # Native fixture wiring (executed only by the orchestrator through Run-Gameplay).
 $fixture = Read-Text $fixturePath
 Assert ($fixture -match 'class\s+EXPG_GarrisonGameplayClass\s*:\s*GenericEntityClass' -and $fixture -match 'class\s+EXPG_GarrisonGameplay\s*:\s*GenericEntity') 'fixture must keep the runner driver class names'
-Assert ($fixture -match [regex]::Escape("-FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete'")) 'fixture header must carry its runner command'
-Assert ($fixture -match 'PrintFormat\("\[EBG LOCAL CACHE RESULT\] checks=%1 failures=%2 reason=%3"') 'fixture must print the RESULT line the runner expects'
+Assert ($fixture -match [regex]::Escape("-FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete mismatches=0'")) 'fixture header must carry its runner command'
+Assert ($fixture -match 'PrintFormat\("\[EBG LOCAL CACHE RESULT\] checks=%1 failures=%2 reason=%3 mismatches=%4", Checks, Failures, reason, EBG_DebugChecks\.Mismatches\);') 'fixture must print the RESULT line the runner expects (with the index cross-check count)'
 Assert ($fixture -match 'modded\s+class\s+EBG_CacheManager' -and $fixture -match 'override\s+protected\s+void\s+UpdatePlayers\(\)') 'fixture must inject the host character through UpdatePlayers'
 Assert ($fixture -match 'Resource\s+resource\s*=\s*Resource\.Load\(prefab\);') 'fixture must keep Resource.Load results in a local'
 

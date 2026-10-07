@@ -1,5 +1,5 @@
 // TEST ONLY. EXPBG Unit Dialog across Unit Caching Full caching (two sleep/wake cycles).
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EUD_DialogCacheGameplay.c -ExpectResult '\[EXPG DIALOG CACHE RESULT\] checks=[1-9]\d* failures=0 cycles=2 reason=complete' -OrchestratorSlotGranted
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EUD_DialogCacheGameplay.c -ExpectResult '\[EXPG DIALOG CACHE RESULT\] checks=[1-9]\d* failures=0 cycles=2 reason=complete mismatches=0' -OrchestratorSlotGranted
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed.
 // Real USSR rifle squad and Unit Caching zone prefab, production dialog writes, the
 // production Full capture/respawn (EBG_PrefabFullCache with the EBG_SurvivorCarry hook
@@ -48,6 +48,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
+  EBG_DebugChecks.Enabled = true; EBG_DebugChecks.Mismatches = 0; // indexes also run their old full scans
   s_Presence = {};
   Started = Now();
   Next = Started + 10;
@@ -66,7 +67,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   Finished = true;
   if (s_Presence) s_Presence.Clear();
   ClearEventMask(EntityEvent.FRAME);
-  PrintFormat("[EXPG DIALOG CACHE RESULT] checks=%1 failures=%2 cycles=%3 reason=%4", Checks, Failures, Cycle, reason);
+  Check(EBG_DebugChecks.Mismatches == 0, "index cross-checks matched their old full scans");
+  PrintFormat("[EXPG DIALOG CACHE RESULT] checks=%1 failures=%2 cycles=%3 reason=%4 mismatches=%5", Checks, Failures, Cycle, reason, EBG_DebugChecks.Mismatches);
   GetGame().RequestClose();
  }
  vector Ground(vector p, float lift) { p[1] = GetGame().GetWorld().GetSurfaceY(p[0], p[2]) + lift; return p; }

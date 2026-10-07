@@ -10,6 +10,9 @@ class EAC_PedestrianWalk
  // Audit S3. One scratch array per walker, cleared before every GetCurrentPath,
  // instead of a fresh allocation per resident per 2 Hz monitor tick.
  protected ref array<vector> m_ScratchRoute = {};
+ // Perf plan WP6 (civilians-b-07). The same for Step's waypoint read, which
+ // allocated a fresh array on every leg attempt.
+ protected ref array<AIWaypoint> m_ScratchOrders = {};
 
  void Stop()
  {
@@ -228,7 +231,7 @@ class EAC_PedestrianWalk
   IEntity actor = claim.Character;
   if (!Replication.IsServer() || !module || module != EAC_AmbientModule.GetActive()) return;
   if (claim.AlarmUntil > now) { Stop(); return; }
-  if (!m_Waypoint || !claim.Committed || !actor || !claim.Home.BuildingEntity || claim.Group != m_Group || !claim.Resident.Wanted || claim.Resident.Dead || activation.PlayerTouched || CompartmentAccessComponent.GetVehicleIn(actor) || !EAC_PedestrianSpawner.HasCivilianControl(actor, claim.Group)) { Stop(); return; }
+  if (!m_Waypoint || !claim.Committed || !actor || !claim.Home.BuildingEntity || claim.Group != m_Group || !claim.Resident.Wanted || claim.Resident.Dead || activation.PlayerTouched || CompartmentAccessComponent.GetVehicleIn(actor) || !EAC_PedestrianSpawner.HasCivilianControl(actor, claim.Group, activation)) { Stop(); return; }
   // A wander leg the native pathing could not complete. The guard already kept
   // vanilla off its NodeError line; drop the order here and, when the leg's
   // destination itself has no path, keep any later stop from being placed there.
@@ -242,22 +245,19 @@ class EAC_PedestrianWalk
    return;
   }
   bool allowed = EAC_ExclusionZone.IsPopulationAllowed(m_Waypoint.GetOrigin()) && EAC_ExclusionZone.IsTransitAllowed(actor.GetOrigin(), m_Waypoint.GetOrigin());
-  AICharacterMovementComponent movement = AICharacterMovementComponent.Cast(actor.FindComponent(AICharacterMovementComponent));
+  AICharacterMovementComponent movement = activation.CachedMovement(actor);
   if (!movement) allowed = false;
   if (allowed)
   {
    m_ScratchRoute.Clear(); movement.GetCurrentPath(m_ScratchRoute);
    if (m_ScratchRoute.Count() > 64) allowed = false;
-   // Audit B1. The per-segment sweep exists solely for transit-blocking zones;
-   // with none in the mission it is skipped rather than run against an empty list
-   // for up to 64 points per resident per tick.
+   // Audit B1. The route test exists solely for transit-blocking zones; with
+   // none in the mission it is skipped. Perf plan WP6: one IsRouteAllowed
+   // verdict, the same AND of IsTransitAllowed over every segment that the
+   // per-point loop used to take, without a module lookup per point.
    if (EAC_ExclusionZone.AnyTransitBlocked())
    {
-    vector previous = actor.GetOrigin();
-    for (int segment = 0; allowed && segment < m_ScratchRoute.Count(); segment++)
-    {
-     allowed = EAC_ExclusionZone.IsTransitAllowed(previous, m_ScratchRoute[segment]); previous = m_ScratchRoute[segment];
-    }
+    if (allowed) allowed = EAC_ExclusionZone.IsRouteAllowed(actor.GetOrigin(), m_ScratchRoute);
    }
   }
   if (!allowed || now >= m_Deadline || claim.Group.GetCurrentWaypoint() != m_Waypoint || vector.Distance(actor.GetOrigin(), m_Waypoint.GetOrigin()) < 2)
@@ -274,8 +274,8 @@ class EAC_PedestrianWalk
   EAC_ResidentClaim claim = activation.Claim;
   IEntity actor = claim.Character;
   if (claim.AlarmUntil > module.GetWorld().GetWorldTime() * 0.001) return;
-  if (!claim.Committed || !actor || !claim.Home.BuildingEntity || !claim.Resident.Wanted || claim.Resident.Dead || activation.PlayerTouched || CompartmentAccessComponent.GetVehicleIn(actor) || !EAC_PedestrianSpawner.IsCivilian(actor, claim.Group)) { Stop(); return; }
-  AIControlComponent control = AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
+  if (!claim.Committed || !actor || !claim.Home.BuildingEntity || !claim.Resident.Wanted || claim.Resident.Dead || activation.PlayerTouched || CompartmentAccessComponent.GetVehicleIn(actor) || !EAC_PedestrianSpawner.IsCivilian(actor, claim.Group, activation)) { Stop(); return; }
+  AIControlComponent control = activation.CachedAIControl(actor);
   AIAgent agent = control.GetAIAgent();
   float now = actor.GetWorld().GetWorldTime() * 0.001;
   // Checked before the backoff, and writable only by YieldTo: a routine start has
@@ -292,8 +292,8 @@ class EAC_PedestrianWalk
    m_Attempt = 0;
   }
   m_NextAttempt = now + 1;
-  array<AIWaypoint> existing = {}; claim.Group.GetWaypoints(existing);
-  if (!existing.IsEmpty() || !EAC_ExclusionZone.IsPopulationAllowed(actor.GetOrigin())) return;
+  m_ScratchOrders.Clear(); claim.Group.GetWaypoints(m_ScratchOrders);
+  if (!m_ScratchOrders.IsEmpty() || !EAC_ExclusionZone.IsPopulationAllowed(actor.GetOrigin())) return;
   AIPathfindingComponent path = AIPathfindingComponent.Cast(claim.Group.FindComponent(AIPathfindingComponent));
   if (!path || !path.GetNavmeshComponent()) return;
   vector candidate;

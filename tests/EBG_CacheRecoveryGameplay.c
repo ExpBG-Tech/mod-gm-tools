@@ -1,5 +1,5 @@
 // TEST ONLY. Unit Caching static-seat wake matrix (#14) and the Release blocked groups escape (#15).
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_CacheRecoveryGameplay.c -TimeoutSeconds 480 -OrchestratorSlotGranted
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_CacheRecoveryGameplay.c -ExpectResult '\[EBG RECOVERY TEST RESULT\] checks=[1-9]\d* failures=0 cases=5 reason=complete mismatches=0' -TimeoutSeconds 480 -OrchestratorSlotGranted
 // Real zone prefab, real tripod M2 and USSR squad, production Full sleep/wake, Prepare for
 // save and controller commands. Ported from the standalone Optimizer static-seat matrix.
 // Cases run one after another (Prepare for save is global): seat untouched, seat occupied by
@@ -50,6 +50,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
+  EBG_DebugChecks.Enabled = true; EBG_DebugChecks.Mismatches = 0; // indexes also run their old full scans
   Started = Now(); Next = Started + 15;
   // Dry points proven by the unit-cleanup fixture; one case at a time.
   AddCase("seat-untouched", "", 0, 0);
@@ -78,7 +79,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   Finished = true;
   ClearHooks();
   ClearEventMask(EntityEvent.FRAME);
-  PrintFormat("[EBG RECOVERY TEST RESULT] checks=%1 failures=%2 cases=%3 reason=%4", Checks, Failures, Cases.Count(), reason);
+  Check(EBG_DebugChecks.Mismatches == 0, "index cross-checks matched their old full scans");
+  PrintFormat("[EBG RECOVERY TEST RESULT] checks=%1 failures=%2 cases=%3 reason=%4 mismatches=%5", Checks, Failures, Cases.Count(), reason, EBG_DebugChecks.Mismatches);
   GetGame().RequestClose();
  }
  void ClearHooks()

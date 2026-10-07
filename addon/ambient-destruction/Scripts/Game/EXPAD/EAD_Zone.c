@@ -42,6 +42,13 @@ class EAD_Zone : GenericEntity
  protected ref EAD_DebugView m_DebugView;
  protected bool m_ImportedSnapshot;
  protected int m_WallCursor;
+ // Set where a record becomes suppressed; cleared by a full Reconcile pass that finds no
+ // live entity left on a suppressed slot.
+ protected bool m_SuppressPending;
+ // Server: a slot changed this tick; EAD_World.Tick publishes the count once (FlushCount).
+ protected bool m_CountDirty;
+ // Server: earliest time an occupied, empty-of-players zone queries occupancy again.
+ protected float m_NextOccupancyCheck;
  void EAD_Zone(IEntitySource src, IEntity parent) { SetEventMask(EntityEvent.INIT); }
  override void EOnInit(IEntity owner)
  {
@@ -171,8 +178,14 @@ class EAD_Zone : GenericEntity
   if (nearWake) { m_Wanted = true; m_EmptySince = -1; }
   else if (!nearSleep)
   {
-   if (m_EmptySince < 0) m_EmptySince = now;
-   if (m_Wanted && now - m_EmptySince >= 30 && !Occupied()) m_Wanted = false;
+   if (m_EmptySince < 0) { m_EmptySince = now; m_NextOccupancyCheck = 0; }
+   // After the 30 s grace, an occupied zone asks again at most every 10 s. Every reset of
+   // m_EmptySince re-arms the check; the wake path above is unchanged.
+   if (m_Wanted && now - m_EmptySince >= 30 && now >= m_NextOccupancyCheck)
+   {
+    if (Occupied()) m_NextOccupancyCheck = now + 10;
+    else m_Wanted = false;
+   }
   }
   else m_EmptySince = -1;
   if (wasWanted != m_Wanted)
@@ -320,8 +333,12 @@ class EAD_Zone : GenericEntity
  {
   if (EAD_Snapshot.Loading) return false;
   bool authority = Replication.IsServer();
-  // Live wall-loss cleanup uses the ordinary one-entity change token.
-  for (int suppressed = 0; suppressed < Live.Count() && suppressed < Records.Count(); suppressed++)
+  // Live wall-loss cleanup uses the ordinary one-entity change token. Only SuppressRecord
+  // and RPC_Suppress can leave a live entity on a suppressed slot, and both set
+  // m_SuppressPending; a pass that returns early keeps it set, so the next tick retries.
+  int slots;
+  if (m_SuppressPending) slots = Math.MinInt(Live.Count(), Records.Count());
+  for (int suppressed = 0; suppressed < slots; suppressed++)
   {
    if (!Records[suppressed].Suppressed || !Live[suppressed]) continue;
    IEntity lost = Live[suppressed];
@@ -331,6 +348,7 @@ class EAD_Zone : GenericEntity
    if (authority) m_DeletedTotal++;
    return true;
   }
+  m_SuppressPending = false;
   int wanted = m_Target;
   if (authority)
   {
@@ -347,7 +365,7 @@ class EAD_Zone : GenericEntity
    if (entity) return true;
    Live.RemoveOrdered(last);
    if (authority && removedObject) m_DeletedTotal++;
-   if (authority) PublishCount();
+   if (authority) m_CountDirty = true;
    if (Live.IsEmpty()) Diagnostics("cached");
    return true;
   }
@@ -370,7 +388,7 @@ class EAD_Zone : GenericEntity
   {
    // A tombstone retains the reliable indexed stream and cannot block later props.
    Live.Insert(null);
-   if (authority) PublishCount();
+   if (authority) m_CountDirty = true;
    return true;
   }
   IEntity created = EAD_Catalog.Spawn(Records[Live.Count()], GetWorld());
@@ -383,7 +401,7 @@ class EAD_Zone : GenericEntity
   }
   Live.Insert(created);
   if (authority) m_SpawnedTotal++;
-  if (authority) PublishCount();
+  if (authority) m_CountDirty = true;
   if (Live.Count() == Records.Count()) Diagnostics("restored");
   return true;
  }
@@ -392,15 +410,33 @@ class EAD_Zone : GenericEntity
   m_Target = Live.Count();
   Rpc(RPC_Count, m_Revision, m_Target);
  }
+ // Server, called by EAD_World.Tick after its reconcile pass: one reliable count per
+ // changed zone per tick instead of one per slot. Clients still step toward it at most
+ // eight props per tick.
+ void FlushCount()
+ {
+  if (!m_CountDirty) return;
+  m_CountDirty = false;
+  PublishCount();
+ }
  protected void SuppressRecord(int index)
  {
   Records[index].Suppressed = true;
+  m_SuppressPending = true;
   Rpc(RPC_Suppress, m_Revision, index);
   Diagnostics("wall-lost");
  }
  void SupportStep()
  {
   if (!Replication.IsServer() || EAD_Snapshot.Loading || Enabled == 0 || !m_Ready || m_Rebuild) return;
+  if (Live.IsEmpty())
+  {
+   // No live seated prop (an asleep zone). Leave the cursor exactly where the full
+   // pass below would: unchanged inside the records, otherwise at the record count.
+   int recordCount = Records.Count();
+   if (recordCount > 0 && (m_WallCursor <= 0 || m_WallCursor >= recordCount)) m_WallCursor = recordCount;
+   return;
+  }
   // One seated prop per global scheduler turn, at most nine short traces.
   for (int visited = 0; visited < Records.Count(); visited++)
   {
@@ -421,6 +457,8 @@ class EAD_Zone : GenericEntity
  {
   if (Replication.IsServer() || revision != m_Revision || index < 0 || index >= Records.Count()) return;
   Records[index].Suppressed = true;
+  // A deferred delete leaves the entity in Live; Reconcile retries it.
+  m_SuppressPending = true;
   if (index < Live.Count() && Live[index]) SCR_EntityHelper.DeleteEntityAndChildren(Live[index]);
  }
  [RplRpc(RplChannel.Reliable, RplRcver.Broadcast)]

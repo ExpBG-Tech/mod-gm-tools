@@ -83,6 +83,13 @@ class EXPG_PatrolControl
 	protected ref array<int> m_Visited = {};
 	protected ref array<int> m_Skipped = {};
 	protected ref array<float> m_SkipUntil = {};
+	// Cached at Start for the per-frame ownership test: an entity's components never change.
+	protected RplComponent m_Rpl;
+	// Last look request (world time in seconds, target). Each request restarts the
+	// native 2 s look, so it is re-issued once a second, at once for a new target or
+	// after the look was interrupted (not calm, no direction, knocked out, walking).
+	protected float m_LookIssued = -1000;
+	protected vector m_LookIssuedAt;
 
 	bool Start(SCR_ChimeraCharacter actor, EXPG_BuildingPlan plan, int initialNode, EXPG_PatrolState saved = null)
 	{
@@ -100,6 +107,7 @@ class EXPG_PatrolControl
 		AIControlComponent control = actor.GetAIControlComponent();
 		if (!control || !control.GetAIAgent()) { return false; }
 		m_Actor = actor;
+		m_Rpl = RplComponent.Cast(actor.FindComponent(RplComponent));
 		m_Agent = control.GetAIAgent();
 		m_Group = m_Agent.GetParentGroup();
 		m_Utility = SCR_AIUtilityComponent.Cast(m_Agent.FindComponent(SCR_AIUtilityComponent));
@@ -143,14 +151,25 @@ class EXPG_PatrolControl
 		return saved;
 	}
 
+	// Runs every frame (OnPrepareControls): the replication component cached at Start,
+	// the cheap native flags before the agent and group identity tests and the
+	// building test (m_Plan.Valid() stays per frame: a moved building releases at once).
 	bool IsOwnedActor()
 	{
-		if (!Replication.IsServer() || !m_Actor || !m_Agent || !m_Group || !m_Utility || !m_Controller || !m_Plan || !m_Plan.Valid()) { return false; }
-		if (m_Controller.IsDead() || m_Controller.IsPlayerControlled() || m_Actor.IsInVehicle()) { return false; }
-		RplComponent replication = RplComponent.Cast(m_Actor.FindComponent(RplComponent));
-		if (replication && replication.IsProxy()) { return false; }
+		if (!Replication.IsServer() || !m_Actor || !m_Agent || !m_Group || !m_Utility || !m_Controller || !m_Plan)
+		{
+			return false;
+		}
+		if (m_Controller.IsDead() || m_Controller.IsPlayerControlled() || m_Actor.IsInVehicle())
+		{
+			return false;
+		}
+		if (m_Rpl && m_Rpl.IsProxy())
+		{
+			return false;
+		}
 		AIControlComponent control = m_Actor.GetAIControlComponent();
-		return control && control.GetAIAgent() == m_Agent && m_Agent.GetControlledEntity() == m_Actor && m_Agent.GetParentGroup() == m_Group;
+		return control && control.GetAIAgent() == m_Agent && m_Agent.GetControlledEntity() == m_Actor && m_Agent.GetParentGroup() == m_Group && m_Plan.Valid();
 	}
 
 	bool Tick()
@@ -158,12 +177,15 @@ class EXPG_PatrolControl
 		if (!m_Speed || !IsOwnedActor()) { Release(); return false; }
 		if (m_Controller.IsUnconscious())
 		{
+			// No look while he is out or walking: the next calm look is issued at once.
+			m_LookIssued = -1000;
 			if (m_Move) { Block(); }
 			return true;
 		}
 		float now = GetGame().GetWorld().GetWorldTime();
 		if (m_Move)
 		{
+			m_LookIssued = -1000;
 			if (AtPoint(m_Dest)) { Arrive(now); }
 			else if (now > m_MoveDeadline || !m_Plan.Inside(m_Actor.GetOrigin(), 0.25)) { Fail(now); }
 			else { InspectCurrentPath(); }
@@ -281,9 +303,26 @@ class EXPG_PatrolControl
 	// Native looking stays free in combat; at rest he watches his hallway or post.
 	protected void LookOut()
 	{
-		if (vector.DistanceSq(m_Look, vector.Zero) < 0.01) { return; }
+		if (vector.DistanceSq(m_Look, vector.Zero) < 0.01)
+		{
+			m_LookIssued = -1000;
+			return;
+		}
 		SCR_AIBehaviorBase behavior = m_Utility.GetCurrentBehavior();
-		if (behavior && behavior.GetCause() == SCR_EAIBehaviorCause.SAFE) { m_Utility.LookAt(m_Actor.GetOrigin() + Vector(0, 1.5, 0) + m_Look * 20.0, 2.0); }
+		if (!behavior || behavior.GetCause() != SCR_EAIBehaviorCause.SAFE)
+		{
+			m_LookIssued = -1000;
+			return;
+		}
+		vector lookTarget = m_Actor.GetOrigin() + Vector(0, 1.5, 0) + m_Look * 20.0;
+		float now = GetGame().GetWorld().GetWorldTime() * 0.001;
+		if (now - m_LookIssued < 1.0 && vector.DistanceSq(lookTarget, m_LookIssuedAt) <= 0.01)
+		{
+			return;
+		}
+		m_Utility.LookAt(lookTarget, 2.0);
+		m_LookIssued = now;
+		m_LookIssuedAt = lookTarget;
 	}
 
 	// Called from the script character input callback before accepting translation,
@@ -293,9 +332,15 @@ class EXPG_PatrolControl
 	// most 128) must stay on the indoor floor, and no point may pass a parked post.
 	// The path's end need not match the stop, so native avoidance and the door
 	// step-aside keep working. Until a path is admitted the cap holds him.
-	bool InspectCurrentPath()
+	// ownerChecked: the caller tested IsOwnedActor() earlier in the same call with
+	// nothing in between that can change it (AllowInput), so it is not repeated.
+	bool InspectCurrentPath(bool ownerChecked = false)
 	{
-		if (!m_Move || !m_Speed || !IsOwnedActor()) { StopMoving(); return false; }
+		if (!m_Move || !m_Speed || (!ownerChecked && !IsOwnedActor()))
+		{
+			StopMoving();
+			return false;
+		}
 		if (m_Controller.IsUnconscious()) { StopMoving(); return false; }
 		m_Path.Clear();
 		m_Movement.GetCurrentPath(m_Path);
@@ -419,7 +464,11 @@ class EXPG_PatrolControl
 			Arrive(now);
 			return false;
 		}
-		if (!InspectCurrentPath()) { return false; }
+		// Ownership was tested at the top of this call; nothing since can change it.
+		if (!InspectCurrentPath(true))
+		{
+			return false;
+		}
 		vector pos = m_Actor.GetOrigin();
 		vector direction = m_Actor.VectorToParent(localDirection);
 		if (vector.DistanceSq(direction, vector.Zero) > 0.01) { direction.Normalize(); }
@@ -589,9 +638,11 @@ class EXPG_PatrolControl
 		m_Controller = null;
 		m_Utility = null;
 		m_Actor = null;
+		m_Rpl = null;
 		m_Agent = null;
 		m_Group = null;
 		m_Plan = null;
+		m_LookIssued = -1000;
 		m_Node = -1;
 		m_State = STATE_DWELL;
 		m_Window = false;

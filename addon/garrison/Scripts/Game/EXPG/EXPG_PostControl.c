@@ -35,6 +35,13 @@ class EXPG_PostControl
 	// Knocked off his spot (blast, ragdoll, push, carry, a Game Master move): his
 	// post became where he came to rest; the manager copies it once (TakeMoved).
 	protected bool m_Moved;
+	// Cached at Bind for the per-frame ownership test: an entity's components never change.
+	protected RplComponent m_Rpl;
+	// Last look request (world time in seconds, target). Each request restarts the
+	// native 2 s look, so it is re-issued once a second, at once for a new target or
+	// after the look was interrupted (not calm, no direction, knocked out, released).
+	protected float m_LookIssued = -1000;
+	protected vector m_LookIssuedAt;
 	// Displaced more than 0.5 m: hold where he came to rest. Bind within 1.5 m.
 	static const float DRIFT_SQ = 0.25;
 	static const float BIND_SQ = 2.25;
@@ -64,6 +71,7 @@ class EXPG_PostControl
 		}
 
 		m_Actor = actor;
+		m_Rpl = RplComponent.Cast(actor.FindComponent(RplComponent));
 		m_Agent = agent;
 		m_Group = agent.GetParentGroup();
 		m_Utility = utility;
@@ -106,6 +114,8 @@ class EXPG_PostControl
 		return true;
 	}
 
+	// Runs every frame (OnPrepareControls): the replication component cached at Bind,
+	// the cheap native flags before the agent and group identity tests.
 	bool IsOwnedActor()
 	{
 		if (!Replication.IsServer() || !m_Actor || !m_Agent || !m_Group || !m_Utility)
@@ -113,12 +123,11 @@ class EXPG_PostControl
 			return false;
 		}
 		CharacterControllerComponent controller = m_Actor.GetCharacterController();
-		RplComponent replication = RplComponent.Cast(m_Actor.FindComponent(RplComponent));
 		if (!controller || controller.IsDead() || controller.IsPlayerControlled() || m_Actor.IsInVehicle())
 		{
 			return false;
 		}
-		if (replication && replication.IsProxy())
+		if (m_Rpl && m_Rpl.IsProxy())
 		{
 			return false;
 		}
@@ -137,6 +146,7 @@ class EXPG_PostControl
 		m_Movement.SetMovementTypeWanted(EMovementType.IDLE);
 		if (m_Controller.IsUnconscious() || Ragdolled())
 		{
+			m_LookIssued = -1000;
 			return true;
 		}
 		// Displacement (blast, ragdoll, push, carry, a Game Master move) is never a
@@ -150,7 +160,18 @@ class EXPG_PostControl
 		SCR_AIBehaviorBase behavior = m_Utility.GetCurrentBehavior();
 		if (behavior && behavior.GetCause() == SCR_EAIBehaviorCause.SAFE && vector.DistanceSq(m_LookDirection, vector.Zero) > 0.01)
 		{
-			m_Utility.LookAt(m_Position + Vector(0, 1.5, 0) + m_LookDirection * 20.0, 2.0);
+			vector lookTarget = m_Position + Vector(0, 1.5, 0) + m_LookDirection * 20.0;
+			float now = GetGame().GetWorld().GetWorldTime() * 0.001;
+			if (now - m_LookIssued >= 1.0 || vector.DistanceSq(lookTarget, m_LookIssuedAt) > 0.01)
+			{
+				m_Utility.LookAt(lookTarget, 2.0);
+				m_LookIssued = now;
+				m_LookIssuedAt = lookTarget;
+			}
+		}
+		else
+		{
+			m_LookIssued = -1000;
 		}
 		return true;
 	}
@@ -220,7 +241,9 @@ class EXPG_PostControl
 		m_Group = null;
 		m_Agent = null;
 		m_Actor = null;
+		m_Rpl = null;
 		m_Moved = false;
+		m_LookIssued = -1000;
 	}
 
 	void ~EXPG_PostControl()

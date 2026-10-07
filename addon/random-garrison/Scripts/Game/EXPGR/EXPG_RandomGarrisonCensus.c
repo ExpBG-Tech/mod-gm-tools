@@ -1,7 +1,8 @@
 // Bounded building census of one Random Garrison generation (server). The bounding
 // square of the circle is read in 64 m cells, one spatial query per cell with at most
 // 512 callbacks; a saturated cell is split into quadrants (the Ambient Destruction
-// pattern). Up to 6 cells per tick, then at most 32 eligibility checks per tick.
+// pattern). Up to 6 cells per tick, then at most 32 eligibility checks per tick, both
+// within the director's deadline (at least one per tick).
 // Results: the supported, structurally eligible buildings (at most 2048).
 class EXPG_RGCell
 {
@@ -99,7 +100,7 @@ class EXPG_RandomGarrisonCensus
    return false;
   }
   int checks;
-  while (m_Checked < m_Hits.Count() && checks < CHECKS_PER_TICK)
+  while (m_Checked < m_Hits.Count() && checks < CHECKS_PER_TICK && (checks == 0 || System.GetTickCount() < deadline))
   {
    IEntity candidate = m_Hits[m_Checked];
    m_Checked++;
@@ -256,7 +257,8 @@ class EXPG_RandomGarrisonCensus
    return false;
   }
   reason = "an Ambient Destruction zone may collapse it";
-  if (EAD_World.WallMayCollapse(entity))
+  // Without a destruction zone WallMayCollapse is false: its ancestry walk is skipped.
+  if (EAD_World.ZoneCount() > 0 && EAD_World.WallMayCollapse(entity))
   {
    return false;
   }
@@ -305,15 +307,12 @@ class EXPG_RandomGarrisonCensus
  {
   string path = prefabPath;
   path.ToLower();
-  array<string> parts = {"/dst/", "ruin", "destroyed", "/furniture/", "/buildingparts/", "/buildingaddons/", "/cemeteries/", "/walls/", "/piers/", "hotbed", "calvar", "deerstand"};
-  foreach (string part : parts)
+  // One chain of tests: no list is allocated for each prefab and ancestor.
+  if (path.Contains("/dst/") || path.Contains("ruin") || path.Contains("destroyed") || path.Contains("/furniture/") || path.Contains("/buildingparts/") || path.Contains("/buildingaddons/"))
   {
-   if (path.Contains(part))
-   {
-    return true;
-   }
+   return true;
   }
-  return false;
+  return path.Contains("/cemeteries/") || path.Contains("/walls/") || path.Contains("/piers/") || path.Contains("hotbed") || path.Contains("calvar") || path.Contains("deerstand");
  }
 
  // An authored interior volume, or a door within the first 128 hierarchy parts.

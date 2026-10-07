@@ -65,6 +65,9 @@ class EXPG_RGSite
  bool Reanalysed;
  bool Analysed;
  float DeferredSince = -1;
+ // The squad drawn for the next spawn, kept while the AI limit makes it wait (never
+ // drawn again each tick); cleared when it spawns and when the building ends.
+ EXPG_SquadEntry Picked;
  ref RandomGenerator Rng;
  ref EXPG_RGAnalysis Analysis;
  ref array<string> Prefabs = {};
@@ -1073,6 +1076,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
    if (!site) { continue; }
    if (site.Analysis && manager) { manager.StopWaiting(site.Analysis); }
    site.Analysis = null;
+   site.Picked = null;
    EXPG_RandomGarrisonDirector.ReleaseClaim(site.Structure, m_iZoneId);
    site.Note = reason;
    if (site.Placed > 0) { site.Stage = EXPG_RGSite.DONE; }
@@ -1118,6 +1122,8 @@ class EXPG_RandomGarrisonModule : GenericEntity
    ApplyQueuedSettings();
    busy = true;
   }
+  // A refusal notice keeps the 100 ms tick until the status has dropped it.
+  if (!m_sNotice.IsEmpty() && now < m_fNoticeUntil + STATUS_INTERVAL) { busy = true; }
   PublishStatus(now);
   return busy;
  }
@@ -1621,6 +1627,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
     {
      site.Reanalysed = true;
      site.Stage = EXPG_RGSite.QUEUED;
+     site.Picked = null;
      continue;
     }
     EndSite(site, "its analysis was discarded");
@@ -1650,8 +1657,17 @@ class EXPG_RandomGarrisonModule : GenericEntity
     SkipSite(site, "garrisoned by another faction");
     continue;
    }
+   // The squad drawn before an AI-limit wait is kept while no squad the building could
+   // draw has room (no new draw from its generator on those ticks); as soon as one has,
+   // the draw is made afresh on every tick, as before.
    string why;
-   EXPG_SquadEntry entry = PickSquad(site, plan, manager, why);
+   EXPG_SquadEntry entry = site.Picked;
+   if (entry && !PickStillFits(site, entry, plan, manager)) { entry = null; }
+   if (!entry)
+   {
+    entry = PickSquad(site, plan, manager, why);
+    site.Picked = entry;
+   }
    if (!entry)
    {
     if (site.Placed > 0) { CompleteSite(site, "fewer squads: " + why); }
@@ -1666,6 +1682,8 @@ class EXPG_RandomGarrisonModule : GenericEntity
    }
    m_fAILimitedSince = -1;
    m_iSpawnCursor = (at + 1) % count;
+   // Spawned, refused or limited: the next squad is drawn afresh.
+   site.Picked = null;
    SpawnSquad(site, entry, now, manager);
    return;
   }
@@ -1718,6 +1736,48 @@ class EXPG_RandomGarrisonModule : GenericEntity
   return choices[site.Rng.RandInt(0, choices.Count())];
  }
 
+ // A kept squad stands only while a fresh draw could not spawn either: PickSquad could
+ // still draw it now (same catalog, enabled size below the retry limit, support and
+ // faction filters, the building's current budget) and no squad PickSquad could draw
+ // has AI headroom. Once one has (a smaller squad that fits the headroom, or room for
+ // any), the squad is drawn afresh, as on every tick of a wait before.
+ protected bool PickStillFits(EXPG_RGSite site, EXPG_SquadEntry entry, EXPG_BuildingPlan plan, EXPG_GarrisonManager manager)
+ {
+  EXPG_SquadCatalog catalog = CatalogFor(site.FactionId);
+  if (!catalog || !catalog.Ready)
+  {
+   return false;
+  }
+  int budget = plan.Slots.Count() - manager.AssignedSoldiers(site.Structure);
+  bool drawable;
+  string reason;
+  foreach (EXPG_SquadEntry candidate : catalog.Entries)
+  {
+   if (!candidate || !CanDrawSquad(site, candidate, budget)) { continue; }
+   if (candidate == entry) { drawable = true; }
+   if (EXPG_GarrisonSpawner.AIHeadroom(candidate.Members, candidate.FactionId, reason))
+   {
+    return false;
+   }
+  }
+  return drawable;
+ }
+
+ // The filters PickSquad draws through: an enabled size below the retry limit, then
+ // EXPG_SquadCatalog.Usable (budget, support, faction).
+ protected bool CanDrawSquad(EXPG_RGSite site, EXPG_SquadEntry entry, int budget)
+ {
+  if ((m_iRunSizes & entry.Bucket) == 0 || entry.Bucket >= site.RetryBelow || entry.Members > budget)
+  {
+   return false;
+  }
+  if (m_bRunExcludeSupport && entry.Support)
+  {
+   return false;
+  }
+  return site.FactionId.IsEmpty() || entry.FactionId.IsEmpty() || entry.FactionId == site.FactionId;
+ }
+
  protected void SpawnSquad(EXPG_RGSite site, EXPG_SquadEntry entry, float now, EXPG_GarrisonManager manager)
  {
   EXPG_GarrisonSpawnRequest request = new EXPG_GarrisonSpawnRequest();
@@ -1766,6 +1826,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
   site.Stage = EXPG_RGSite.DONE;
   site.Note = note;
   site.Analysis = null;
+  site.Picked = null;
   m_aActive.RemoveItem(site);
   EXPG_RandomGarrisonDirector.ReleaseClaim(site.Structure, m_iZoneId);
  }
@@ -1782,6 +1843,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
   EXPG_GarrisonManager manager = EXPG_GarrisonManager.Get();
   if (site.Analysis && !site.Analysis.Finished && manager) { manager.StopWaiting(site.Analysis); }
   site.Analysis = null;
+  site.Picked = null;
   site.Stage = EXPG_RGSite.FAILED;
   site.Note = note;
   m_iFailures++;
@@ -1802,6 +1864,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
   EXPG_GarrisonManager manager = EXPG_GarrisonManager.Get();
   if (site.Analysis && !site.Analysis.Finished && manager) { manager.StopWaiting(site.Analysis); }
   site.Analysis = null;
+  site.Picked = null;
   site.Stage = EXPG_RGSite.SKIPPED;
   site.Note = note;
   m_aActive.RemoveItem(site);

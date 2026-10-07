@@ -111,15 +111,33 @@ class EAC_TrafficRoute
   return clear;
  }
 
+ // Healthy()'s hit-zone list: created on first use (0.1.13 lazy statics, no
+ // initializer), emptied before every fill and again before every answer, so it
+ // never keeps a hit zone alive. Healthy never re-enters itself while walking it.
+ protected static ref array<HitZone> s_HealthZones;
+
  static bool Healthy(IEntity entity)
  {
   if (!entity) return false;
   DamageManagerComponent damage = DamageManagerComponent.Cast(entity.FindComponent(DamageManagerComponent));
   if (!damage || damage.IsDestroyed() || damage.GetHealthScaled() < 0.999) return false;
-  array<HitZone> zones = {}; damage.GetAllHitZonesInHierarchy(zones);
-  if (zones.Count() > 128) return false;
-  foreach (HitZone zone : zones)
-   if (!zone || zone.GetHealth() < zone.GetMaxHealth() - 0.01) return false;
-  return true;
+  // One retained list instead of a new array per entity per check (civilians-b-08).
+  if (!s_HealthZones) s_HealthZones = new array<HitZone>();
+  array<HitZone> zones = s_HealthZones;
+  zones.Clear(); damage.GetAllHitZonesInHierarchy(zones);
+  bool healthy = zones.Count() <= 128;
+  if (healthy)
+  {
+   foreach (HitZone zone : zones)
+   {
+    if (!zone || zone.GetHealth() < zone.GetMaxHealth() - 0.01)
+    {
+     healthy = false;
+     break;
+    }
+   }
+  }
+  zones.Clear();
+  return healthy;
  }
 }

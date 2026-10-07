@@ -135,6 +135,29 @@ class EAC_AutoExclusions
   return true;
  }
 
+ // Route pre-test for EAC_ExclusionZone.IsRouteAllowed (perf plan WP6,
+ // civilians-a-01). False proves that no segment inside the XZ box touches any
+ // disc, so the caller may skip IsTransitAllowed per segment. True only means
+ // "run it": always while not ready, because IsTransitAllowed then refuses every
+ // segment. The disc is widened by EAC_ExclusionZone.ROUTE_BOX_MARGIN so float
+ // rounding in SegmentIntersectsDisc can never make this answer too optimistic.
+ static bool AnyDiscTouchesBox(float minX, float minZ, float maxX, float maxZ)
+ {
+		EXPBG_LazyStatics_EAC_AutoExclusions();
+  if (!IsReady())
+   return true;
+  for (int i = 0; i < s_Centres.Count(); i++)
+  {
+   vector centre = s_Centres[i];
+   float deltaX = Math.Clamp(centre[0], minX, maxX) - centre[0];
+   float deltaZ = Math.Clamp(centre[2], minZ, maxZ) - centre[2];
+   float reach = Math.AbsFloat(s_Radii[i]) + EAC_ExclusionZone.ROUTE_BOX_MARGIN;
+   if (deltaX * deltaX + deltaZ * deltaZ <= reach * reach)
+    return true;
+  }
+  return false;
+ }
+
  static string Describe()
  {
 		EXPBG_LazyStatics_EAC_AutoExclusions();

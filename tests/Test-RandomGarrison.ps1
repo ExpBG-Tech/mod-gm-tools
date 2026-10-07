@@ -135,6 +135,21 @@ Assert ((Get-Body $moduleText 'class\s+EXPG_RGAnalysis\s*:\s*EXPG_PlanWaiter') -
 Assert ($moduleText -match 'static const int PLAN_HEADROOM = 56;' -and $moduleText -match 'static const int MAX_ANALYSES_PER_ZONE = 2;' -and $moduleText -match 'static const float PENDING_TIMEOUT = 60;' -and $moduleText -match 'static const float PLAYER_DEFER_LIMIT = 120;' -and $moduleText -match 'static const float AI_LIMIT_WAIT = 60;') 'limits: 56 plans, 2 analyses per zone, 60 s pending, 120 s player wait, 60 s AI limit'
 $director = Read-Text (Join-Path $scripts 'EXPG_RandomGarrisonDirector.c')
 Assert ($director -match 'TICK_MS = 100;' -and $director -match 'MAX_ZONES = 64;' -and $director -match 'SPAWN_INTERVAL = 1\.5;' -and $director -match 'MAX_SPAWNING = 2;' -and $director -match 'MAX_ANALYSES = 3;' -and $director -match 'DELETES_PER_TICK = 8;') 'director: 100 ms, 64 zones, one spawn per 1.5 s, two spawning, three analyses, 8 deletions per tick'
+# Two speeds (0.1.15 performance plan): 100 ms while any zone works or right after a Wake,
+# 2 s while every zone is idle; no zone and nothing to delete: no tick at all.
+Assert ($director -match 'static const int IDLE_TICK_MS = 2000;' -and $director -match 'static const int WAKE_TICKS = 6;' -and $director -match 'protected static bool s_bFast;' -and $director -match 'protected static int s_iWakeTicks;') 'director: a 2 s idle cadence beside the 100 ms one'
+$tick = Get-Body $director 'protected\s+static\s+void\s+Tick\s*\('
+Assert ($tick -match 'if \(zone && zone\.Step\(now, s_Budget\)\) \{ busy = true; \}' -and $tick -match 'if \(visited < count\) \{ busy = true; \}' -and $tick -notmatch 'status check only\.\s*busy = true;') 'Tick: busy only when a zone reports work or the budget left zones out'
+Assert ($tick -match 'if \(!busy && count == 0\)\s*\{\s*Doze\(\);' -and $tick -match 's_iWakeTicks--;\s*busy = true;' -and $tick -match 'if \(!s_bFast\) \{ Wake\(\); \}' -and $tick -match 'if \(s_bFast\) \{ SlowDown\(\); \}') 'Tick: dozes with no zone and nothing to delete, slows down when every zone is idle, speeds up on work'
+$wake = Get-Body $director 'static\s+void\s+Wake\s*\('
+Assert ($wake -match 's_iWakeTicks = WAKE_TICKS;\s*if \(s_Scheduled && s_bFast\)' -and $wake -match 'if \(s_Scheduled\) \{ GetGame\(\)\.GetCallqueue\(\)\.Remove\(Tick\); \}' -and $wake -match 's_bFast = true;\s*GetGame\(\)\.GetCallqueue\(\)\.CallLater\(Tick, TICK_MS, true\);') 'Wake re-arms the 100 ms repeat, also in place of the 2 s one, and holds it for a status interval'
+Assert ((Get-Body $director 'protected\s+static\s+void\s+SlowDown\s*\(') -match 'Remove\(Tick\);\s*s_bFast = false;\s*GetGame\(\)\.GetCallqueue\(\)\.CallLater\(Tick, IDLE_TICK_MS, true\);') 'SlowDown swaps the 100 ms repeat for the 2 s one'
+foreach ($reset in 'protected\s+static\s+void\s+Doze\s*\(', 'protected\s+static\s+void\s+CheckWorld\s*\(') {
+ $resetBody = Get-Body $director $reset
+ Assert ($resetBody -match 's_bFast = false;' -and $resetBody -match 's_iWakeTicks = 0;') "the cadence resets in $reset"
+}
+$step = Get-Body $moduleText 'bool\s+Step\s*\(\s*float\s+now,\s*EXPG_RGBudget\s+budget\s*\)'
+Assert ($step -match 'if \(!m_sNotice\.IsEmpty\(\) && now < m_fNoticeUntil \+ STATUS_INTERVAL\) \{ busy = true; \}' -and $step.IndexOf('m_fNoticeUntil') -lt $step.IndexOf('PublishStatus(now);') -and $step -match 'return busy;') 'Step reports work; a refusal notice keeps the zone busy until the status has dropped it'
 Assert ($director -match 'GetOnBeforeSave\(\)\.Insert\(OnBeforeSave\)' -and (Get-Body $director 'protected\s+static\s+void\s+OnBeforeSave\s*\(') -match 'KeepPendingOutOfSaves\(\)') 'squads that have not taken their posts stay out of native saves'
 Assert ((Get-Body $director 'override\s+static\s+void\s+BeginPreparation\s*\(') -match 'EXPG_GarrisonPersistence\.Legacy\(\)\)\s*\{\s*EXPG_RandomGarrisonDirector\.AbortForSave\(\);\s*\}\s*super\.BeginPreparation\(\);') 'legacy CDF Prepare for Save stops the generation first'
 $teardown = Get-Body $director 'static\s+bool\s+Teardown\s*\('
@@ -144,6 +159,15 @@ Assert ($census -match 'CELL_SIZE = 64;' -and $census -match 'MAX_CALLBACKS = 51
 $structural = Get-Body $census 'static\s+bool\s+Structural\s*\('
 Assert ($structural -match 'EAC_HomeIndex\.IsRuined\(entity\)' -and $structural -match 'EAD_World\.WallMayCollapse\(entity\)' -and $structural -match 'GetAncestor\(\)' -and $structural -match 'HasInterior\(structure\)') 'eligibility: intact, not collapsing, prefab and ancestors, doors or interior'
 foreach ($part in '/dst/', 'ruin', 'destroyed', '/furniture/', '/buildingparts/', '/buildingaddons/', '/cemeteries/', '/walls/', '/piers/', 'hotbed', 'calvar', 'deerstand') { Assert ($census.Contains('"' + $part + '"')) "rejected prefab path part $part" }
+# Census cost (0.1.15 performance plan): checks within the deadline, no list per RejectedPath
+# call, no collapse walk without a destruction zone. Same verdicts, same order.
+$censusStep = Get-Body $census 'bool\s+Step\s*\(\s*int\s+deadline\s*\)'
+Assert ($censusStep -match 'while \(m_Checked < m_Hits\.Count\(\) && checks < CHECKS_PER_TICK && \(checks == 0 \|\| System\.GetTickCount\(\) < deadline\)\)') 'census checks stop at the director deadline (at least one per tick)'
+$rejectedPath = Get-Body $census 'static\s+bool\s+RejectedPath\s*\('
+$chain = @([regex]::Matches($rejectedPath, 'path\.Contains\("([^"]+)"\)') | ForEach-Object { $_.Groups[1].Value })
+Assert (($chain -join ',') -ceq '/dst/,ruin,destroyed,/furniture/,/buildingparts/,/buildingaddons/,/cemeteries/,/walls/,/piers/,hotbed,calvar,deerstand') "RejectedPath tests exactly the twelve rejected parts: $($chain -join ',')"
+Assert (!$rejectedPath.Contains('array<') -and !$rejectedPath.Contains('foreach') -and $rejectedPath -match 'string path = prefabPath;\s*path\.ToLower\(\);') 'RejectedPath allocates no list per call and still compares lower case'
+Assert ($structural -match 'EAD_World\.ZoneCount\(\) > 0 && EAD_World\.WallMayCollapse\(entity\)') 'no destruction zone: the collapse check skips its ancestry walk'
 $pool = Read-Text (Join-Path $scripts 'EXPG_SquadPool.c')
 Assert ($pool -match 'GetFactionEntityCatalogOfType\(EEntityCatalogType\.GROUP, false\)' -and $pool -match 'IsValidInEditorMode\(EEditorMode\.EDIT\)' -and $pool -match 'EXPG_SquadPrefab\.Validate\(prefab, members, reason, FactionId\)' -and $pool -match 'm_Paths\.Sort\(\);') 'squad catalog: Edit-mode group entries, shared validator, sorted by path'
 Assert ($pool -match 'TRAIT_MEDICAL' -and $pool -match 'TRAIT_LOGISTICS' -and $pool -match 'TRAIT_ESSENTIAL' -and $pool -match 'GROUPTYPE_ESSENTIAL' -and $pool -match 'MAX_FACTIONS = 24;') 'support labels and at most 24 factions'
@@ -207,7 +231,7 @@ $beginGenerate = Get-Body $moduleText 'protected\s+void\s+BeginGenerate\s*\('
 foreach ($copy in 'm_sRunFaction = ResolveFaction\(0\);', 'm_sRunSecondFaction = ResolveFaction\(1\);', 'm_iRunSizes = m_iSizes;', 'm_iRunSquadsMin = m_iSquadsMin;', 'm_iRunSquadsMax = m_iSquadsMax;', 'm_iRunPlayerDistance = m_iPlayerDistance;', 'm_iRunBuildings = m_iBuildings;', 'm_iRunShare = m_iShare;', 'm_bRunExcludeSupport = m_bExcludeSupport;', 'm_bRunAllowGarrisoned = m_bAllowGarrisoned;') {
  Assert ($beginGenerate -match $copy) "BeginGenerate copies the generation input: $copy"
 }
-foreach ($reader in 'protected\s+void\s+StepCensus\s*\(', 'protected\s+void\s+StepCatalog\s*\(', 'protected\s+void\s+Select\s*\(', 'protected\s+bool\s+PromoteNext\s*\(', 'protected\s+string\s+Unavailable\s*\(', 'protected\s+void\s+Draw\s*\(', 'protected\s+bool\s+NearPlayers\s*\(', 'protected\s+void\s+ServiceSpawns\s*\(', 'protected\s+EXPG_SquadEntry\s+PickSquad\s*\(', 'protected\s+string\s+CatalogText\s*\(', 'protected\s+string\s+RunningText\s*\(') {
+foreach ($reader in 'protected\s+void\s+StepCensus\s*\(', 'protected\s+void\s+StepCatalog\s*\(', 'protected\s+void\s+Select\s*\(', 'protected\s+bool\s+PromoteNext\s*\(', 'protected\s+string\s+Unavailable\s*\(', 'protected\s+void\s+Draw\s*\(', 'protected\s+bool\s+NearPlayers\s*\(', 'protected\s+void\s+ServiceSpawns\s*\(', 'protected\s+EXPG_SquadEntry\s+PickSquad\s*\(', 'protected\s+bool\s+PickStillFits\s*\(', 'protected\s+bool\s+CanDrawSquad\s*\(', 'protected\s+string\s+CatalogText\s*\(', 'protected\s+string\s+RunningText\s*\(') {
  Assert (!((Get-Body $moduleText $reader) -match '\b(m_iSizes|m_bExcludeSupport|m_iSquadsMin|m_iSquadsMax|m_iPlayerDistance|m_bAllowGarrisoned|m_iBuildings|m_iShare)\b|ResolveFaction\(')) "a running generation reads only its copies: $reader"
 }
 
@@ -221,6 +245,19 @@ Assert ($manager.Contains('int GarrisonFactions(IEntity building, notnull array<
 $unavailable = Get-Body $moduleText 'protected\s+string\s+Unavailable\s*\('
 Assert ($unavailable -match 'manager\.GarrisonFactions\(site\.Structure, held\);' -and $unavailable -match '"garrisoned by several factions"' -and $unavailable -match 'heldKey != m_sRunFaction && heldKey != m_sRunSecondFaction') 'a building held by another faction, or by several, is never taken'
 Assert ((Get-Body $moduleText 'protected\s+void\s+Draw\s*\(') -match 'GarrisonFactions\(site\.Structure, held\) == 1\) \{ site\.FactionId = held\[0\]; \}' -and (Get-Body $moduleText 'protected\s+void\s+ServiceSpawns\s*\(') -match 'SkipSite\(site, "garrisoned by another faction"\);') 'a garrisoned building keeps its faction; another faction arriving meanwhile skips it'
+
+# A squad drawn before an AI-limit wait is kept while no squad the building could draw has
+# room: no redraw and no generator draws on those ticks. As soon as one has (a smaller squad
+# that fits the headroom, or room for any), every tick draws afresh, as before.
+Assert ((Get-Body $moduleText 'class\s+EXPG_RGSite\s*\{') -match '(?m)^\s*EXPG_SquadEntry Picked;') 'EXPG_RGSite.Picked keeps the drawn squad (weak reference into the catalog)'
+$spawns = Get-Body $moduleText 'protected\s+void\s+ServiceSpawns\s*\('
+Assert ($spawns -match 'EXPG_SquadEntry entry = site\.Picked;\s*if \(entry && !PickStillFits\(site, entry, plan, manager\)\) \{ entry = null; \}\s*if \(!entry\)\s*\{\s*entry = PickSquad\(site, plan, manager, why\);\s*site\.Picked = entry;' -and $spawns -match 'site\.Picked = null;\s*SpawnSquad\(site, entry, now, manager\);') 'ServiceSpawns draws only when no kept squad fits, and forgets it before SpawnSquad (spawned, refused or limited)'
+Assert ($spawns.IndexOf('PickStillFits(') -gt $spawns.IndexOf('SkipSite(site, "garrisoned by another faction");') -and $spawns.IndexOf('AIHeadroom(entry.Members') -gt $spawns.IndexOf('site.Picked = entry;') -and $spawns -match 'site\.Stage = EXPG_RGSite\.QUEUED;\s*site\.Picked = null;') 'the faction check still runs every tick, the AI headroom check runs on the kept squad, a re-analysis forgets it'
+$fits = Get-Body $moduleText 'protected\s+bool\s+PickStillFits\s*\('
+Assert ($fits -match 'EXPG_SquadCatalog catalog = CatalogFor\(site\.FactionId\);' -and $fits -match 'int budget = plan\.Slots\.Count\(\) - manager\.AssignedSoldiers\(site\.Structure\);' -and $fits -match 'foreach \(EXPG_SquadEntry candidate : catalog\.Entries\)' -and $fits -match 'if \(!candidate \|\| !CanDrawSquad\(site, candidate, budget\)\) \{ continue; \}' -and $fits -match 'if \(candidate == entry\) \{ drawable = true; \}' -and $fits -match 'if \(EXPG_GarrisonSpawner\.AIHeadroom\(candidate\.Members, candidate\.FactionId, reason\)\)\s*\{\s*return false;' -and $fits -match 'return drawable;') 'a kept squad stands only while PickSquad could still draw it and no squad it could draw has AI headroom (the low -aiLimit case draws a smaller squad, as before)'
+$canDraw = Get-Body $moduleText 'protected\s+bool\s+CanDrawSquad\s*\('
+Assert ($canDraw -match '\(m_iRunSizes & entry\.Bucket\) == 0 \|\| entry\.Bucket >= site\.RetryBelow \|\| entry\.Members > budget' -and $canDraw -match 'm_bRunExcludeSupport && entry\.Support' -and $canDraw -match 'return site\.FactionId\.IsEmpty\(\) \|\| entry\.FactionId\.IsEmpty\(\) \|\| entry\.FactionId == site\.FactionId;') 'CanDrawSquad applies the filters PickSquad draws through (sizes, retry limit, budget, support, faction)'
+foreach ($ender in 'protected\s+void\s+CompleteSite\s*\(', 'protected\s+void\s+EndSite\s*\(', 'protected\s+void\s+SkipSite\s*\(', 'protected\s+void\s+StopWork\s*\(') { Assert ((Get-Body $moduleText $ender) -match 'site\.Picked = null;') "a kept squad never outlives its building: $ender" }
 
 # Rules: buckets, presets, target (with a PowerShell model), token and key packing.
 $rules = Read-Text (Join-Path $scripts 'EXPG_RandomGarrisonRules.c')
@@ -294,4 +331,4 @@ Assert ($unreleased.Count -le 1 -and $changelog.IndexOf('## 0.1.12') -ge 0 -and 
 Assert ([regex]::Match($changelog, '(?s)## 0\.1\.12\b(.*?)(\n## |\z)').Groups[1].Value.Contains('Random Garrison')) 'the 0.1.12 section describes Random Garrison'
 $readme = Read-Text (Join-Path $repo 'README.md')
 Assert ($readme.Contains('| Random Garrison | `addon/random-garrison` |') -and $readme.Contains('**Random Garrison**')) 'README lists and describes the module'
-'PASS: Random Garrison registered last (own Edit.conf, Systems.conf and GameMaster.conf with the vanilla identities), named without EXPBG, attribute keys equal the module keys (durable values, faction key hashes), shared validator and spawner for the zone and EXPBG Add Garrison, background analysis, GeneratedBy in the ledger (older ledgers load), native zone save, census and catalog bounds, Enforce gotchas, contract and fixture wired.'
+'PASS: Random Garrison registered last (own Edit.conf, Systems.conf and GameMaster.conf with the vanilla identities), named without EXPBG, attribute keys equal the module keys (durable values, faction key hashes), shared validator and spawner for the zone and EXPBG Add Garrison, background analysis, GeneratedBy in the ledger (older ledgers load), native zone save, census and catalog bounds (checks within the deadline, no list per prefab test), two-speed director (100 ms while working, 2 s idle), drawn squad kept while the AI limit leaves no squad room, Enforce gotchas, contract and fixture wired.'

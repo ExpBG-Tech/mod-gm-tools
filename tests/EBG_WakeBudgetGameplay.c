@@ -1,6 +1,6 @@
 // TEST ONLY. Unit Caching wake budget (#12), native save gate with enabled zones (#23) and
 // the normal saved-settings hold release (#11, regression guard for the new watchdog).
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_WakeBudgetGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_WakeBudgetGameplay.c -ExpectResult '\[EBG WAKE TEST RESULT\] checks=[1-9]\d* failures=0 phase=51 reason=complete mismatches=0' -TimeoutSeconds 420 -OrchestratorSlotGranted
 // Real zone prefab and public SetValue/EBG_QueueSavedAttribute, real USSR squads, production
 // Tick/coordinator wake and the production mission-save Export. Presence is injected through
 // EBG_CacheManager.UpdatePlayers; the server has no players. No GM UI, no file save/load.
@@ -40,6 +40,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
+  EBG_DebugChecks.Enabled = true; EBG_DebugChecks.Mismatches = 0; // indexes also run their old full scans
   s_Presence = {};
   Started = Now(); Next = Started + 15;
   PrintFormat("[EBG WAKE TEST BEGIN] budgetRate=%1 budgetBurst=%2 connectedPlayers=0 presence=injected deadline=%3", EBG_CacheManager.WAKE_BUDGET_RATE, EBG_CacheManager.WAKE_BUDGET_BURST, FIXTURE_SECONDS);
@@ -57,7 +58,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   Finished = true;
   s_Presence.Clear();
   ClearEventMask(EntityEvent.FRAME);
-  PrintFormat("[EBG WAKE TEST RESULT] checks=%1 failures=%2 phase=%3 reason=%4", Checks, Failures, Phase, reason);
+  Check(EBG_DebugChecks.Mismatches == 0, "index cross-checks matched their old full scans");
+  PrintFormat("[EBG WAKE TEST RESULT] checks=%1 failures=%2 phase=%3 reason=%4 mismatches=%5", Checks, Failures, Phase, reason, EBG_DebugChecks.Mismatches);
   GetGame().RequestClose();
  }
  vector Ground(vector p, float lift) { p[1] = GetGame().GetWorld().GetSurfaceY(p[0], p[2]) + lift; return p; }

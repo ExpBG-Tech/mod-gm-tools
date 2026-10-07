@@ -37,6 +37,7 @@ class EUS_UnitControl
  protected EMovementType m_PreviousMovement;
  protected float m_PreviousPerception = -1;
  protected int m_LoiterAttempts;
+ protected bool m_LoiterLogged;
  protected float m_NextLoiter;
  protected float m_LoiterSince = -1;
  protected float m_PendingSince = -1;
@@ -224,7 +225,14 @@ class EUS_UnitControl
   m_NextLoiter = now + 6;
   // Owner-side vanilla entry; the command handler replicates it, including JIP.
   m_Controller.StartLoitering(null, type, EUS_AnimationCatalog.Holster(index), true, false, transform, true, EUS_AnimationCatalog.CreateData(index));
-  PrintFormat("[EUS] unit=%1 loiter=%2 attempt=%3", m_Actor, typename.EnumToString(ELoiteringType, type), m_LoiterAttempts);
+  // Log the first loiter and every genuine retry. A routine re-issue after a held
+  // loiter (attempts reset to 0, so this is attempt 1 again) stays silent; Release
+  // still logs the final failure.
+  if (!m_LoiterLogged || m_LoiterAttempts > 1)
+  {
+   PrintFormat("[EUS] unit=%1 loiter=%2 attempt=%3", m_Actor, typename.EnumToString(ELoiteringType, type), m_LoiterAttempts);
+   m_LoiterLogged = true;
+  }
  }
 
  protected bool KeepLoiter(float now)

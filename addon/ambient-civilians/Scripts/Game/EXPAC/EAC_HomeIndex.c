@@ -3,6 +3,10 @@ class EAC_HomeScanCursor
  int X, Z, Radius, Offset;
  int LeadX, LeadZ, LeadOffset;
  bool ScanLead;
+ // Consecutive ring probes that found their cell already indexed, for this X, Z and
+ // Radius. Reset whenever those change, on any probe that found an unindexed cell
+ // and on every true return. See DiscoverNearPlayer.
+ int CleanProbes;
 }
 
 class EAC_HomeCell
@@ -39,9 +43,9 @@ class EAC_HomeIndex
  // Isolated-house policy (readiness plan section 3). Rule 0 is today's behaviour
  // exactly: IsHomeEnrolled returns true before reading any other field, Visit
  // never calls Qualifies, and not one additional world query is issued at any
- // rule. m_CellHomes is a registry-id index keyed by the same 64 m cell string
- // the discovery map already uses, so the neighbour test is a bounded map walk
- // rather than a scan of every household.
+ // rule. m_CellHomes is a registry-id index keyed by the same packed 64 m cell key
+ // (CellKey) the discovery map already uses, so the neighbour test is a bounded map
+ // walk rather than a scan of every household, and allocates no key strings.
  static const int MAX_NEIGHBOUR_CELL_SPAN = 4;   // 4 x CELL_SIZE = the 256 m clamp
  static const int MAX_NEIGHBOUR_IDS = 256;
  protected int m_Rule;
@@ -53,7 +57,7 @@ class EAC_HomeIndex
  protected int m_Isolated, m_IsolatedPass;
  // -1 so the first rule-2 reconcile always re-evaluates. See Reconcile.
  protected int m_SettlementCentres = -1;
- protected ref map<string, ref array<int>> m_CellHomes = new map<string, ref array<int>>();
+ protected ref map<int, ref array<int>> m_CellHomes = new map<int, ref array<int>>();
 
  // Mission-start prewarm. Separate from m_Pending: m_Pending is the dense-cell
  // SUBDIVISION frontier, drained LIFO at DiscoverCellAt and asserted empty by the
@@ -169,8 +173,7 @@ class EAC_HomeIndex
    {
     int cellX = baseX + dx;
     int cellZ = baseZ + dz;
-    string key = cellX.ToString() + ":" + cellZ.ToString();
-    array<int> ids = m_CellHomes.Get(key);
+    array<int> ids = m_CellHomes.Get(CellKey(cellX, cellZ));
     if (!ids) { continue; }
     foreach (int id : ids)
     {
@@ -219,13 +222,13 @@ class EAC_HomeIndex
  }
 
  // Registry ids per 64 m cell, inserted once per household. The cell key matches
- // the one DiscoverCellAt uses, so the two maps describe the same grid.
+ // the one DiscoverCellAt uses (CellKey), so the two maps describe the same grid.
  protected void RememberCell(EAC_HouseholdRecord home)
  {
   if (!home) return;
   int cellX = Math.Floor(home.Position[0] / CELL_SIZE);
   int cellZ = Math.Floor(home.Position[2] / CELL_SIZE);
-  string key = cellX.ToString() + ":" + cellZ.ToString();
+  int key = CellKey(cellX, cellZ);
   array<int> ids = m_CellHomes.Get(key);
   if (!ids)
   {
@@ -493,6 +496,16 @@ class EAC_HomeIndex
   return true;
  }
 
+ // The root-cell key test of DiscoverCellAt on its own, computed the same way:
+ // whether the 64 m cell holding this position is already indexed. No guard and no
+ // side effect.
+ protected bool IsCellIndexed(vector position)
+ {
+  int x = Math.Floor(position[0] / CELL_SIZE);
+  int z = Math.Floor(position[2] / CELL_SIZE);
+  return m_Cells.Contains(CellKey(x, z));
+ }
+
  // Moving/resizing a module must make previously skipped cells eligible again.
  void SetPopulationArea(vector centre, int radius)
  {
@@ -585,11 +598,16 @@ class EAC_HomeIndex
   if (cursor.X != x || cursor.Z != z || cursor.Radius != radius)
   {
    cursor.X = x; cursor.Z = z; cursor.Radius = radius; cursor.Offset = 0;
+   cursor.CleanProbes = 0;
   }
   int side = radius * 2 + 1;
   int total = side * side;
   // The currently occupied cell always gets first discovery.
-  if (DiscoverCellAt(position, small, large)) return true;
+  if (DiscoverCellAt(position, small, large))
+  {
+   cursor.CleanProbes = 0;
+   return true;
+  }
   cursor.ScanLead = !cursor.ScanLead;
   travelDirection[1] = 0;
   if (cursor.ScanLead && travelDirection.LengthSq() >= 0.01)
@@ -605,16 +623,37 @@ class EAC_HomeIndex
     vector leadOffset = CellOffset(cursor.LeadOffset);
     cursor.LeadOffset = (cursor.LeadOffset + 1) % 9;
     vector leadCell = Vector((leadX + leadOffset[0]) * CELL_SIZE, 0, (leadZ + leadOffset[2]) * CELL_SIZE);
-    if (DiscoverCellAt(leadCell, small, large)) return true;
+    if (DiscoverCellAt(leadCell, small, large))
+    {
+     cursor.CleanProbes = 0;
+     return true;
+    }
    }
   }
+  // The last `total` ring probes covered every offset of this ring and each found
+  // its cell already indexed. m_Cells only grows until SetPopulationArea, which
+  // also drops every cursor, and DiscoverCellAt(position) above returned false, so
+  // m_Pending is empty or DiscoverCellAt's guard refuses (and a false probe changes
+  // neither): every probe below would return false. Skipping them returns the same
+  // false; only cursor.Offset stops advancing, and while every cell of this ring is
+  // indexed no probe order can matter (a new ring resets Offset to 0).
+  if (cursor.CleanProbes >= total)
+   return false;
   for (int attempt = 0; attempt < 64; attempt++)
   {
    int offset = cursor.Offset;
    cursor.Offset = (cursor.Offset + 1) % total;
    vector delta = CellOffset(offset);
    vector cell = Vector((x + delta[0]) * CELL_SIZE, 0, (z + delta[2]) * CELL_SIZE);
-   if (DiscoverCellAt(cell, small, large)) return true;
+   if (DiscoverCellAt(cell, small, large))
+   {
+    cursor.CleanProbes = 0;
+    return true;
+   }
+   // Only a cell already in m_Cells counts. A probe refused by readiness or by
+   // MAX_CELLS on an unindexed cell resets the count, so it is retried as before.
+   if (IsCellIndexed(cell)) cursor.CleanProbes++;
+   else cursor.CleanProbes = 0;
   }
   return false;
  }

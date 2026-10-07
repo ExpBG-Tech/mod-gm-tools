@@ -778,13 +778,20 @@ class EXPG_BuildingPlan
   // Match the native AI character collision matrix. An all-layer query also
   // hits nonblocking gear on casualties and can strand an exact cache restore.
   trace.LayerMask = EPhysicsLayerDefs.CharacterAI;
-  array<IEntity> exclusions = {};
+  // The trace only reads its exclusion list: the doors are passed as they are, and
+  // a merged copy is made only when another entity must be excluded too.
+  array<IEntity> exclusions;
   if (planning && !m_TraversableDoors.IsEmpty())
   {
-   exclusions.Copy(m_TraversableDoors);
-   if (exclude) exclusions.Insert(exclude);
-   if (excludeEntities) exclusions.InsertAll(excludeEntities);
-   trace.ExcludeArray = exclusions;
+   if (!exclude && !excludeEntities) { trace.ExcludeArray = m_TraversableDoors; }
+   else
+   {
+    exclusions = new array<IEntity>();
+    exclusions.Copy(m_TraversableDoors);
+    if (exclude) exclusions.Insert(exclude);
+    if (excludeEntities) exclusions.InsertAll(excludeEntities);
+    trace.ExcludeArray = exclusions;
+   }
   }
   else if (excludeEntities) { trace.ExcludeArray = excludeEntities; }
   else { trace.Exclude = exclude; }

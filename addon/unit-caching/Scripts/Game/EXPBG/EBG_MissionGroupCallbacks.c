@@ -190,7 +190,7 @@ modded class SCR_AIGroupSerializer
   {
    Tuple2<SCR_AIGroup, bool> originalContext = Tuple2<SCR_AIGroup, bool>.Cast(row.Context);
    if (!row.Member || row.Group != group || !originalContext || originalContext.param1 != group || row.Expired || system.FindById(row.MemberId) != row.Member || system.GetId(row.Member) != row.MemberId || ids.Contains(row.MemberId)) { reason = "Native callback identity changed or duplicate callback"; return false; }
-   if (row.Member.EBG_WasPlayerControlled() || state.EverPlayerIds.Contains(row.MemberId) || !row.Member.GetCharacterController() || row.Member.GetCharacterController().IsDead()) { reason = "Native callback member became dead or player-associated"; return false; }
+   if (row.Member.EBG_WasPlayerControlled() || EBG_MissionPlayerHistory.EverContains(state, row.MemberId) || !row.Member.GetCharacterController() || row.Member.GetCharacterController().IsDead()) { reason = "Native callback member became dead or player-associated"; return false; }
    AIAgent agent = SCR_AIUtils.GetAIAgent(row.Member);
    if (!agent || agent.GetControlledEntity() != row.Member || (agent.GetParentGroup() && agent.GetParentGroup() != group)) { reason = "Native callback member has unavailable agent or foreign group"; return false; }
    ids.Insert(row.MemberId);
@@ -208,7 +208,7 @@ modded class SCR_AIGroupSerializer
   int expected;
   foreach (EBG_MissionMemberData original : saved.Members)
   {
-   if (original.WasPlayer || state.EverPlayerIds.Contains(original.Id)) { reason = "Native callback original cohort has player history"; return false; }
+   if (original.WasPlayer || EBG_MissionPlayerHistory.EverContains(state, original.Id)) { reason = "Native callback original cohort has player history"; return false; }
    if (original.Dead || original.Missing) continue;
    expected++;
    if (!ids.Contains(original.Id)) { reason = "Native member callback cohort incomplete after load"; return false; }

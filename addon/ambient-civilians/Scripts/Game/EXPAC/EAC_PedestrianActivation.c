@@ -81,11 +81,64 @@ class EAC_PedestrianActivation
  ref EAC_RoutineEmerge Emerge = new EAC_RoutineEmerge();
  protected SCR_CharacterControllerComponent m_Controller;
  protected SCR_CharacterDamageManagerComponent m_Damage;
+ // Perf plan WP6 (civilians-b-07). The bound character's components, resolved
+ // once in Bind with exactly the FindComponent calls the monitors made on every
+ // visit, and dropped in Detach. A character's components never change while it
+ // exists, so the Cached* accessors return the same objects those lookups did;
+ // for any other actor, or a lookup that found nothing at Bind, they run the
+ // FindComponent again. Only lookups are shared: every caller still reads every
+ // live condition (life state, faction, agent, group) itself.
+ protected IEntity m_CachedActor;
+ protected CharacterControllerComponent m_CachedController;
+ protected FactionAffiliationComponent m_CachedAffiliation;
+ protected AIControlComponent m_CachedAIControl;
+ protected AICharacterMovementComponent m_CachedMovement;
+
+ CharacterControllerComponent CachedController(IEntity actor)
+ {
+  if (!actor)
+   return null;
+  if (actor == m_CachedActor && m_CachedController)
+   return m_CachedController;
+  return CharacterControllerComponent.Cast(actor.FindComponent(CharacterControllerComponent));
+ }
+
+ FactionAffiliationComponent CachedAffiliation(IEntity actor)
+ {
+  if (!actor)
+   return null;
+  if (actor == m_CachedActor && m_CachedAffiliation)
+   return m_CachedAffiliation;
+  return FactionAffiliationComponent.Cast(actor.FindComponent(FactionAffiliationComponent));
+ }
+
+ AIControlComponent CachedAIControl(IEntity actor)
+ {
+  if (!actor)
+   return null;
+  if (actor == m_CachedActor && m_CachedAIControl)
+   return m_CachedAIControl;
+  return AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
+ }
+
+ AICharacterMovementComponent CachedMovement(IEntity actor)
+ {
+  if (!actor)
+   return null;
+  if (actor == m_CachedActor && m_CachedMovement)
+   return m_CachedMovement;
+  return AICharacterMovementComponent.Cast(actor.FindComponent(AICharacterMovementComponent));
+ }
 
  bool Bind()
  {
   Detach();
   if (!Claim || !Claim.Character) return false;
+  m_CachedActor = Claim.Character;
+  m_CachedController = CharacterControllerComponent.Cast(Claim.Character.FindComponent(CharacterControllerComponent));
+  m_CachedAffiliation = FactionAffiliationComponent.Cast(Claim.Character.FindComponent(FactionAffiliationComponent));
+  m_CachedAIControl = AIControlComponent.Cast(Claim.Character.FindComponent(AIControlComponent));
+  m_CachedMovement = AICharacterMovementComponent.Cast(Claim.Character.FindComponent(AICharacterMovementComponent));
   m_Controller = SCR_CharacterControllerComponent.Cast(Claim.Character.FindComponent(SCR_CharacterControllerComponent));
   m_Damage = SCR_CharacterDamageManagerComponent.Cast(Claim.Character.FindComponent(SCR_CharacterDamageManagerComponent));
   if (m_Controller)
@@ -113,6 +166,7 @@ class EAC_PedestrianActivation
   }
   if (m_Damage) m_Damage.GetOnDamageStateChanged().Remove(OnDamageState);
   m_Controller = null; m_Damage = null;
+  m_CachedActor = null; m_CachedController = null; m_CachedAffiliation = null; m_CachedAIControl = null; m_CachedMovement = null;
  }
 
  void RecordDeath()

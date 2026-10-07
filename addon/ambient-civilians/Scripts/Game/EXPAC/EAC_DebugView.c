@@ -252,6 +252,14 @@ class EAC_DebugView
   m_Expires = 0;
  }
 
+ // True when every field Clear() resets already holds its cleared value.
+ protected bool IsBlank()
+ {
+  if (m_Expires != 0 || m_Summary || m_Ranges || m_Module || m_Drawing)
+   return false;
+  return m_Legend.IsEmpty() && m_Markers.IsEmpty() && m_Positions.IsEmpty() && m_ScreenPoints.IsEmpty();
+ }
+
  void EAC_DebugView() {
 		EXPBG_LazyStatics_EAC_DebugView(); s_Live.Insert(this); }
  void ~EAC_DebugView() {
@@ -350,8 +358,12 @@ class EAC_DebugView
   if (now >= m_NextRequest)
   {
    m_NextRequest = now + 1;
-   player.EAC_RequestDebug();
+   // Same 1 s cadence and phase as before. With DebugLevel 0 and DebugDraw 0 on
+   // every known module, Receive would discard the reply, so skip the round trip.
+   if (EAC_AmbientModule.AnyDebugOverlayRequested()) player.EAC_RequestDebug();
   }
+  // Nothing shown and nothing to clear: Clear() would be a no-op on every frame.
+  if (IsBlank()) return;
   if (m_Expires <= now) { Clear(); return; }
   WorkspaceWidget workspace = GetGame().GetWorkspace();
   if (!workspace) { Clear(); return; }

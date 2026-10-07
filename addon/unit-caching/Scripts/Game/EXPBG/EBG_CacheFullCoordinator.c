@@ -57,6 +57,8 @@ class EBG_CacheFullCoordinator
   EBG_PrefabFullCache transaction = new EBG_DurableFullCache();
   transaction.SetRecord(record);
   record.Full = transaction;
+  // A Full transition changes protection inputs; pumps recompute it (conservative).
+  manager.MarkProtectionDirty();
   if (transaction.BeginManagedSleep(record.Group))
   {
    record.ClearSince = -1;
@@ -92,6 +94,7 @@ class EBG_CacheFullCoordinator
   return false;
   }
   record.Group = record.Full.GetRestoredGroup();
+  manager.MarkProtectionDirty();
   if (record.Group && record.Zone && record.Zone.Editing)
   {
    // A fully cached group was absent when RestoreAllForSave requested this.
@@ -102,6 +105,7 @@ class EBG_CacheFullCoordinator
  }
  static void CompleteRelease(EBG_CacheManager manager, EBG_CacheGroup record)
  {
+  manager.MarkProtectionDirty();
   EBG_PrefabFullCache released = EBG_PrefabFullCache.Cast(record.Full);
   if (released && released.IsLenient())
   {
@@ -136,6 +140,9 @@ class EBG_CacheFullCoordinator
   // Finish in-flight work before scanning proximity or choosing another group.
   if (pending)
   {
+   // Respawning survivors move their members; protection is recomputed every pump
+   // while a Full transition is in flight, as before.
+   manager.MarkProtectionDirty();
    if (pending.Full.GetState() == EBG_FullGroupPhase.RELEASED)
    {
     CompleteRelease(manager, pending);
@@ -168,6 +175,7 @@ class EBG_CacheFullCoordinator
   int wakeCost = selected.Full.GetMemberCount();
   if (!manager.TakeWakeBudget(wakeCost)) { manager.ReportWakeDeferred(selected, wakeCost); return false; }
   selected.RecoveryRetryRequested = false;
+  manager.MarkProtectionDirty();
   if (!selected.Full.BeginWake()) selected.Recovery = selected.Full.GetError();
   else selected.Full.Poll();
   return true;

@@ -981,7 +981,10 @@ class EAC_CivilianActivity
   if (m_Actor) controller = SCR_CharacterControllerComponent.Cast(m_Actor.GetCharacterController());
   bool loitering = controller && controller.IsLoiteringOnEntity(m_Point);
   bool danger;
-  if (OwnsActor())
+  // Asked once (perf plan WP6, civilians-a-02): HasCombatThreat between the two
+  // former calls reads native state and changes nothing OwnsActor looks at.
+  bool ownsActor = OwnsActor();
+  if (ownsActor)
   {
    danger = EAC_CivilianDanger.HasCombatThreat(m_Actor);
   }
@@ -994,7 +997,7 @@ class EAC_CivilianActivity
   // is counted: it was run 93's silent routine killer (gate=beginleg.threat with
   // no [EAC ALARM] line, because HasThreat is also the cache manager's blocking
   // danger, which prints nothing).
-  bool halt = !OwnsActor() || !module || module.ActivityLimit == 0 || !m_Claim.Resident.Wanted || !EAC_ExclusionZone.IsPopulationAllowed(m_Point.GetOrigin());
+  bool halt = !ownsActor || !module || module.ActivityLimit == 0 || !m_Claim.Resident.Wanted || !EAC_ExclusionZone.IsPopulationAllowed(m_Point.GetOrigin());
   if (danger) { AbortStop(EAC_RoutineStats.ABORT_DANGER, true); }
   else if (halt) RequestStop(false);
   // Presence is the station record, not a prop: a retired station, or one left
@@ -1027,21 +1030,19 @@ class EAC_CivilianActivity
    // against an empty list once per route point per resident per tick.
    bool sweepRoute = EAC_ExclusionZone.AnyTransitBlocked();
    if (sweepRoute && !EAC_ExclusionZone.IsTransitAllowed(m_Actor.GetOrigin(), m_Point.GetOrigin())) { AbortStop(EAC_RoutineStats.ABORT_ROUTE); }
-   AICharacterMovementComponent movement = AICharacterMovementComponent.Cast(m_Actor.FindComponent(AICharacterMovementComponent));
+   // The component the activation resolved at Bind, or the same FindComponent.
+   AICharacterMovementComponent movement;
+   if (m_Activation) movement = m_Activation.CachedMovement(m_Actor);
+   else movement = AICharacterMovementComponent.Cast(m_Actor.FindComponent(AICharacterMovementComponent));
    m_ScratchRoute.Clear(); if (movement) movement.GetCurrentPath(m_ScratchRoute);
    // The 64-segment cap is a distance rule, not an exclusion rule, so it is still
    // evaluated whether or not any zone blocks transit.
    if (!movement || m_ScratchRoute.Count() > 64) { AbortStop(EAC_RoutineStats.ABORT_DISTANT); }
-   if (sweepRoute)
-   {
-    vector previous = m_Actor.GetOrigin();
-    foreach (vector next : m_ScratchRoute)
-    {
-     if (m_Stopping) break;
-     if (!EAC_ExclusionZone.IsTransitAllowed(previous, next)) { AbortStop(EAC_RoutineStats.ABORT_ROUTE); }
-     previous = next;
-    }
-   }
+   // Perf plan WP6 (civilians-a-01): one IsRouteAllowed verdict, the same AND of
+   // IsTransitAllowed over every segment. The old loop never started once a stop
+   // was requested and ended at its first refusal (AbortStop sets m_Stopping), so
+   // it aborted at most once, exactly when this does.
+   if (sweepRoute && !m_Stopping && !EAC_ExclusionZone.IsRouteAllowed(m_Actor.GetOrigin(), m_ScratchRoute)) { AbortStop(EAC_RoutineStats.ABORT_ROUTE); }
    if (!m_Stopping && vector.Distance(m_Actor.GetOrigin(), m_Point.GetOrigin()) <= 1)
    {
     StopApproach();

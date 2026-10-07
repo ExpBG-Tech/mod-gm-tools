@@ -4,6 +4,11 @@
 // and rhs-usmc-recon cases.
 // Real zone prefab and public SetValue, real manager enrollment/Tick/cleanup, native Kill.
 // Presence is injected through EBG_CacheManager.UpdatePlayers; the server has no players.
+// The possession probe (outside the 14 cases) stands two of its own soldiers in for players
+// through the manager's player seam (EBG_CollectPlayers, EBG_PlayerEntity): a direct
+// PlayerPossession releases the member's rows and marks him; a later pass skips an unchanged
+// stand-in and cross-checks him (CheckPossession); after BumpRoster and after a ledger bind
+// the next pass reruns every stand-in's possession.
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed.
 class EBGCleanupCase
 {
@@ -41,6 +46,11 @@ class EBGCleanupCase
  bool ClothSlotCheck;
  bool UnlistedCloth;
  bool ClothSlotProven;
+ // Possession probe (EXPG_GarrisonGameplay.PossessionProbe, phases 20-24).
+ bool Possession;
+ int SkipMark;
+ int FirstCalls = -1;
+ int RosterCalls = -1;
  ref array<EntityID> AccessoryIds = {};
  ref array<EntityID> AccessoryWearerIds = {};
  ref array<EntityID> AccessoryClothIds = {};
@@ -90,11 +100,22 @@ class EXPG_GarrisonGameplay : GenericEntity
  // Stock cloths the test seam reports as unlisted to NativeVestAccessoryOwner.
  static ref array<IEntity> s_UnlistedCloths;
  static bool s_InCleanupTick;
+ // Possession probe: stand-in characters the player seam reports as players with ids
+ // STAND_IN_ID + index, and counters written by the modded EBG_CacheManager below.
+ static const int STAND_IN_ID = 900001;
+ static ref array<IEntity> s_StandIns;
+ static int s_PossessionCalls;
+ static int s_SkippedChecks;
+ static int s_PassSerial;
+ static int s_WatchPass;
+ static int s_WatchCalls;
  static int s_TickState;
  static int s_TickSerial;
  static int s_SurvivorDeletes;
  static int s_PartialStrips;
  ref array<ref EBGCleanupCase> Cases = {};
+ // Not one of Cases: the runner's evidence pins cases=14.
+ ref EBGCleanupCase PossessionProbe;
  int Checks;
  int Failures;
  float Started;
@@ -107,7 +128,9 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
+  EBG_DebugChecks.Enabled = true; EBG_DebugChecks.Mismatches = 0; // indexes also run their old full scans
   s_Presence = {}; s_EbgDeleted = {}; s_EbgDeletedState = {}; s_EbgDeletedSerial = {}; s_Survivors = {}; s_UnlistedCloths = {}; s_SurvivorDeletes = 0; s_PartialStrips = 0; s_TickSerial = 0;
+  s_StandIns = {}; s_PossessionCalls = 0; s_SkippedChecks = 0; s_PassSerial = 0; s_WatchPass = -1; s_WatchCalls = -1;
   Started = Now(); Next = Started + 15;
   // Partial cases first: earlier records win the shared one-casualty-per-scan allowance.
   EBGCleanupCase awake = AddCase("sim-partial-awake", 0, 30, 1, 0, 0, 130); awake.ExpectAwake = true;
@@ -143,6 +166,11 @@ class EXPG_GarrisonGameplay : GenericEntity
   // Snapshot rule: a soldier killed while his group is Simulation cached keeps his body
   // until the survivors are restored; only then may cleanup delete it.
   EBGCleanupCase snapshot = AddCase("sim-death-while-cached", 0, 30, 0, -600, 600, -1); snapshot.SnapshotDeath = true;
+  // Possession probe: a Simulation squad, nobody killed, between four dry case points.
+  PossessionProbe = new EBGCleanupCase();
+  PossessionProbe.Name = "possession-rerun"; PossessionProbe.Possession = true;
+  PossessionProbe.Mode = 0; PossessionProbe.CorpseAge = 30; PossessionProbe.Kills = 0; PossessionProbe.AfterKill = -1;
+  PossessionProbe.Point = Origin + Vector(-300, 0, 0);
   PrintFormat("[EBG CLEANUP TEST BEGIN] cases=%1 affected=40 wake=60 sleep=200 clearDelay=5 connectedPlayers=0 presence=injected deadline=%2", Cases.Count(), FIXTURE_SECONDS);
  }
  EBGCleanupCase AddCase(string name, int mode, int corpseAge, int kills, float x, float z, float afterKill)
@@ -167,8 +195,10 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(s_SurvivorDeletes == 0, "no survivor or survivor equipment deleted inside EBG cleanup");
   Check(s_PartialStrips == 0, "no casualty body was stripped item by item inside EBG cleanup");
   s_Presence.Clear();
+  s_StandIns.Clear();
   ClearEventMask(EntityEvent.FRAME);
-  PrintFormat("[EBG CLEANUP TEST RESULT] checks=%1 failures=%2 cases=%3 reason=%4", Checks, Failures, Cases.Count(), reason);
+  Check(EBG_DebugChecks.Mismatches == 0, "index cross-checks matched their old full scans");
+  PrintFormat("[EBG CLEANUP TEST RESULT] checks=%1 failures=%2 cases=%3 reason=%4 mismatches=%5", Checks, Failures, Cases.Count(), reason, EBG_DebugChecks.Mismatches);
   GetGame().RequestClose();
  }
  vector Ground(vector p, float lift) { p[1] = GetGame().GetWorld().GetSurfaceY(p[0], p[2]) + lift; return p; }
@@ -218,11 +248,13 @@ class EXPG_GarrisonGameplay : GenericEntity
     if (late.Record) Report(late, -1);
     Check(false, late.Name + " finished before the fixture deadline");
    }
+   if (!PossessionProbe.Done) Check(false, PossessionProbe.Name + " finished before the fixture deadline");
    Finish("timeout");
    return;
   }
   bool all = true;
   foreach (EBGCleanupCase c : Cases) { if (!c.Done) { Step(c); all = false; } }
+  if (!PossessionProbe.Done) { Step(PossessionProbe); all = false; }
   if (all) Finish("complete");
  }
  void Step(EBGCleanupCase c)
@@ -311,6 +343,12 @@ class EXPG_GarrisonGameplay : GenericEntity
     bool enrolledGear = c.Casualties.Count() == 1 && part && cleanup.IsHeld(part) && (!vest || cleanup.IsHeld(vest));
     if (!Check(enrolledGear, c.Name + " identity-less vest and weapon part enrolled as the casualty's own rows")) { c.Done = true; return; }
    }
+   if (c.Possession)
+   {
+    c.Phase = 20; c.PhaseAt = Now();
+    PrintFormat("[EBG CLEANUP TEST POSSESSION SETUP] case=%1 group=%2 members=%3", c.Name, c.Record.Id, c.Record.Members.Count());
+    return;
+   }
    if (c.SnapshotDeath)
    {
     // Nobody dies yet: players leave first so the whole squad is Simulation cached.
@@ -372,6 +410,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    PrintFormat("[EBG CLEANUP TEST FOREIGN OWNED] case=%1 owned=%2", c.Name, c.OwnedIds.Count());
    Leave(c); return;
   }
+  if (c.Phase >= 20) { StepPossession(c, cleanup); return; }
   int remaining = Observe(c);
   if (c.Phase >= 10) { StepSnapshot(c, cleanup); return; }
   if (c.Phase == 5)
@@ -558,6 +597,85 @@ class EXPG_GarrisonGameplay : GenericEntity
  // sim-death-while-cached: 10 wait for Simulation cache, 11 confirm the cached death,
  // 12 hold while the casualty is in the live snapshot, 13 players return and the
  // survivors restore, 14 players leave and cleanup deletes the restored casualty.
+ // Possession probe. 20: a direct PlayerPossession releases the member's held rows and marks
+ // him; then he and a squadmate stand in for two players. 21: their first pass runs both
+ // possessions. 22: a later pass skips an unchanged stand-in and cross-checks him; then
+ // BumpRoster. 23: the next pass reruns both; then a ledger bind. 24: the next pass reruns both.
+ void StepPossession(EBGCleanupCase c, EBG_CacheCleanup cleanup)
+ {
+  EBG_CacheManager manager = EBG_CacheManager.Get();
+  if (c.Phase == 20)
+  {
+   if (!Check(c.Record && c.Record.Members.Count() >= 2 && c.Record.Members[0].Entity && c.Record.Members[1].Entity, c.Name + " two living enrolled members for the possession probe")) { EndPossession(c); return; }
+   EBG_CacheMember possessed = c.Record.Members[1];
+   int heldBefore = cleanup.EXPG_HeldMemberRows(possessed);
+   int callsBefore = s_PossessionCalls;
+   manager.PlayerPossession(possessed.Entity);
+   int heldAfter = cleanup.EXPG_HeldMemberRows(possessed);
+   bool marked = possessed.Entity.EBG_IsMarkedPlayer();
+   PrintFormat("[EBG CLEANUP TEST POSSESSION] case=%1 heldBefore=%2 heldAfter=%3 wasPlayer=%4 marked=%5 calls=%6", c.Name, heldBefore, heldAfter, possessed.WasPlayer, marked, s_PossessionCalls - callsBefore);
+   Check(heldBefore > 0 && heldAfter == 0 && possessed.WasPlayer && marked, c.Name + " direct possession released the member's held rows and marked him");
+   s_StandIns.Insert(possessed.Entity);
+   s_StandIns.Insert(c.Record.Members[0].Entity);
+   s_WatchPass = s_PassSerial + 1; s_WatchCalls = -1;
+   c.Phase = 21; c.PhaseAt = Now();
+   return;
+  }
+  if (c.Phase == 21)
+  {
+   if (s_WatchCalls < 0)
+   {
+    if (Now() - c.PhaseAt > 10) { Check(false, c.Name + " a pass ran with the stand-in players"); EndPossession(c); }
+    return;
+   }
+   c.FirstCalls = s_WatchCalls;
+   Check(c.FirstCalls == s_StandIns.Count(), string.Format("%1 the first pass ran every new stand-in's possession (%2 of %3)", c.Name, c.FirstCalls, s_StandIns.Count()));
+   c.SkipMark = s_SkippedChecks;
+   c.Phase = 22; c.PhaseAt = Now();
+   return;
+  }
+  if (c.Phase == 22)
+  {
+   if (s_SkippedChecks <= c.SkipMark)
+   {
+    if (Now() - c.PhaseAt > 60) { Check(false, c.Name + " a pass skipped an unchanged stand-in and cross-checked him"); EndPossession(c); }
+    return;
+   }
+   Check(true, c.Name + " a pass skipped an unchanged stand-in and cross-checked him");
+   s_WatchPass = s_PassSerial + 1; s_WatchCalls = -1;
+   manager.BumpRoster();
+   c.Phase = 23; c.PhaseAt = Now();
+   return;
+  }
+  if (c.Phase == 23)
+  {
+   if (s_WatchCalls < 0)
+   {
+    if (Now() - c.PhaseAt > 10) { Check(false, c.Name + " a pass ran after BumpRoster"); EndPossession(c); }
+    return;
+   }
+   c.RosterCalls = s_WatchCalls;
+   Check(c.RosterCalls == s_StandIns.Count(), string.Format("%1 after BumpRoster the next pass reran every stand-in's possession (%2 of %3)", c.Name, c.RosterCalls, s_StandIns.Count()));
+   s_WatchPass = s_PassSerial + 1; s_WatchCalls = -1;
+   EBG_CacheCleanup.s_EBG_BindVersion++;
+   c.Phase = 24; c.PhaseAt = Now();
+   return;
+  }
+  if (s_WatchCalls < 0)
+  {
+   if (Now() - c.PhaseAt > 10) { Check(false, c.Name + " a pass ran after a ledger bind"); EndPossession(c); }
+   return;
+  }
+  Check(s_WatchCalls == s_StandIns.Count(), string.Format("%1 after a ledger bind the next pass reran every stand-in's possession (%2 of %3)", c.Name, s_WatchCalls, s_StandIns.Count()));
+  PrintFormat("[EBG CLEANUP TEST POSSESSION RERUN] case=%1 standIns=%2 firstPass=%3 skippedChecks=%4 afterRoster=%5 afterBind=%6 mismatches=%7", c.Name, s_StandIns.Count(), c.FirstCalls, s_SkippedChecks, c.RosterCalls, s_WatchCalls, EBG_DebugChecks.Mismatches);
+  EndPossession(c);
+ }
+ void EndPossession(EBGCleanupCase c)
+ {
+  s_StandIns.Clear();
+  s_WatchPass = -1;
+  c.Done = true;
+ }
  void StepSnapshot(EBGCleanupCase c, EBG_CacheCleanup cleanup)
  {
   bool suspended = c.Record.Simulation && c.Record.Simulation.Suspended;
@@ -1046,16 +1164,45 @@ class EXPG_GarrisonGameplay : GenericEntity
   PrintFormat("[EBG CLEANUP TEST SURVIVOR DELETE] id=%1 wearer=%2", entity.GetID(), wearer.GetID());
  }
 }
-// Presence seam, as in the optimizer fixtures (EBGRecacheTest.c:95-102).
+// Presence seam, as in the optimizer fixtures (EBGRecacheTest.c:95-102), plus the possession
+// probe's player seam and counters. Each override calls super.
 modded class EBG_CacheManager
 {
  override protected void UpdatePlayers()
  {
+  int calls = EXPG_GarrisonGameplay.s_PossessionCalls;
   super.UpdatePlayers();
+  EXPG_GarrisonGameplay.s_PassSerial++;
+  if (EXPG_GarrisonGameplay.s_PassSerial == EXPG_GarrisonGameplay.s_WatchPass) EXPG_GarrisonGameplay.s_WatchCalls = EXPG_GarrisonGameplay.s_PossessionCalls - calls;
   if (EXPG_GarrisonGameplay.s_Presence)
   {
    foreach (vector presence : EXPG_GarrisonGameplay.s_Presence) Players.Insert(presence);
   }
+ }
+ override protected void EBG_CollectPlayers(notnull array<int> ids)
+ {
+  super.EBG_CollectPlayers(ids);
+  if (!EXPG_GarrisonGameplay.s_StandIns) return;
+  for (int i = 0; i < EXPG_GarrisonGameplay.s_StandIns.Count(); i++) ids.Insert(EXPG_GarrisonGameplay.STAND_IN_ID + i);
+ }
+ override protected IEntity EBG_PlayerEntity(int id)
+ {
+  int at = id - EXPG_GarrisonGameplay.STAND_IN_ID;
+  if (EXPG_GarrisonGameplay.s_StandIns && at >= 0 && at < EXPG_GarrisonGameplay.s_StandIns.Count())
+  {
+   return EXPG_GarrisonGameplay.s_StandIns[at];
+  }
+  return super.EBG_PlayerEntity(id);
+ }
+ override void PlayerPossession(IEntity entity)
+ {
+  EXPG_GarrisonGameplay.s_PossessionCalls++;
+  super.PlayerPossession(entity);
+ }
+ override protected void CheckPossession(SCR_ChimeraCharacter player)
+ {
+  EXPG_GarrisonGameplay.s_SkippedChecks++;
+  super.CheckPossession(player);
  }
 }
 // Attribution only. The record's cache state at Tick entry: 0 awake, 1 Simulation cached, 2 Full cached.
@@ -1080,6 +1227,16 @@ modded class EBG_CacheCleanup
  }
  // Read-only views of the production ownership walk.
  IEntity EXPG_Holder(IEntity item) { return Holder(item); }
+ // Held rows of one member (possession probe).
+ int EXPG_HeldMemberRows(EBG_CacheMember member)
+ {
+  int count;
+  foreach (EBG_CleanupObject object : m_Objects)
+  {
+   if (object.Member == member && object.Held) count++;
+  }
+  return count;
+ }
  bool EXPG_ProtectedChain(IEntity item) { return ProtectedOwnerChain(item); }
  // A storage-less slot item the allow-listed native vest path does not resolve.
  bool EXPG_NativeVestMisses(IEntity item)

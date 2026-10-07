@@ -15,16 +15,31 @@ class EAC_ScenePropSample
 
 class EAC_SceneVocabulary
 {
- static const int MAX_MEMO = 512;
+ // 512 was small next to the distinct prefab paths of a large modded terrain; once
+ // full, every unmemoised entity of a 45 m scene query re-ran Resolve inside one
+ // scheduler tick. Classification is a pure function of the path, so a larger memo
+ // changes no result. s_Unmemoised counts Resolve calls made while the memo was full,
+ // so DebugLevel 3 shows whether this bound is still too small.
+ static const int MAX_MEMO = 4096;
  protected static ref map<string, int> s_Memo;
  protected static BaseWorld s_World;
+ protected static int s_Unmemoised;
 
  static void CheckWorld()
  {
 		EXPBG_LazyStatics_EAC_SceneVocabulary();
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
-  s_Memo.Clear(); s_World = world;
+  s_Memo.Clear(); s_World = world; s_Unmemoised = 0;
+ }
+
+ static string Describe()
+ {
+		EXPBG_LazyStatics_EAC_SceneVocabulary();
+  CheckWorld();
+  string result = "scene_vocabulary memo=" + s_Memo.Count().ToString() + "/" + MAX_MEMO.ToString();
+  result += " unmemoised=" + s_Unmemoised.ToString();
+  return result;
  }
 
  // Packed as kind+1 in bits 0..7 so that zero unambiguously means "unclassified"
@@ -171,6 +186,7 @@ class EAC_SceneVocabulary
   if (s_Memo.Find(path, cached)) return cached;
   int packed = Resolve(path);
   if (s_Memo.Count() < MAX_MEMO) s_Memo.Insert(path, packed);
+  else if (s_Unmemoised < EAC_Diagnostics.COUNTER_LIMIT) s_Unmemoised++;
   return packed;
  }
 

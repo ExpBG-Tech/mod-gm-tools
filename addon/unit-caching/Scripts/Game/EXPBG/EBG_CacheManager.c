@@ -69,6 +69,10 @@ class EBG_CacheGroup
  // Non-empty while an optional module keeps this record awake (EBG_CacheManager.
  // KeepAwakeReason); the scheduler logs each change. Runtime only; never persisted.
  string KeepAwake;
+ // Per-group activation only: this record's protection verdicts, valid while
+ // ProtectionVersion equals the manager's (EBG_CacheManager.IsProtected). Runtime only.
+ ref EBG_ZoneProtection ProtectionSample;
+ int ProtectionVersion = -1;
  protected string m_LastRecoveryWarning;
  protected float m_NextRecoveryWarning;
  protected string m_DebugLast;
@@ -128,11 +132,69 @@ class EBG_CacheGroup
   PrintFormat("[EBG DEBUG GROUP] zone=%1 group=%2 native=%3 anchor=%4 state=%5", Zone.GetID(), Id, FullGroupId, Anchor, message);
  }
 }
-// Shared only within one scheduler pass. Native/member sampling remains unchanged.
+// Shared until the manager invalidates it: every tick, and a pump only after a record,
+// member or Full transition changed (EBG_CacheManager.MarkProtectionDirty). Native/member
+// sampling remains unchanged.
 class EBG_ZoneProtection
 {
  vector Origin;
  bool WakeKnown, Wake, SleepKnown, Sleep;
+ // The zone settings the verdicts were computed with; any difference recomputes them.
+ int Strategy, ZoneWake, ZoneSleep, GroupWake, GroupSleep, Height, Above, Below, HeightMargin;
+ void Capture(EBG_CacheZone zone)
+ {
+  Origin = zone.GetOrigin();
+  Strategy = zone.Strategy;
+  ZoneWake = zone.ZoneWake;
+  ZoneSleep = zone.ZoneSleep;
+  GroupWake = zone.GroupWake;
+  GroupSleep = zone.GroupSleep;
+  Height = zone.Height;
+  Above = zone.Above;
+  Below = zone.Below;
+  HeightMargin = zone.HeightMargin;
+ }
+ bool Matches(EBG_CacheZone zone)
+ {
+  return Origin == zone.GetOrigin() && Strategy == zone.Strategy && ZoneWake == zone.ZoneWake && ZoneSleep == zone.ZoneSleep && GroupWake == zone.GroupWake && GroupSleep == zone.GroupSleep && Height == zone.Height && Above == zone.Above && Below == zone.Below && HeightMargin == zone.HeightMargin;
+ }
+}
+// One AI group as an enrollment pass sees it: its agents and its living soldiers'
+// positions, read once per pass and shared by every zone of that pass
+// (EBG_CacheManager.EnrollmentCandidates). Nothing here decides enrollment.
+class EBG_EnrollmentCandidate
+{
+ SCR_AIGroup Group;
+ ref array<AIAgent> Members = {};
+ ref array<vector> Living = {};
+ bool SpawnDone;
+ vector GroupOrigin;
+ // The same member reads EBG_EnrollmentTally.Nearby makes, for every member.
+ void Sample(SCR_AIGroup group)
+ {
+  Group = group;
+  group.GetAgents(Members);
+  foreach (AIAgent member : Members)
+  {
+   if (!member) continue;
+   SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(member.GetControlledEntity());
+   if (!character) continue;
+   CharacterControllerComponent controller = character.GetCharacterController();
+   if (!controller || controller.IsDead()) continue;
+   Living.Insert(character.GetOrigin());
+  }
+  // Nearby reads these only when no soldier lives.
+  if (!Living.IsEmpty()) return;
+  SpawnDone = group.EBG_HasCompletedInitialSpawn();
+  GroupOrigin = group.GetOrigin();
+ }
+}
+// Soldiers only, per zone: the first civilian group it leaves alone is named in full,
+// later ones are counted and summarised at most every 300 s. Log text only.
+class EBG_SoldiersOnlyNote
+{
+ int Skipped;
+ float NextSummary;
 }
 // One enrollment pass of one zone: why groups inside its affected radius stayed
 // out. Text for the zone status and the Game Master notice only; enrollment,
@@ -238,6 +300,18 @@ class EBG_EnrollmentTally
   }
   return !living && !group.EBG_HasCompletedInitialSpawn() && EBG_CacheGeometry.DistanceSq(group.GetOrigin(), origin) <= radiusSq;
  }
+ // The same verdict from a pass's candidate (EBG_EnrollmentCandidate.Sample).
+ static bool Nearby(EBG_EnrollmentCandidate candidate, vector origin, float radiusSq)
+ {
+  foreach (vector living : candidate.Living)
+  {
+   if (EBG_CacheGeometry.DistanceSq(living, origin) <= radiusSq)
+   {
+    return true;
+   }
+  }
+  return candidate.Living.IsEmpty() && !candidate.SpawnDone && EBG_CacheGeometry.DistanceSq(candidate.GroupOrigin, origin) <= radiusSq;
+ }
  string Note(int affected, bool managed)
  {
   string text;
@@ -288,6 +362,28 @@ class EBG_CacheManager
  protected int m_PumpTicks;
  protected int m_RecoveryCursor;
  protected ref map<EBG_CacheZone, ref EBG_ZoneProtection> m_Protection = new map<EBG_CacheZone, ref EBG_ZoneProtection>();
+ // Protection verdicts only change with players (each tick), records, members, Full
+ // transitions and zone settings. Pumps between ticks recompute them only when marked
+ // dirty; each invalidation starts a new version for the per-group verdicts.
+ protected bool m_ProtectionDirty = true;
+ protected int m_ProtectionVersion;
+ // Possession safety net (OnControlledByPlayer handles live possession at once). A
+ // player's possession pass reruns when his controlled entity changes, when a record,
+ // member or ledger binding changed (BumpRoster, EBG_CacheCleanup.s_EBG_BindVersion), and
+ // on his round-robin turn, so every player is still re-covered within N ticks.
+ protected ref map<int, IEntity> m_PossessionSeen = new map<int, IEntity>();
+ protected ref array<int> m_PlayerIds = {};
+ protected int m_RosterVersion;
+ protected int m_SeenRoster = -1;
+ protected int m_SeenBind = -1;
+ protected int m_PossessionCursor;
+ // The enrollment pass's candidates, valid for the agent list and tick that built them.
+ // Tick releases both after its zone loop.
+ protected ref array<ref EBG_EnrollmentCandidate> m_Candidates;
+ protected ref array<AIAgent> m_CandidateAgents;
+ protected int m_CandidatesTick = -1;
+ // Soldiers only: the per-zone log state (NoteSoldiersOnly, FlushSoldiersOnly).
+ protected ref map<EBG_CacheZone, ref EBG_SoldiersOnlyNote> m_SoldiersOnlyNotes = new map<EBG_CacheZone, ref EBG_SoldiersOnlyNote>();
  ref EBG_CacheRegroup Regroup = new EBG_CacheRegroup();
  // Shared wake budget: restored characters per second across all cache zones. A
  // full bucket admits one ordinary squad at once, so a single group still wakes
@@ -326,6 +422,7 @@ class EBG_CacheManager
    }
    // World teardown owns entity destruction. Never wake AI or reinsert garbage here.
    Instance.Records.Clear();
+   Instance.BumpRoster();
    Instance.Owners.Clear();
    Instance.Players.Clear();
    Instance.m_World = null;
@@ -344,6 +441,18 @@ class EBG_CacheManager
    GetGame().GetCallqueue().CallLater(Instance.Pump, 100, true);
   }
   return Instance;
+ }
+ // A record or a member binding changed: every player's possession pass reruns at the
+ // next tick and protection is recomputed at the next pump.
+ void BumpRoster()
+ {
+  m_RosterVersion++;
+  MarkProtectionDirty();
+ }
+ // An input of the protection verdicts changed outside the tick.
+ void MarkProtectionDirty()
+ {
+  m_ProtectionDirty = true;
  }
  static bool IsPortableWorldReady()
  {
@@ -465,6 +574,7 @@ class EBG_CacheManager
     record.Members.Insert(member);
    }
    Records.Insert(record);
+   BumpRoster();
   }
   record.PersistenceIssue = "";
   record.Zone = EBG_CacheZone.Cast(system.FindById(saved.ZoneId));
@@ -487,6 +597,8 @@ class EBG_CacheManager
    if (!controller || controller.IsDead() != source.Dead) record.PersistenceIssue = "Saved member life state differs from native load";
    if (member.Entity.EBG_WasPlayerControlled()) member.WasPlayer = true;
   }
+  // The zone, group and member bindings above are re-read on every binding call.
+  BumpRoster();
   if (!record.PersistentResolutionLogged) { record.PersistentResolutionLogged = true; LogPersistentResolution(saved, "bind-first"); }
   return record;
  }
@@ -601,6 +713,9 @@ class EBG_CacheManager
  }
  void Release(EBG_CacheZone zone)
  {
+  // Records leave the zone or the manager below; its whole-zone verdicts change.
+  MarkProtectionDirty();
+  m_SoldiersOnlyNotes.Remove(zone);
   if (EBG_CacheSnapshot.Loading)
   {
    // CDF owns destruction of the old world cohort. Do not wake its snapshots
@@ -611,6 +726,7 @@ class EBG_CacheManager
      if (Records[old].Full) Records[old].Full.ReleaseForWorldCleanup();
      if (EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.ReleaseGroup(Records[old]);
      Records.Remove(old);
+     BumpRoster();
     }
    Owners.RemoveItem(zone); return;
   }
@@ -628,6 +744,7 @@ class EBG_CacheManager
     }
     if (EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.ReleaseGroup(Records[i]);
     Records.Remove(i);
+    BumpRoster();
    }
   bool retained;
   foreach (EBG_CacheGroup remaining : Records) if (remaining.Zone == zone) retained = true;
@@ -668,6 +785,7 @@ class EBG_CacheManager
   if (!record) return;
   if (EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.ReleaseGroup(record);
   Records.RemoveItem(record);
+  BumpRoster();
  }
  int ReleaseBlocked(int playerId)
  {
@@ -716,6 +834,7 @@ class EBG_CacheManager
    // awake; forget the unverified record instead of holding every save.
    if (EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.ReleaseGroup(record);
    Records.Remove(index);
+   BumpRoster();
    return "Unverified saved ownership forgotten; the AI stay as an ordinary group";
   }
   record.Recovery = "";
@@ -764,6 +883,39 @@ class EBG_CacheManager
   EBG_FullSaveGate.RequestRestoreForSave();
  }
  protected ref set<SCR_AIGroup> m_SoldiersOnlySkipped = new set<SCR_AIGroup>();
+ // Deleted groups leave null entries in the set of weak group handles; drop them first.
+ protected void PruneSoldiersOnlySkipped()
+ {
+  for (int i = m_SoldiersOnlySkipped.Count() - 1; i >= 0; i--)
+  {
+   if (!m_SoldiersOnlySkipped.Get(i)) m_SoldiersOnlySkipped.Remove(i);
+  }
+ }
+ // The first civilian group a zone leaves alone is named in full; later ones are counted.
+ protected void NoteSoldiersOnly(EBG_CacheZone zone, SCR_AIGroup group)
+ {
+  EBG_SoldiersOnlyNote note = m_SoldiersOnlyNotes.Get(zone);
+  if (note)
+  {
+   note.Skipped++;
+   return;
+  }
+  note = new EBG_SoldiersOnlyNote();
+  note.NextSummary = Now() + 300;
+  m_SoldiersOnlyNotes.Set(zone, note);
+  PrintFormat("[EBG] Soldiers only: zone left group %1 alone (faction '%2', utility=%3). Switch 'Soldiers only' off on the zone to cache it.", group, group.GetFactionName(), group.FindComponent(SCR_AIGroupUtilityComponent) != null);
+ }
+ // At most one count line per zone every 300 s, and none while nothing new was skipped.
+ protected void FlushSoldiersOnly(EBG_CacheZone zone)
+ {
+  EBG_SoldiersOnlyNote note = m_SoldiersOnlyNotes.Get(zone);
+  if (!note || note.Skipped == 0) return;
+  float now = Now();
+  if (now < note.NextSummary) return;
+  PrintFormat("[EBG] Soldiers only: %1 more civilian groups skipped near %2", note.Skipped, zone.GetOrigin());
+  note.Skipped = 0;
+  note.NextSummary = now + 300;
+ }
  // The vanilla test first (SCR_AIGroupUtilityComponent.IsMilitary). Mod lists can
  // hand a group a different utility component or none, so the faction's own flag
  // is read directly as well; only a faction that says it is not military counts
@@ -791,7 +943,8 @@ class EBG_CacheManager
   if (!world) return;
   array<AIAgent> agents = sharedAgents;
   if (!agents) { agents = {}; world.GetAIAgents(agents); }
-  map<SCR_AIGroup, bool> visited = new map<SCR_AIGroup, bool>();
+  // Every distinct group in first-seen agent order, read once per enrollment pass.
+  array<ref EBG_EnrollmentCandidate> candidates = EnrollmentCandidates(agents, sharedAgents != null);
   PersistenceSystem enrollmentPersistence = PersistenceSystem.GetInstance();
   vector zoneOrigin = zone.GetOrigin();
   float affectedSq = zone.Affected * zone.Affected;
@@ -799,18 +952,16 @@ class EBG_CacheManager
   // enrollment decision below is unchanged; only the order of its pure checks
   // now names the first one that refused a group.
   EBG_EnrollmentTally tally = new EBG_EnrollmentTally();
-  foreach (AIAgent agent : agents)
+  bool soldiersOnlyPruned;
+  foreach (EBG_EnrollmentCandidate candidate : candidates)
   {
-   SCR_AIGroup group = SCR_AIGroup.Cast(agent);
-   if (!group) group = SCR_AIGroup.Cast(agent.GetParentGroup());
+   SCR_AIGroup group = candidate.Group;
    if (!group) continue;
-   if (visited.Contains(group)) continue;
-   visited.Insert(group, true);
-   array<AIAgent> members = {};
-   group.GetAgents(members);
+   array<AIAgent> members = candidate.Members;
+   if (EBG_DebugChecks.Enabled) CheckCandidate(candidate, zoneOrigin, affectedSq);
    // A group with no living soldier inside the radius is never enrolled; one
    // still spawning at a point inside it is only reported.
-   if (!EBG_EnrollmentTally.Nearby(group, members, zoneOrigin, affectedSq)) continue;
+   if (!EBG_EnrollmentTally.Nearby(candidate, zoneOrigin, affectedSq)) continue;
    EBG_CacheGroup existing = FindGroup(group);
    if (existing)
    {
@@ -841,14 +992,20 @@ class EBG_CacheManager
    else if (group.GetLifecyclePolicy() == SCR_EAIGroupLifecyclePolicy.ProximityDriven) skip = "run by the vanilla proximity spawner";
    else skip = MemberSkip(members, enrollmentPersistence);
    // Soldiers only: a civilian-faction group inside the zone is never enrolled.
-   // Civilians are cached by EXPBG Ambient Civilians. Each skipped group is named
-   // once in the server log so a Game Master can see why it stayed awake.
+   // Civilians are cached by EXPBG Ambient Civilians. The first skipped group of a
+   // zone is named in the server log so a Game Master can see why it stayed awake;
+   // later ones are counted (NoteSoldiersOnly, FlushSoldiersOnly).
    if (skip.IsEmpty() && zone.MilitaryOnly > 0 && !IsMilitaryGroup(group))
    {
+    if (!soldiersOnlyPruned)
+    {
+     PruneSoldiersOnlySkipped();
+     soldiersOnlyPruned = true;
+    }
     if (!m_SoldiersOnlySkipped.Contains(group))
     {
      m_SoldiersOnlySkipped.Insert(group);
-     PrintFormat("[EBG] Soldiers only: zone left group %1 alone (faction '%2', utility=%3). Switch 'Soldiers only' off on the zone to cache it.", group, group.GetFactionName(), group.FindComponent(SCR_AIGroupUtilityComponent) != null);
+     NoteSoldiersOnly(zone, group);
     }
     skip = "of a civilian faction ('Soldiers only' is on)";
    }
@@ -878,6 +1035,7 @@ class EBG_CacheManager
     record.Members.Insert(member);
    }
    Records.Insert(record);
+   BumpRoster();
    UpdateRecord(record);
 
   }
@@ -889,6 +1047,48 @@ class EBG_CacheManager
   tally.CountLeftSquad(zoneOrigin, affectedSq);
   zone.EnrollmentNote = tally.Note(zone.Affected, managed);
   zone.EnrollmentPasses++;
+  FlushSoldiersOnly(zone);
+ }
+ // Distinct groups of the agent list in first-seen order, each with its agents and its
+ // living soldiers' positions. The tick's pass (shared agents) builds the list once for
+ // every zone: no zone's enrollment moves, kills or regroups AI, and every zone is read
+ // in the same frame. FindGroup, IsReserved and the skip reasons stay live per zone.
+ protected array<ref EBG_EnrollmentCandidate> EnrollmentCandidates(array<AIAgent> agents, bool shared)
+ {
+  if (shared && m_Candidates && agents == m_CandidateAgents && m_CandidatesTick == m_Ticks)
+  {
+   return m_Candidates;
+  }
+  array<ref EBG_EnrollmentCandidate> candidates = {};
+  map<SCR_AIGroup, bool> visited = new map<SCR_AIGroup, bool>();
+  foreach (AIAgent agent : agents)
+  {
+   SCR_AIGroup group = SCR_AIGroup.Cast(agent);
+   if (!group) group = SCR_AIGroup.Cast(agent.GetParentGroup());
+   if (!group) continue;
+   if (visited.Contains(group)) continue;
+   visited.Insert(group, true);
+   EBG_EnrollmentCandidate candidate = new EBG_EnrollmentCandidate();
+   candidate.Sample(group);
+   candidates.Insert(candidate);
+  }
+  if (shared)
+  {
+   m_Candidates = candidates;
+   m_CandidateAgents = agents;
+   m_CandidatesTick = m_Ticks;
+  }
+  return candidates;
+ }
+ // Debug cross-check (EBG_DebugChecks): a shared candidate equals a live read of its group.
+ protected void CheckCandidate(EBG_EnrollmentCandidate candidate, vector origin, float radiusSq)
+ {
+  array<AIAgent> live = {};
+  candidate.Group.GetAgents(live);
+  bool same = live.Count() == candidate.Members.Count();
+  for (int i = 0; same && i < live.Count(); i++) same = live[i] == candidate.Members[i];
+  if (same) same = EBG_EnrollmentTally.Nearby(candidate.Group, live, origin, radiusSq) == EBG_EnrollmentTally.Nearby(candidate, origin, radiusSq);
+  if (!same) EBG_DebugChecks.Mismatch(string.Format("enrollment candidate group=%1", candidate.Group));
  }
  // Enrollment refusals that depend on a member; empty when every member may enroll.
  // The same per-member checks enrollment always made, each naming itself for the status.
@@ -917,7 +1117,9 @@ class EBG_CacheManager
   PersistenceSystem system = PersistenceSystem.GetInstance();
   if (system) record.PersistentId = system.GetId(group);
   record.ActiveSince = Now(); record.LastUnsafe = Now() - 60;
-  Records.Insert(record); return record;
+  Records.Insert(record);
+  BumpRoster();
+  return record;
  }
  EBG_CacheMember AddRegroupMember(EBG_CacheGroup record, SCR_ChimeraCharacter entity)
  {
@@ -925,12 +1127,16 @@ class EBG_CacheManager
   member.Entity = entity; member.Position = entity.GetOrigin();
   PersistenceSystem system = PersistenceSystem.GetInstance();
   if (system) member.PersistentId = system.GetId(entity);
-  record.Members.Insert(member); return member;
+  record.Members.Insert(member);
+  BumpRoster();
+  return member;
  }
  EBG_CacheMember AddCachedMember(EBG_CacheGroup record, vector position, bool dead)
  {
   EBG_CacheMember member = new EBG_CacheMember(); member.Id = ++m_NextId;
-  member.Position = position; member.Dead = dead; record.Members.Insert(member); return member;
+  member.Position = position; member.Dead = dead; record.Members.Insert(member);
+  MarkProtectionDirty();
+  return member;
  }
  void PlayerPossession(IEntity entity)
  {
@@ -952,6 +1158,8 @@ class EBG_CacheManager
   member.Dead = true;
   member.DiedAt = Now();
   member.Position = entity.GetOrigin();
+  // A death between ticks drops this member from the protection volumes.
+  MarkProtectionDirty();
   if (EBG_CacheCleanup.Instance)
    foreach (EBG_CacheGroup record : Records)
     if (record.Members.Contains(member)) EBG_CacheCleanup.Instance.ConfirmDeath(record, member, member.DiedAt);
@@ -959,15 +1167,64 @@ class EBG_CacheManager
  protected void UpdatePlayers()
  {
   Players.Clear();
-  array<int> ids = {};
-  GetGame().GetPlayerManager().GetPlayers(ids);
-  foreach (int id : ids)
+  m_PlayerIds.Clear();
+  EBG_CollectPlayers(m_PlayerIds);
+  // Any record, member or ledger binding change reruns every player's pass at once.
+  if (m_SeenRoster != m_RosterVersion || m_SeenBind != EBG_CacheCleanup.s_EBG_BindVersion || m_PossessionSeen.Count() > m_PlayerIds.Count() + 32)
   {
-   SCR_ChimeraCharacter player = SCR_ChimeraCharacter.Cast(GetGame().GetPlayerManager().GetPlayerControlledEntity(id));
-   if (!player || !player.GetCharacterController() || player.GetCharacterController().IsDead()) continue;
-   Players.Insert(player.GetOrigin());
-   PlayerPossession(player);
+   m_PossessionSeen.Clear();
+   m_SeenRoster = m_RosterVersion;
+   m_SeenBind = EBG_CacheCleanup.s_EBG_BindVersion;
   }
+  int sweep = -1;
+  if (!m_PlayerIds.IsEmpty())
+  {
+   sweep = m_PossessionCursor % m_PlayerIds.Count();
+   m_PossessionCursor++;
+  }
+  for (int i = 0; i < m_PlayerIds.Count(); i++)
+  {
+   int id = m_PlayerIds[i];
+   SCR_ChimeraCharacter player = SCR_ChimeraCharacter.Cast(EBG_PlayerEntity(id));
+   if (!player || !player.GetCharacterController() || player.GetCharacterController().IsDead())
+   {
+    m_PossessionSeen.Remove(id);
+    continue;
+   }
+   Players.Insert(player.GetOrigin());
+   if (i == sweep || m_PossessionSeen.Get(id) != player)
+   {
+    PlayerPossession(player);
+    m_PossessionSeen.Set(id, player);
+   }
+   else if (EBG_DebugChecks.Enabled) CheckPossession(player);
+  }
+ }
+ // Player seam of UpdatePlayers: the connected players' ids and each one's controlled
+ // entity, straight from the player manager. Test fixtures override both to stand spawned
+ // characters in for players (the test server has none); production never overrides them.
+ protected void EBG_CollectPlayers(notnull array<int> ids)
+ {
+  GetGame().GetPlayerManager().GetPlayers(ids);
+ }
+ protected IEntity EBG_PlayerEntity(int id)
+ {
+  return GetGame().GetPlayerManager().GetPlayerControlledEntity(id);
+ }
+ // Debug cross-check (EBG_DebugChecks): a player whose pass was skipped needs none. He is
+ // flagged, his member (if any) is marked and no record holding that member sleeps.
+ protected void CheckPossession(SCR_ChimeraCharacter player)
+ {
+  EBG_CacheMember member = FindMember(player);
+  bool stale = !player.EBG_IsMarkedPlayer() || (member && !member.WasPlayer);
+  if (member)
+  {
+   foreach (EBG_CacheGroup holder : Records)
+   {
+    if (holder.Members.Contains(member) && holder.Simulation && holder.Simulation.Suspended) stale = true;
+   }
+  }
+  if (stale) EBG_DebugChecks.Mismatch(string.Format("possession player=%1", player));
  }
  // Native PhysicsContact ignores living active AI. A queued squadmate contact
  // stays harmless at native far LOD and while this addon suspends that squadmate.
@@ -1134,7 +1391,44 @@ class EBG_CacheManager
   }
   return false;
  }
- void InvalidateProtection() { m_Protection.Clear(); }
+ void InvalidateProtection()
+ {
+  m_Protection.Clear();
+  m_ProtectionDirty = false;
+  m_ProtectionVersion++;
+ }
+ // Whole-zone activation: any record of the zone inside its volume.
+ protected bool ZoneInVolume(EBG_CacheZone zone, bool sleep)
+ {
+  foreach (EBG_CacheGroup peer : Records)
+  {
+   if (peer.Zone == zone && InVolume(peer, sleep))
+   {
+    return true;
+   }
+  }
+  return false;
+ }
+ // Debug cross-check (EBG_DebugChecks): every verdict a clean pump keeps equals a fresh
+ // computation, which is what each pump made before the dirty flag existed.
+ protected void CheckProtectionCache()
+ {
+  if (Players.IsEmpty()) return;
+  foreach (EBG_CacheZone sampledZone, EBG_ZoneProtection zoneSample : m_Protection)
+  {
+   if (!sampledZone || !zoneSample || sampledZone.Strategy != 0 || !zoneSample.Matches(sampledZone)) continue;
+   if ((zoneSample.WakeKnown && zoneSample.Wake != ZoneInVolume(sampledZone, false)) || (zoneSample.SleepKnown && zoneSample.Sleep != ZoneInVolume(sampledZone, true)))
+    EBG_DebugChecks.Mismatch(string.Format("protection zone=%1", sampledZone.GetID()));
+  }
+  foreach (EBG_CacheGroup record : Records)
+  {
+   EBG_ZoneProtection own = record.ProtectionSample;
+   EBG_CacheZone owner = record.Zone;
+   if (!own || !owner || owner.Strategy == 0 || record.ProtectionVersion != m_ProtectionVersion || !own.Matches(owner)) continue;
+   if ((own.WakeKnown && own.Wake != InVolume(record, false)) || (own.SleepKnown && own.Sleep != InVolume(record, true)))
+    EBG_DebugChecks.Mismatch(string.Format("protection group=%1", record.Id));
+  }
+ }
  static bool NativeSaveBusy()
  {
   SaveGameManager saving = GetGame().GetSaveGameManager();
@@ -1150,18 +1444,32 @@ class EBG_CacheManager
   EBG_CacheZone zone = record.Zone;
   if (!zone) return true;
   if (Players.IsEmpty()) return false;
-  if (zone.Strategy != 0) return InVolume(record, sleep);
-  EBG_ZoneProtection sample = m_Protection.Get(zone);
-  if (!sample || sample.Origin != zone.GetOrigin())
+  EBG_ZoneProtection sample;
+  if (zone.Strategy != 0)
   {
-   sample = new EBG_ZoneProtection(); sample.Origin = zone.GetOrigin();
-   m_Protection.Set(zone, sample);
+   // Per-group activation: the record's own verdicts, kept until the next invalidation.
+   sample = record.ProtectionSample;
+   if (!sample || record.ProtectionVersion != m_ProtectionVersion || !sample.Matches(zone))
+   {
+    sample = new EBG_ZoneProtection(); sample.Capture(zone);
+    record.ProtectionSample = sample;
+    record.ProtectionVersion = m_ProtectionVersion;
+   }
+  }
+  else
+  {
+   sample = m_Protection.Get(zone);
+   if (!sample || !sample.Matches(zone))
+   {
+    sample = new EBG_ZoneProtection(); sample.Capture(zone);
+    m_Protection.Set(zone, sample);
+   }
   }
   if (sleep && sample.SleepKnown) return sample.Sleep;
   if (!sleep && sample.WakeKnown) return sample.Wake;
   bool protectedArea;
-  foreach (EBG_CacheGroup peer : Records)
-   if (peer.Zone == zone && InVolume(peer, sleep)) { protectedArea = true; break; }
+  if (zone.Strategy != 0) protectedArea = InVolume(record, sleep);
+  else protectedArea = ZoneInVolume(zone, sleep);
   if (sleep) { sample.SleepKnown = true; sample.Sleep = protectedArea; }
   else { sample.WakeKnown = true; sample.Wake = protectedArea; }
   return protectedArea;
@@ -1180,7 +1488,9 @@ class EBG_CacheManager
   if (!EBG_MissionPersistence.Ready(this)) { EBG_OptimizerControl.Poll(this); return; }
   m_PumpTicks++;
   if (m_PumpTicks % 5 == 0) { Tick(); return; }
-  InvalidateProtection();
+  // Players and member positions only change in Tick; everything else marks dirty.
+  if (EBG_DebugChecks.Enabled && !m_ProtectionDirty) CheckProtectionCache();
+  if (m_ProtectionDirty) InvalidateProtection();
   EBG_CacheFullCoordinator.Tick(this);
  }
  void Tick()
@@ -1209,6 +1519,9 @@ class EBG_CacheManager
    zone.ManagedCount = 0; zone.AliveCount = 0; zone.DeadCount = 0; zone.SkippedCount = 0; zone.CachedCount = 0; zone.PendingCount = 0; zone.RecoveryCount = 0; zone.BlockedReason = "";
    zone.PlayerAwakeCount = 0; zone.PlayerAwakeDistance = -1;
   }
+  // The pass's shared candidates hold only this frame's reads.
+  m_Candidates = null;
+  m_CandidateAgents = null;
   foreach (EBG_CacheGroup record : Records) UpdateRecord(record);
   InvalidateProtection();
   float now = Now();
@@ -1264,11 +1577,13 @@ class EBG_CacheManager
    {
     EBG_CacheCleanup.Instance.ReleaseGroup(releasedRecord);
     Records.Remove(releasedIndex);
+    BumpRoster();
     continue;
    }
    if (!releasedRecord.ReleaseRequested || releasedRecord.Full != null || releasedRecord.Simulation != null) continue;
    if (EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.ReleaseGroup(releasedRecord);
    Records.Remove(releasedIndex);
+   BumpRoster();
   }
   InvalidateProtection();
   foreach (EBG_CacheGroup record : Records)

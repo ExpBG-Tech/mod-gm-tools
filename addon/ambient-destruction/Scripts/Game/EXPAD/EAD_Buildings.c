@@ -155,13 +155,14 @@ class EAD_Buildings
   }
   return phases.GetDamagePhase() == target;
  }
+ // Ruins, debris, building parts, addons and furniture; a leaf _base.et template too.
+ // Memoised per distinct path (prefab and each ancestor) in EAD_Placement.PathClasses.
  protected static bool RejectedPath(ResourceName resource, bool leaf)
  {
-  string path = resource;
-  path.ToLower();
-  if (path.Contains("/dst/") || path.Contains("ruin") || path.Contains("destroyed") || path.Contains("rubble") || path.Contains("debris")) return true;
-  if (path.Contains("/buildingparts/") || path.Contains("/buildingaddons/") || path.Contains("/furniture/")) return true;
-  return leaf && path.Contains("_base.et");
+  int classes = EAD_Placement.PathClasses(resource);
+  if ((classes & EAD_PathClass.REJECTED) != 0)
+   return true;
+  return leaf && (classes & EAD_PathClass.TEMPLATE) != 0;
  }
  void Begin(BaseWorld world, vector center, float radius, int intensity, int seed)
  {

@@ -22,13 +22,28 @@ class EAC_PedestrianCaching
 
  static bool Distant(EAC_AmbientModule module, IEntity actor, array<IEntity> observers)
  {
+  if (!module || !actor)
+   return false;
+  return Distant(module, actor, observers, KnownObservers(module.GetWorld(), observers));
+ }
+
+ // The cache sampler's form (perf plan WP6, civilians-b-12): `observersKnown` is
+ // KnownObservers(module.GetWorld(), observers), which depends only on the world
+ // and the tick's observer list, so EAC_PedestrianSpawner.Step evaluates it once
+ // per tick instead of once per tracked resident.
+ static bool Distant(EAC_AmbientModule module, IEntity actor, array<IEntity> observers, bool observersKnown)
+ {
   // Each owned group has one member: use its live position, never its home or
   // the AI group's potentially stale entity origin.
-  if (!module || !actor || !KnownObservers(module.GetWorld(), observers)) return false;
+  if (!module || !actor || !observersKnown)
+   return false;
   float sleepDistanceSq = module.SleepDistance * module.SleepDistance;
   vector position = actor.GetOrigin();
   foreach (IEntity observer : observers)
-   if (vector.DistanceSq(observer.GetOrigin(), position) <= sleepDistanceSq) return false;
+  {
+   if (vector.DistanceSq(observer.GetOrigin(), position) <= sleepDistanceSq)
+    return false;
+  }
   return true;
  }
 

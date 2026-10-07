@@ -13,6 +13,12 @@ class EBG_FullSaveGate
  protected static int s_SaveTypes;
  protected static string s_Reason;
  protected static bool s_CDFWarningLogged;
+ // Loaded addons cannot change during a session: read them once per world instead of
+ // on every Tick and Poll. An empty list is never remembered.
+ protected static World s_AddonWorld;
+ protected static bool s_AddonsRead;
+ protected static bool s_OwnPack;
+ protected static bool s_CDFWithoutCompanion;
 
  static bool IsHeld() { return s_Held; }
  static bool IsFaulted() { return s_Fault; }
@@ -38,6 +44,33 @@ class EBG_FullSaveGate
   return false;
  }
 
+ // The one loaded-addon read: this pack's identity, and CDF loaded without the
+ // EXPBG CDF companion. False while the list is empty (nothing is remembered then).
+ protected static bool ReadLoadedAddons()
+ {
+  World world;
+  if (GetGame()) world = GetGame().GetWorld();
+  if (s_AddonsRead && world == s_AddonWorld)
+  {
+   return true;
+  }
+  array<string> addons = {};
+  GameProject.GetLoadedAddons(addons);
+  if (addons.IsEmpty())
+  {
+   return false;
+  }
+  s_OwnPack = false;
+  foreach (string addon : addons)
+  {
+   if (addon == "FC1402F65B2F4A45") s_OwnPack = true; // EXPBG GM Tools pack
+  }
+  s_CDFWithoutCompanion = addons.Contains("6A1876F37D65AB09") && !addons.Contains("07BC942D90324CD9");
+  s_AddonWorld = world;
+  s_AddonsRead = true;
+  return true;
+ }
+
  protected static bool SupportedRuntime(out string reason)
  {
   reason = "";
@@ -53,15 +86,16 @@ class EBG_FullSaveGate
   ResourceName systems = GetGame().GetSystemsConfig();
   if (systems != "{8DDC2A311929D52F}Configs/Systems/GameMasterSystems.conf")
   { reason = "Full save protection requires the native GameMasterSystems systems config, which this session does not run (Workbench World Editor play or a scenario that replaces it); start the GM mission from the main menu or a server"; return false; }
-  array<string> addons = {};
-  GameProject.GetLoadedAddons(addons);
-  if (addons.IsEmpty()) { reason = "Loaded addon ownership could not be verified"; return false; }
-  bool ownAddon;
-  foreach (string addon : addons)
+  if (!ReadLoadedAddons())
   {
-   if (addon == "FC1402F65B2F4A45") ownAddon = true; // EXPBG GM Tools pack
+   reason = "Loaded addon ownership could not be verified";
+   return false;
   }
-  if (!ownAddon) { reason = "EXPBG GM Tools addon identity could not be verified"; return false; }
+  if (!s_OwnPack)
+  {
+   reason = "EXPBG GM Tools addon identity could not be verified";
+   return false;
+  }
   return true;
  }
 
@@ -70,9 +104,11 @@ class EBG_FullSaveGate
  // This check is admission-only: restoration and releasing a hold remain valid.
  protected static bool CanCaptureForCDF(out string reason)
  {
-  array<string> addons = {};
-  GameProject.GetLoadedAddons(addons);
-  if (!addons.Contains("6A1876F37D65AB09") || addons.Contains("07BC942D90324CD9")) return true;
+  // An unreadable (empty) list never matched CDF before either.
+  if (!ReadLoadedAddons() || !s_CDFWithoutCompanion)
+  {
+   return true;
+  }
   reason = "Full Cache blocked: CDF is loaded without the EXPBG GM Tools CDF companion. AI remain present; mode unchanged. Install the companion or choose Simulation. Prepare for save restores existing caches.";
   if (!s_CDFWarningLogged)
   {
@@ -184,6 +220,7 @@ class EBG_FullSaveGate
   // Native exit and game-end paths also set false. Never overwrite those denials.
   s_Manager = null; s_Held = false; s_RestoreRequested = false;
   s_Fault = false; s_SaveTypes = 0; s_Reason = ""; s_CDFWarningLogged = false;
+  s_AddonWorld = null; s_AddonsRead = false;
  }
 }
 

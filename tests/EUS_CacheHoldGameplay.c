@@ -1,5 +1,5 @@
 // TEST ONLY. EXPBG Unit Scripts on a squad that Unit Caching already manages.
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EUS_CacheHoldGameplay.c -ExpectResult '\[EUS CACHE HOLD RESULT\] checks=[1-9]\d* failures=0 reason=complete' -OrchestratorSlotGranted
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EUS_CacheHoldGameplay.c -ExpectResult '\[EUS CACHE HOLD RESULT\] checks=[1-9]\d* failures=0 reason=complete mismatches=0' -OrchestratorSlotGranted
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed.
 // Real USSR rifle squad and Unit Caching zone prefab (Full mode, 5 s sleep delay). The
 // squad is enrolled first and only then scripted through the production EUS_Manager
@@ -44,6 +44,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  override void EOnInit(IEntity owner)
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
+  EBG_DebugChecks.Enabled = true; EBG_DebugChecks.Mismatches = 0; // indexes also run their old full scans
   s_Presence = {};
   Started = Now();
   Next = Started + 10;
@@ -62,7 +63,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   Finished = true;
   if (s_Presence) s_Presence.Clear();
   ClearEventMask(EntityEvent.FRAME);
-  PrintFormat("[EUS CACHE HOLD RESULT] checks=%1 failures=%2 reason=%3", Checks, Failures, reason);
+  Check(EBG_DebugChecks.Mismatches == 0, "index cross-checks matched their old full scans");
+  PrintFormat("[EUS CACHE HOLD RESULT] checks=%1 failures=%2 reason=%3 mismatches=%4", Checks, Failures, reason, EBG_DebugChecks.Mismatches);
   GetGame().RequestClose();
  }
  vector Ground(vector p, float lift) { p[1] = GetGame().GetWorld().GetSurfaceY(p[0], p[2]) + lift; return p; }

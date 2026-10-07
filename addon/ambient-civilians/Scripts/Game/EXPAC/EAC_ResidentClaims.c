@@ -54,6 +54,14 @@ class EAC_ResidentClaims
  bool ReservesGroup(SCR_AIGroup group, EAC_ResidentClaim except = null)
  {
   if (!group || !Replication.IsServer() || group.GetWorld() != m_World) return false;
+  // Pointer compares first: our own resident groups are found here with no native
+  // call. Both passes only read, so the answer is the same boolean as the single
+  // pass below on its own.
+  foreach (int groupId, EAC_ResidentClaim groupClaim : m_Claims)
+  {
+   if (groupClaim != except && groupClaim.Group == group)
+    return true;
+  }
   foreach (int id, EAC_ResidentClaim claim : m_Claims)
   {
    if (claim == except) continue;
@@ -239,8 +247,12 @@ class EAC_ResidentClaims
   {
    SCR_EditableEntityComponent child = editable.GetChild(i);
    if (!child) continue;
+   // The claim's own actor first: it is normally the only child, and recognising
+   // it needs no walk of the spawner's tracked list. Both tests only lead to
+   // continue and neither has a side effect, so the order does not change the result.
+   if (child.GetOwner() == claim.Character || (claim.OptimizerMember && child.GetOwner() == claim.OptimizerMember.Entity)) continue;
    if (spawner && spawner.EAC_ContainsSessionHelper(child, claim)) continue;
-   if (child.GetOwner() != claim.Character && (!claim.OptimizerMember || child.GetOwner() != claim.OptimizerMember.Entity)) return false;
+   return false;
   }
   return true;
  }

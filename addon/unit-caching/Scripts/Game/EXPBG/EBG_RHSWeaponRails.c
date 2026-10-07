@@ -6,6 +6,19 @@ modded class SCR_WeaponAttachmentsStorageComponent
  [RplProp(onRplName: "EBG_OnRHSRails"), NonSerialized()]
  protected ref array<float> m_EBG_RHSRails = {};
  protected int m_EBG_RailsAttempts;
+ // One shared server sampler for every published rail storage, in place of one 1 s
+ // timer per storage for its whole life. A cycle of four 250 ms steps visits each
+ // registered storage once (about once per second, as before) with the unchanged
+ // compare-and-bump, a quarter of them per step, so there is no synchronised spike.
+ // Weak entries: destroyed storages drop out when the cursor reaches them.
+ protected static ref array<SCR_WeaponAttachmentsStorageComponent> s_EBG_RailSamplers;
+ protected static int s_EBG_RailCursor;
+ protected static int s_EBG_RailPhase;
+ protected static int s_EBG_RailDue;
+ protected static int s_EBG_RailBudget;
+ protected static bool s_EBG_RailArmed;
+ protected static World s_EBG_RailWorld;
+ protected bool m_EBG_RailListed;
 
  bool EBG_ReadRHSRails(out array<float> values)
  {
@@ -46,8 +59,72 @@ modded class SCR_WeaponAttachmentsStorageComponent
  void EBG_PublishMissionRails()
  {
   EBG_SampleRHSRails();
-  GetGame().GetCallqueue().Remove(EBG_SampleRHSRails);
-  GetGame().GetCallqueue().CallLater(EBG_SampleRHSRails, 1000, true);
+  EBG_RegisterRailSampler(this);
+ }
+ // Adds a storage to the shared sampler once and arms the sampler when it is idle.
+ protected static void EBG_RegisterRailSampler(SCR_WeaponAttachmentsStorageComponent storage)
+ {
+  EXPBG_LazyStatics_SCR_WeaponAttachmentsStorageComponent();
+  if (!storage || !GetGame()) return;
+  // A new world starts the cycle over and re-arms the one shared timer.
+  if (EBG_RailSamplerWorldChanged()) s_EBG_RailArmed = false;
+  if (!storage.m_EBG_RailListed)
+  {
+   storage.m_EBG_RailListed = true;
+   s_EBG_RailSamplers.Insert(storage);
+  }
+  if (s_EBG_RailArmed) return;
+  s_EBG_RailArmed = true;
+  GetGame().GetCallqueue().Remove(EBG_StepRailSamplers);
+  GetGame().GetCallqueue().CallLater(EBG_StepRailSamplers, 250, true);
+ }
+ protected static bool EBG_RailSamplerWorldChanged()
+ {
+  World world = GetGame().GetWorld();
+  if (!world || world == s_EBG_RailWorld)
+  {
+   return false;
+  }
+  s_EBG_RailWorld = world;
+  s_EBG_RailCursor = 0;
+  s_EBG_RailPhase = 0;
+  return true;
+ }
+ protected static void EBG_StepRailSamplers()
+ {
+  EXPBG_LazyStatics_SCR_WeaponAttachmentsStorageComponent();
+  if (!GetGame()) return;
+  EBG_RailSamplerWorldChanged();
+  if (s_EBG_RailSamplers.IsEmpty())
+  {
+   GetGame().GetCallqueue().Remove(EBG_StepRailSamplers);
+   s_EBG_RailArmed = false;
+   s_EBG_RailPhase = 0;
+   return;
+  }
+  // Each cycle covers the storages registered when it starts, ceil(n / 4) per step.
+  if (s_EBG_RailPhase == 0)
+  {
+   s_EBG_RailDue = s_EBG_RailSamplers.Count();
+   s_EBG_RailBudget = (s_EBG_RailDue + 3) / 4;
+  }
+  int visits = s_EBG_RailBudget;
+  if (visits > s_EBG_RailDue) visits = s_EBG_RailDue;
+  while (visits > 0 && !s_EBG_RailSamplers.IsEmpty())
+  {
+   visits--;
+   s_EBG_RailDue--;
+   if (s_EBG_RailCursor >= s_EBG_RailSamplers.Count()) s_EBG_RailCursor = 0;
+   SCR_WeaponAttachmentsStorageComponent storage = s_EBG_RailSamplers[s_EBG_RailCursor];
+   if (!storage)
+   {
+    s_EBG_RailSamplers.RemoveOrdered(s_EBG_RailCursor);
+    continue;
+   }
+   s_EBG_RailCursor++;
+   storage.EBG_SampleRHSRails();
+  }
+  s_EBG_RailPhase = (s_EBG_RailPhase + 1) % 4;
  }
  protected bool EBG_ApplyRHSRails(array<float> values)
  {
@@ -96,8 +173,7 @@ modded class SCR_WeaponAttachmentsStorageComponent
    return false;
   }
   EBG_SampleRHSRails();
-  GetGame().GetCallqueue().Remove(EBG_SampleRHSRails);
-  GetGame().GetCallqueue().CallLater(EBG_SampleRHSRails, 1000, true);
+  EBG_RegisterRailSampler(this);
   return true;
  }
  protected void EBG_SampleRHSRails()
@@ -133,7 +209,15 @@ modded class SCR_WeaponAttachmentsStorageComponent
  void ~SCR_WeaponAttachmentsStorageComponent()
  {
   if (!GetGame()) return;
-  GetGame().GetCallqueue().Remove(EBG_SampleRHSRails);
   GetGame().GetCallqueue().Remove(EBG_TryRHSRails);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_SCR_WeaponAttachmentsStorageComponent()
+	{
+		if (!s_EBG_RailSamplers)
+			s_EBG_RailSamplers = new array<SCR_WeaponAttachmentsStorageComponent>();
+	}
 }

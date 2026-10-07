@@ -343,7 +343,7 @@ save/load. `tests/Test-CacheZoneFeedback.ps1` guards the same wiring portably.
 Source reviewed; native execution pending.
 
 ```powershell
-pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete' -OrchestratorSlotGranted
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EBG_LocalCacheGameplay.c -ExpectResult '\[EBG LOCAL CACHE RESULT\] checks=[1-9]\d* failures=0 reason=complete mismatches=0' -OrchestratorSlotGranted
 ```
 
 ## Ambient Destruction road wreck fixture

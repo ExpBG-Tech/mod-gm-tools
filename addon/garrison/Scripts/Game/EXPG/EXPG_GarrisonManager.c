@@ -625,6 +625,13 @@ class EXPG_GarrisonManager
  protected int m_LastMode = -1;
  protected float m_NextExclusion;
  protected float m_NextNotice;
+ // The full exclusion sync runs every 5 s; every save and load forces its own first.
+ protected float m_NextExclusionSync;
+ // Tick: the guards whose Unit Caching support is checked only once caching is due.
+ protected ref array<SCR_ChimeraCharacter> m_SupportActors = {};
+ protected ref array<int> m_SupportIds = {};
+ // Near: the player origins of one call.
+ protected ref array<vector> m_NearOrigins = {};
 
  static EXPG_GarrisonManager Get()
  {
@@ -658,6 +665,11 @@ class EXPG_GarrisonManager
  static bool Reserves(SCR_AIGroup group)
  {
   if (!group || !HasActive()) { return false; }
+  // A garrison's own squad first: no guard needs to be visited for it.
+  foreach (EXPG_GarrisonRecord owner : s_Instance.m_Records)
+  {
+   if (!owner.Finished && owner.Group == group) { return true; }
+  }
   foreach (EXPG_GarrisonRecord record : s_Instance.m_Records)
   {
    if (record.Finished) { continue; }
@@ -691,10 +703,11 @@ class EXPG_GarrisonManager
   foreach (EXPG_GarrisonRecord record : s_Instance.m_Records)
   {
    if (record.Finished) { continue; }
-   bool held = record.Group == group;
+   if (record.Group == group) { return s_Instance.CacheState(record); }
+   bool held = false;
    foreach (EXPG_GarrisonMember member : record.Members)
    {
-    if (member.CacheMember.Entity && member.CacheMember.Entity.GetCharacterGroup() == group) { held = true; }
+    if (member.CacheMember.Entity && member.CacheMember.Entity.GetCharacterGroup() == group) { held = true; break; }
    }
    if (held) { return s_Instance.CacheState(record); }
   }
@@ -1011,17 +1024,28 @@ class EXPG_GarrisonManager
   }
  }
 
+ // A player within distance of the building or of a living guard. Each player's
+ // origin and each guard's point are read once per call; any hit answers.
  protected bool Near(EXPG_GarrisonRecord record, float distance)
  {
+  float limitSq = distance * distance;
+  m_NearOrigins.Clear();
   foreach (IEntity player : m_Players)
   {
    if (!player) { continue; }
-   if (vector.DistanceSq(player.GetOrigin(), record.Plan.Origin) <= distance * distance) { return true; }
-   foreach (EXPG_GarrisonMember member : record.Members)
+   vector origin = player.GetOrigin();
+   if (vector.DistanceSq(origin, record.Plan.Origin) <= limitSq) { return true; }
+   m_NearOrigins.Insert(origin);
+  }
+  if (m_NearOrigins.IsEmpty()) { return false; }
+  foreach (EXPG_GarrisonMember member : record.Members)
+  {
+   if (member.CacheMember.Dead) { continue; }
+   vector point = member.CacheMember.Position;
+   if (member.CacheMember.Entity) { point = member.CacheMember.Entity.GetOrigin(); }
+   foreach (vector seen : m_NearOrigins)
    {
-    vector point = member.CacheMember.Position;
-    if (member.CacheMember.Entity) { point = member.CacheMember.Entity.GetOrigin(); }
-    if (!member.CacheMember.Dead && vector.DistanceSq(player.GetOrigin(), point) <= distance * distance) { return true; }
+    if (vector.DistanceSq(seen, point) <= limitSq) { return true; }
    }
   }
   return false;
@@ -1724,9 +1748,7 @@ class EXPG_GarrisonManager
  {
   // CDF alone bypasses Optimizer's save-admission hook. Keep originals active
   // rather than let that path serialize suppressed presentation/AI state.
-  array<string> addons = {};
-  GameProject.GetLoadedAddons(addons);
-  if (addons.Contains("6A1876F37D65AB09") && !addons.Contains("07BC942D90324CD9"))
+  if (CdfWithoutCompanion())
   { record.Report("Cache held: CDF requires the EXPBG GM Tools CDF companion for save protection"); return; }
   bool legacy = PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_LEGACY;
   if ((legacy && EBG_OptimizerControl.Preparing) || EBG_CacheSnapshot.Loading || IsImporting()) { record.Report("Cache held: a Unit Caching save or load is in progress"); return; }
@@ -1803,6 +1825,22 @@ class EXPG_GarrisonManager
    if (addons.Contains("6A1876F37D65AB09")) { m_CdfLoaded = 1; }
   }
   return m_CdfLoaded == 1;
+ }
+
+ // CDF Game Master Save loaded without the EXPBG CDF Compat companion (07BC942D90324CD9),
+ // read from the loaded addon list once per mission like CdfLoaded. Not the CdfLoaded
+ // seam: the sleep refusal has always read the addon list itself.
+ protected int m_CdfWithoutCompanion = -1;
+ protected bool CdfWithoutCompanion()
+ {
+  if (m_CdfWithoutCompanion < 0)
+  {
+   array<string> addons = {};
+   GameProject.GetLoadedAddons(addons);
+   m_CdfWithoutCompanion = 0;
+   if (addons.Contains("6A1876F37D65AB09") && !addons.Contains("07BC942D90324CD9")) { m_CdfWithoutCompanion = 1; }
+  }
+  return m_CdfWithoutCompanion == 1;
  }
 
  // EXPBG CDF Compat 0.1.6 and later override this with EXPG_GarrisonPersistence.
@@ -1912,25 +1950,36 @@ class EXPG_GarrisonManager
 
  // Every owned entity of a Ready, portable garrison leaves the other saves; whatever
  // is no longer owned is handed back (EXPG_SaveExclusion). Bounded by the records.
+ // One member pass per record decides portability (as Portable) and collects the
+ // owned guards; they are kept after the squad and its waypoints, in member order.
  void SyncExclusion()
  {
   bool flag = PersistenceMode() == EXPG_GarrisonPersistence.MODE_CDF_BRIDGED;
   EXPG_SaveExclusion.BeginSync();
+  array<IEntity> guards = {};
+  array<AIWaypoint> orders = {};
   foreach (EXPG_GarrisonRecord record : m_Records)
   {
-   if (record.Finished || !record.Ready || !Portable(record)) { continue; }
+   if (record.Finished || !record.Ready) { continue; }
    SCR_AIGroup group = record.Group;
+   if (!record.Full && (!group || !EBG_PrefabFullCache.CanDeleteFullEntity(group))) { continue; }
+   guards.Clear();
+   bool portable = true;
+   foreach (EXPG_GarrisonMember member : record.Members)
+   {
+    if (!OwnsActor(record, member)) { continue; }
+    if (!record.Full && !EBG_PrefabFullCache.CanDeleteFullEntity(member.CacheMember.Entity)) { portable = false; break; }
+    guards.Insert(member.CacheMember.Entity);
+   }
+   if (!portable) { continue; }
    if (group)
    {
     EXPG_SaveExclusion.Keep(group, flag);
-    array<AIWaypoint> orders = {};
+    orders.Clear();
     group.GetWaypoints(orders);
     foreach (AIWaypoint order : orders) { EXPG_SaveExclusion.Keep(order, flag); }
    }
-   foreach (EXPG_GarrisonMember member : record.Members)
-   {
-    if (OwnsActor(record, member)) { EXPG_SaveExclusion.Keep(member.CacheMember.Entity, flag); }
-   }
+   foreach (IEntity guard : guards) { EXPG_SaveExclusion.Keep(guard, flag); }
   }
   EXPG_SaveExclusion.EndSync();
  }
@@ -2679,8 +2728,10 @@ class EXPG_GarrisonManager
   // without rescanning the whole building. Never a release and never a teleport:
   // a guard whose floor gives way falls and holds where he lands (PostControl);
   // until then caching is held. Debris on a post is no floor loss while the guard
-  // still stands on something.
-  if (!record.Members.IsEmpty() && record.Plan.Structure)
+  // still stands on something. A Full-cached garrison has no guard in the world:
+  // the round robin resumes where it stopped once it wakes (WakeFull checks every
+  // restored guard's own position first).
+  if (!record.Members.IsEmpty() && record.Plan.Structure && !(record.Full && record.Full.GetState() == EBG_FullGroupPhase.CACHED))
   {
    EXPG_GarrisonMember check = record.Members[record.SafetyCursor++ % record.Members.Count()];
    SCR_ChimeraCharacter standing = check.CacheMember.Entity;
@@ -2733,6 +2784,12 @@ class EXPG_GarrisonManager
   bool unsafe;
   // Why caching is held this Tick (the first reason found; NoteHold shows it).
   string hold;
+  // Guards whose Unit Caching support is checked only once caching is due (below the
+  // awake return), in member order; holdAt: how many came before the first other
+  // hold reason (an earlier guard's support problem still names the hold).
+  int holdAt = -1;
+  m_SupportActors.Clear();
+  m_SupportIds.Clear();
   foreach (EXPG_GarrisonMember member : record.Members)
   {
    EBG_CacheMember cached = member.CacheMember;
@@ -2755,7 +2812,7 @@ class EXPG_GarrisonManager
    if (!controller)
    {
     unsafe = true;
-    if (hold.IsEmpty()) { hold = string.Format("guard %1 has no character controller", cached.Id); }
+    if (hold.IsEmpty()) { hold = string.Format("guard %1 has no character controller", cached.Id); holdAt = m_SupportActors.Count(); }
     continue;
    }
    // Possessed: free while a player has him; afterwards he holds where he was left
@@ -2767,7 +2824,7 @@ class EXPG_GarrisonManager
     cached.WasPlayer = true;
     member.ReleaseControl();
     unsafe = true;
-    if (hold.IsEmpty()) { hold = string.Format("guard %1 is possessed by a player", cached.Id); }
+    if (hold.IsEmpty()) { hold = string.Format("guard %1 is possessed by a player", cached.Id); holdAt = m_SupportActors.Count(); }
     continue;
    }
    if (actor.EBG_WasPlayerControlled()) { cached.WasPlayer = true; }
@@ -2803,7 +2860,7 @@ class EXPG_GarrisonManager
    if (member.Post && member.Returning)
    {
     unsafe = true;
-    if (hold.IsEmpty()) { hold = string.Format("guard %1 is being sent back to his post", cached.Id); }
+    if (hold.IsEmpty()) { hold = string.Format("guard %1 is being sent back to his post", cached.Id); holdAt = m_SupportActors.Count(); }
     if (member.OnPost(actor.GetOrigin()))
     {
      member.Returning = false;
@@ -2828,14 +2885,12 @@ class EXPG_GarrisonManager
    if (member.FloorLost)
    {
     unsafe = true;
-    if (hold.IsEmpty()) { hold = string.Format("the floor under guard %1's post gave way", cached.Id); }
+    if (hold.IsEmpty()) { hold = string.Format("the floor under guard %1's post gave way", cached.Id); holdAt = m_SupportActors.Count(); }
    }
-   string problem = EBG_SimulationCache.Unsupported(actor, CacheModeInUse(record.Group) == 1);
-   if (!problem.IsEmpty())
-   {
-    unsafe = true;
-    if (hold.IsEmpty()) { hold = string.Format("guard %1: %2", cached.Id, problem); }
-   }
+   // Unit Caching support (EBG_SimulationCache.Unsupported) is costly and only
+   // matters once caching is due: checked after the awake return below.
+   m_SupportActors.Insert(actor);
+   m_SupportIds.Insert(cached.Id);
   }
   // A casualty may remain in the native agent list during its removal callback.
   // Compare identity instead of counts, so one death does not release the guards.
@@ -2851,7 +2906,7 @@ class EXPG_GarrisonManager
    }
    if (known) { continue; }
    unsafe = true;
-   if (hold.IsEmpty()) { hold = "a soldier who is not one of its guards joined the squad (posts kept)"; }
+   if (hold.IsEmpty()) { hold = "a soldier who is not one of its guards joined the squad (posts kept)"; holdAt = m_SupportActors.Count(); }
    break;
   }
   if (alive == 0) { record.RequestRelease("No surviving guards"); }
@@ -2859,7 +2914,7 @@ class EXPG_GarrisonManager
   if (!record.BindControls())
   {
    unsafe = true;
-   if (hold.IsEmpty()) { hold = UnboundGuard(record); }
+   if (hold.IsEmpty()) { hold = UnboundGuard(record); holdAt = m_SupportActors.Count(); }
   }
   else if (record.Status == "Native controls are initializing") { record.Report("Garrison active"); }
   ServiceAlert(record);
@@ -2867,6 +2922,26 @@ class EXPG_GarrisonManager
   // Awake by design (caching Off, a player near, just placed or woken): no hold.
   if (record.CacheMode == 0 || Near(record, record.SleepDistance) || Now() - record.Created < 15)
   { record.ClearSince = -1; ReleaseSettle(record); record.ClearHold(); return; }
+  // Caching is due: the first guard in member order without Unit Caching support
+  // holds it, unless another reason was found before him (that reason stays); the
+  // alarm names its own reason.
+  if (!record.AlertActive)
+  {
+   int limit = m_SupportActors.Count();
+   if (holdAt >= 0) { limit = holdAt; }
+   if (limit > 0)
+   {
+    bool preserve = CacheModeInUse(record.Group) == 1;
+    for (int supportIndex = 0; supportIndex < limit; supportIndex++)
+    {
+     string problem = EBG_SimulationCache.Unsupported(m_SupportActors[supportIndex], preserve);
+     if (problem.IsEmpty()) { continue; }
+     unsafe = true;
+     hold = string.Format("guard %1: %2", m_SupportIds[supportIndex], problem);
+     break;
+    }
+   }
+  }
   // An alarm, like combat, keeps the garrison awake until it calms down; any
   // other hold names its reason ("Cache held: ...").
   if (record.AlertActive || unsafe)
@@ -2888,23 +2963,29 @@ class EXPG_GarrisonManager
  {
   if (!GetGame() || GetGame().GetWorld() != m_World || !GetGame().InPlayMode())
   { if (GetGame()) { GetGame().GetCallqueue().Remove(Pump); } return; }
-  if (Now() >= m_NextPlayers) { Players(); m_NextPlayers = Now() + 1; }
-  // Once a second: owned entities stay out of the other saves; a native ledger is
-  // imported once persistence is active; load notices reach late Game Masters.
+  // Once a second: a native ledger is imported once persistence is active; load
+  // notices reach late Game Masters. Owned entities stay out of the other saves: a
+  // full exclusion sync every 5 s (every save and load forces its own sync first),
+  // and in between the before-save hook is still installed as early as before.
   if (Now() >= m_NextExclusion)
   {
    m_NextExclusion = Now() + 1;
-   if (!m_Importing) { SyncExclusion(); }
+   if (!m_Importing)
+   {
+    if (Now() >= m_NextExclusionSync) { SyncExclusion(); m_NextExclusionSync = Now() + 5; }
+    else { EXPG_SaveExclusion.IsSaveHooked(); }
+   }
    ServiceNativeImport();
    EXPG_GarrisonNotice.Deliver();
   }
   if (!m_Plans.IsEmpty())
   {
    // About 4 ms of analysis per 100 ms pump: large buildings finish in seconds
-   // instead of minutes, and one expensive step batch cannot stall a frame.
+   // instead of minutes. The budget is checked after every operation, so one
+   // expensive batch cannot stall a frame (the operations run in the same order).
    EXPG_BuildingPlan analysing = NextAnalysis();
    int analysisStart = System.GetTickCount();
-   while (analysing && !analysing.Done && System.GetTickCount() - analysisStart < 4) { analysing.Step(8); }
+   while (analysing && !analysing.Done && System.GetTickCount() - analysisStart < 4) { analysing.Step(1); }
    // One plan per pump is checked for eviction (a waiting request keeps its plan used).
    m_PlanCursor = m_PlanCursor % m_Plans.Count();
    EXPG_BuildingPlan plan = m_Plans[m_PlanCursor++];
@@ -2913,6 +2994,9 @@ class EXPG_GarrisonManager
    if (!used && Now() - plan.LastUsed > 120) { m_Plans.RemoveItem(plan); }
   }
   ServiceWaiters();
+  // The players Near reads, once a second and only while there is a garrison to
+  // tick (a garrison created in this pump is ticked with a fresh list).
+  if (!m_Records.IsEmpty() && Now() >= m_NextPlayers) { Players(); m_NextPlayers = Now() + 1; }
   // A carrier is replacing the garrisons: no record is ticked until it has finished.
   int serviceCount = Math.Min(4, m_Records.Count());
   if (m_Importing) { serviceCount = 0; }

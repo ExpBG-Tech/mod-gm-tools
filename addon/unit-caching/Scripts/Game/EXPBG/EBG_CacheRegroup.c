@@ -68,8 +68,9 @@ class EBG_CacheRegroup
   PrintFormat("[EBG MEMBER LEFT SQUAD] group=%1 member=%2 entity=%3 reason=living soldier left his squad for good; forgotten at once, never cached, respawned or deleted", owner.Id, member.Id, entity);
   cleanup.ReleaseRemovedMember(owner, member);
   owner.Members.RemoveItem(member);
+  manager.BumpRoster();
   owner.ClearSince = -1; owner.ActiveSince = manager.Now();
-  if (owner.Members.IsEmpty()) { cleanup.ReleaseGroup(owner); manager.Records.RemoveItem(owner); }
+  if (owner.Members.IsEmpty()) { cleanup.ReleaseGroup(owner); manager.Records.RemoveItem(owner); manager.BumpRoster(); }
   return true;
  }
  protected bool Changed(EBG_CacheManager manager, EBG_CacheGroup record)
@@ -234,6 +235,8 @@ class EBG_CacheRegroup
    destination.Members.Insert(member); previous.Members.RemoveItem(member);
    destination.LastUnsafe = Math.Max(destination.LastUnsafe, previous.LastUnsafe);
   }
+  // Members left or moved between records: their protection volumes changed.
+  manager.MarkProtectionDirty();
   foreach (EBG_CacheGroup affected : plan.Records) if (!destinations.Contains(affected)) destinations.Insert(affected);
   cleanup.CommitRegroup(plan.Records, destinations, newcomers);
   foreach (EBG_CacheGroup changed : destinations)
@@ -241,7 +244,11 @@ class EBG_CacheRegroup
    changed.RegroupReason = ""; changed.ClearSince = -1; changed.ActiveSince = manager.Now();
    changed.CleanupClearSince = -1; changed.CleanupNextAttempt = 0;
    changed.LastCacheRejection = "";
-   if (changed.Members.IsEmpty()) manager.Records.RemoveItem(changed);
+   if (changed.Members.IsEmpty())
+   {
+    manager.Records.RemoveItem(changed);
+    manager.BumpRoster();
+   }
   }
   PrintFormat("[EBG REGROUP] zone=%1 records=%2 destinations=%3 live=%4 stableSeconds=%5", plan.Zone.GetID(), plan.Records.Count(), destinations.Count(), plan.Entities.Count(), manager.Now() - plan.Observed);
   return true;

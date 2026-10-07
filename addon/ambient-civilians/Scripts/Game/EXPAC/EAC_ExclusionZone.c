@@ -10,6 +10,9 @@ class EAC_ExclusionZone : GenericEntity
  // every other record this addon keeps. Past the cap a zone is inert rather than
  // unbounded: the predicates below run once per route point of every resident.
  static const int MAX_ZONES = 64;
+ // Metres added to every radius by the route bounding-box pre-tests, so float
+ // rounding can only send a route to the exact per-segment test, never past it.
+ static const float ROUTE_BOX_MARGIN = 1;
  // NOTE (fixture v6b-exclusions, 46/1): this was a cached count, recounted on
  // registration changes. It went stale the moment a zone ENTITY was deleted:
  // s_Zones holds weak pointers, so the engine nulls the element immediately but
@@ -237,6 +240,111 @@ class EAC_ExclusionZone : GenericEntity
   {
    if (!zone || zone.GetWorld() != world || zone.BlockTransit != 1) continue;
    if (SegmentIntersectsDisc(from, to, zone.GetOrigin(), zone.RadiusMeters)) return false;
+  }
+  return true;
+ }
+
+ // Route pre-test for IsRouteAllowed, the manual-zone half of
+ // EAC_AutoExclusions.AnyDiscTouchesBox. False proves IsJourneyTransitAllowed's
+ // zone loop passes every segment inside the XZ box. The states in which that
+ // loop refuses outright (no game, not the server, no world) answer true so the
+ // caller reaches it. Dead slots are skipped, as the loop skips them.
+ static bool AnyBlockingZoneTouchesBox(float minX, float minZ, float maxX, float maxZ)
+ {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
+  if (s_Zones.IsEmpty())
+   return false;
+  if (!GetGame() || !Replication.IsServer())
+   return true;
+  BaseWorld world = GetGame().GetWorld();
+  if (!world)
+   return true;
+  foreach (EAC_ExclusionZone zone : s_Zones)
+  {
+   if (!zone || zone.GetWorld() != world || zone.BlockTransit != 1) continue;
+   vector origin = zone.GetOrigin();
+   float deltaX = Math.Clamp(origin[0], minX, maxX) - origin[0];
+   float deltaZ = Math.Clamp(origin[2], minZ, maxZ) - origin[2];
+   float radius = zone.RadiusMeters;
+   float reach = Math.AbsFloat(radius) + ROUTE_BOX_MARGIN;
+   if (deltaX * deltaX + deltaZ * deltaZ <= reach * reach)
+    return true;
+  }
+  return false;
+ }
+
+ // One verdict for a whole native route (perf plan WP6, civilians-a-01). Equal to
+ // IsTransitAllowed over every segment origin -> route[0] -> ... -> route[last],
+ // ANDed, which is what the per-point sweeps in the walker, the activity approach
+ // and the shelter route used to compute. Every term is pure, so the conjunction
+ // is regrouped:
+ // - the module-area half of IsTransitAllowed tests the two endpoints of each
+ //   segment, so it is the area test once per point, skipped with no active
+ //   module exactly as IsOutsidePopulationArea skips it;
+ // - the zone half runs per segment only when an automatic disc or a
+ //   transit-blocking zone touches the route's XZ bounding box. A segment lies
+ //   inside that box, so a shape clear of the box is clear of every segment.
+ //   Auto exclusions that are not ready still refuse: the pre-test answers true
+ //   and IsJourneyTransitAllowed refuses the first segment.
+ // An empty route passes, as the old loop did by running zero times.
+ // AnyTransitBlocked, IsTransitAllowed and the traffic sweep are unchanged.
+ // While a native fixture sets EBG_DebugChecks.Enabled, the old per-segment loop
+ // also runs and any difference is reported there (perf plan rule 3).
+ static bool IsRouteAllowed(vector origin, notnull array<vector> route)
+ {
+  bool allowed = RouteVerdict(origin, route);
+  if (EBG_DebugChecks.Enabled && allowed != SegmentRouteAllowed(origin, route))
+   EBG_DebugChecks.Mismatch(string.Format("EAC route verdict origin=%1 points=%2 regrouped=%3", origin, route.Count(), allowed));
+  return allowed;
+ }
+
+ // The loop IsRouteAllowed replaced: IsTransitAllowed per segment, first refusal wins.
+ protected static bool SegmentRouteAllowed(vector origin, array<vector> route)
+ {
+  vector previous = origin;
+  foreach (vector point : route)
+  {
+   if (!IsTransitAllowed(previous, point))
+    return false;
+   previous = point;
+  }
+  return true;
+ }
+
+ protected static bool RouteVerdict(vector origin, array<vector> route)
+ {
+  if (route.IsEmpty())
+   return true;
+  EAC_AmbientModule active = EAC_AmbientModule.GetActive();
+  if (active)
+  {
+   if (!active.ContainsPopulationPosition(origin))
+    return false;
+   foreach (vector inside : route)
+   {
+    if (!active.ContainsPopulationPosition(inside))
+     return false;
+   }
+  }
+  float minX = origin[0];
+  float maxX = origin[0];
+  float minZ = origin[2];
+  float maxZ = origin[2];
+  foreach (vector corner : route)
+  {
+   if (corner[0] < minX) minX = corner[0];
+   if (corner[0] > maxX) maxX = corner[0];
+   if (corner[2] < minZ) minZ = corner[2];
+   if (corner[2] > maxZ) maxZ = corner[2];
+  }
+  if (!EAC_AutoExclusions.AnyDiscTouchesBox(minX, minZ, maxX, maxZ) && !AnyBlockingZoneTouchesBox(minX, minZ, maxX, maxZ))
+   return true;
+  vector previous = origin;
+  foreach (vector next : route)
+  {
+   if (!IsJourneyTransitAllowed(previous, next))
+    return false;
+   previous = next;
   }
   return true;
  }

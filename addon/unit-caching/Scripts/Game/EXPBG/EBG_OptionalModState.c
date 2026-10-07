@@ -9,15 +9,43 @@ class EBG_OptionalScalar
  float FloatValue;
  bool BoolValue;
  int Parameter = -1;
+ // Class layouts cannot change at runtime, so each (class, field) answer, misses
+ // included, is remembered instead of scanning every script variable per call.
+ protected static ref map<string, int> s_EBG_FieldIndexes;
 
+ protected static int ScanFieldIndex(typename type, string field)
+ {
+  int count = type.GetVariableCount();
+  if (count > 2048)
+  {
+   return -1;
+  }
+  for (int i = 0; i < count; i++)
+  {
+   if (type.GetVariableName(i) == field)
+   {
+    return i;
+   }
+  }
+  return -1;
+ }
  static int FieldIndex(Managed component, string field)
  {
   if (!component) return -1;
+  EXPBG_LazyStatics_EBG_OptionalScalar();
   typename type = component.Type();
-  int count = type.GetVariableCount();
-  if (count > 2048) return -1;
-  for (int i = 0; i < count; i++) if (type.GetVariableName(i) == field) return i;
-  return -1;
+  string key = type.ToString() + ":" + field;
+  int index;
+  if (!s_EBG_FieldIndexes.Find(key, index))
+  {
+   index = ScanFieldIndex(type, field);
+   s_EBG_FieldIndexes.Insert(key, index);
+  }
+  else if (EBG_DebugChecks.Enabled && index != ScanFieldIndex(type, field))
+  {
+   EBG_DebugChecks.Mismatch("optional field index " + key);
+  }
+  return index;
  }
  bool Read(Managed component)
  {
@@ -55,6 +83,15 @@ class EBG_OptionalScalar
   else called = GetGame().GetScriptModule().Call(component, Setter, false, ignored, IntValue);
   return called && Matches(component);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EBG_OptionalScalar()
+	{
+		if (!s_EBG_FieldIndexes)
+			s_EBG_FieldIndexes = new map<string, int>();
+	}
 }
 
 class EBG_OptionalModState

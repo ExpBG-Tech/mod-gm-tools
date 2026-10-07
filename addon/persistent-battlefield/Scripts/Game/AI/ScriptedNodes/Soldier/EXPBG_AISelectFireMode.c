@@ -1,5 +1,10 @@
 modded class SCR_AISelectFireMode: AITaskScripted
 {
+	// Weapon prefab and requested mode pairs already warned about ("prefab:mode"), so a weapon
+	// without a matching fire mode logs once instead of on every evaluation. Created on first
+	// use (0.1.13 lazy statics); at most 256 pairs are remembered and logged.
+	protected static ref set<string> s_EXPBG_FireModeWarned;
+	
 	//-----------------------------------------------------------------------------------------------------------------------------
     override ENodeResult EOnTaskSimulate(AIAgent owner, float dt)
     {
@@ -172,11 +177,20 @@ modded class SCR_AISelectFireMode: AITaskScripted
 			if (weaponEntity)
 				prefabName = weaponEntity.GetPrefabData().GetPrefabName();
 			
-			string str = string.Format("SCR_AISelectFireMode: proper fire mode was not found: %1. Weapon prefab: %2",
-				typename.EnumToString(EWeaponFiremodeType, m_FiremodeType),
-				prefabName);
+			// Once per prefab and requested mode: repeat failures skip the formatting and the log.
+			if (!s_EXPBG_FireModeWarned)
+				s_EXPBG_FireModeWarned = new set<string>();
 			
-			Print(str, LogLevel.WARNING);
+			int requestedMode = m_FiremodeType;
+			string warnKey = prefabName + ":" + requestedMode.ToString();
+			if (s_EXPBG_FireModeWarned.Count() < 256 && s_EXPBG_FireModeWarned.Insert(warnKey))
+			{
+				string str = string.Format("SCR_AISelectFireMode: proper fire mode was not found: %1. Weapon prefab: %2",
+					typename.EnumToString(EWeaponFiremodeType, m_FiremodeType),
+					prefabName);
+				
+				Print(str, LogLevel.WARNING);
+			}
 			
 			return ENodeResult.FAIL;
 		}

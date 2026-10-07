@@ -25,6 +25,9 @@ class ETW_WeatherRunner
  static const float CLOUD_GRACE_S = 30;
  // Channel target meaning "leave an existing override alone" (Scenario Properties weather).
  static const float UNTOUCHED = -2;
+ // Last override value of a channel before Tick's first write of a transition (every
+ // written value is 0 or more).
+ static const float UNWRITTEN = -9999;
  static const string STATUS_IDLE = "Idle. Change a setting and press Save to start a transition.";
 
  protected static TimeAndWeatherManagerEntity s_Manager;
@@ -40,6 +43,9 @@ class ETW_WeatherRunner
  protected static ref array<int> s_aMode;
  protected static ref array<float> s_aFrom;
  protected static ref array<float> s_aTo;
+ // Override value Tick last wrote per channel: an unchanged value is not written (and
+ // broadcast to every client) again.
+ protected static ref array<float> s_aLast;
  protected static int s_iPlayer;
  protected static string s_sSource;
  protected static string s_sStatus = STATUS_IDLE;
@@ -277,6 +283,7 @@ class ETW_WeatherRunner
    }
    s_aFrom[c] = live;
    s_aTo[c] = live;
+   s_aLast[c] = UNWRITTEN;
    s_aMode[c] = MODE_NONE;
    if (wanted >= 0)
    {
@@ -440,8 +447,15 @@ class ETW_WeatherRunner
   float eased = t * t * (3 - 2 * t);
   for (int c = 0; c < CHANNELS; c++)
   {
-   if (s_aMode[c] != MODE_NONE)
-    WriteChannel(s_Manager, c, s_aFrom[c] + (s_aTo[c] - s_aFrom[c]) * eased);
+   if (s_aMode[c] == MODE_NONE)
+    continue;
+   float value = s_aFrom[c] + (s_aTo[c] - s_aFrom[c]) * eased;
+   float written = WrittenValue(c, value);
+   if (written != s_aLast[c])
+   {
+    WriteChannel(s_Manager, c, value);
+    s_aLast[c] = written;
+   }
   }
   if (s_bCloudPending)
    RetryClouds(transitions, elapsed);
@@ -801,16 +815,28 @@ class ETW_WeatherRunner
  }
 
  //------------------------------------------------------------------------------------------------
+ // The override value WriteChannel sets for a channel value (range clamp or turn).
+ protected static float WrittenValue(int channel, float value)
+ {
+  if (channel == CH_RAIN || channel == CH_FOG)
+   return Math.Clamp(value, 0, 1);
+  if (channel == CH_WIND_SPEED)
+   return Math.Max(value, 0);
+  return Math.Repeat(value, 360);
+ }
+
+ //------------------------------------------------------------------------------------------------
  protected static void WriteChannel(notnull TimeAndWeatherManagerEntity manager, int channel, float value)
  {
+  float written = WrittenValue(channel, value);
   if (channel == CH_RAIN)
-   manager.SetRainIntensityOverride(true, Math.Clamp(value, 0, 1));
+   manager.SetRainIntensityOverride(true, written);
   else if (channel == CH_FOG)
-   manager.SetFogAmountOverride(true, Math.Clamp(value, 0, 1));
+   manager.SetFogAmountOverride(true, written);
   else if (channel == CH_WIND_SPEED)
-   manager.SetWindSpeedOverride(true, Math.Max(value, 0));
+   manager.SetWindSpeedOverride(true, written);
   else
-   manager.SetWindDirectionOverride(true, Math.Repeat(value, 360));
+   manager.SetWindDirectionOverride(true, written);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -837,5 +863,7 @@ class ETW_WeatherRunner
 			s_aFrom = {0, 0, 0, 0};
 		if (!s_aTo)
 			s_aTo = {0, 0, 0, 0};
+		if (!s_aLast)
+			s_aLast = {UNWRITTEN, UNWRITTEN, UNWRITTEN, UNWRITTEN};
 	}
 }

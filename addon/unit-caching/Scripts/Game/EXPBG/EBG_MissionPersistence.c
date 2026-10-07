@@ -6,11 +6,22 @@ class EBG_MissionPlayerHistory
  protected static World s_World;
  protected static ref array<IEntity> s_Observed;
  protected static ref array<UUID> s_Ids;
+ // Hash mirrors for membership tests (value-keyed, as vanilla map<UUID, ...>); the arrays
+ // keep the saved order.
+ protected static ref map<UUID, bool> s_IdIndex;
+ protected static ref EBG_IdMirror s_EverMirror;
  protected static void Ensure()
  {
   if (!GetGame()) return;
-  if (s_World == GetGame().GetWorld() && s_Observed && s_Ids) return;
-  s_World = GetGame().GetWorld(); s_Observed = {}; s_Ids = {};
+  if (s_World == GetGame().GetWorld() && s_Observed && s_Ids && s_IdIndex) return;
+  s_World = GetGame().GetWorld(); s_Observed = {}; s_Ids = {}; s_IdIndex = new map<UUID, bool>();
+ }
+ protected static void AddId(UUID id)
+ {
+  if (EBG_DebugChecks.Enabled && s_IdIndex.Contains(id) != s_Ids.Contains(id)) EBG_DebugChecks.Mismatch(string.Format("player history id=%1", id));
+  if (s_IdIndex.Contains(id)) return;
+  s_Ids.Insert(id);
+  s_IdIndex.Set(id, true);
  }
  static void Mark(IEntity entity)
  {
@@ -20,22 +31,50 @@ class EBG_MissionPlayerHistory
   PersistenceSystem system = PersistenceSystem.GetInstance();
   if (!system) return;
   UUID id = system.GetId(entity);
-  if (!id.IsNull() && !s_Ids.Contains(id)) s_Ids.Insert(id);
+  if (!id.IsNull()) AddId(id);
  }
  static bool Contains(IEntity entity)
  {
   if (!entity || !Replication.IsServer()) return false;
   Ensure();
-  if (s_Observed.Contains(entity)) return true;
+  // Only EBG_MarkPlayerControlled lists an entity here, and it sets the character's
+  // flag first: an unflagged character is never listed, so its scan is skipped.
+  SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(entity);
+  bool listed = (!character || character.EBG_IsMarkedPlayer()) && s_Observed.Contains(entity);
+  if (EBG_DebugChecks.Enabled && !listed && s_Observed.Contains(entity)) EBG_DebugChecks.Mismatch(string.Format("player history entity=%1", entity));
+  if (listed)
+  {
+   return true;
+  }
   PersistenceSystem system = PersistenceSystem.GetInstance();
   if (!system) return false;
   UUID id = system.GetId(entity);
   if (id.IsNull()) return false;
-  if (s_Ids.Contains(id)) return true;
+  bool known = s_IdIndex.Contains(id);
+  if (EBG_DebugChecks.Enabled && known != s_Ids.Contains(id)) EBG_DebugChecks.Mismatch(string.Format("player history id=%1", id));
+  if (known)
+  {
+   return true;
+  }
   EBG_MissionPersistenceState state = EBG_MissionPersistenceState.Get();
   if (!state) return false;
   state.Ensure();
-  return state.EverPlayerIds.Contains(id);
+  return EverContains(state, id);
+ }
+ // The loaded mission's recorded former players (state.EverPlayerIds), as a set.
+ static bool EverContains(EBG_MissionPersistenceState state, UUID id)
+ {
+  if (!state || !state.EverPlayerIds)
+  {
+   return false;
+  }
+  if (!s_EverMirror) s_EverMirror = new EBG_IdMirror();
+  return s_EverMirror.Contains(state, state.EverPlayerIds, id);
+ }
+ // A load replaces the persisted lists; the next lookup rebuilds the mirror.
+ static void ForgetEverMirror()
+ {
+  if (s_EverMirror) s_EverMirror.Forget();
  }
  static bool Export(array<UUID> ids)
  {
@@ -48,10 +87,55 @@ class EBG_MissionPlayerHistory
    if (!entity) { s_Observed.Remove(i); continue; }
    UUID id = system.GetId(entity);
    if (id.IsNull()) return false;
-   if (!s_Ids.Contains(id)) s_Ids.Insert(id);
+   AddId(id);
   }
-  foreach (UUID observed : s_Ids) if (!ids.Contains(observed)) ids.Insert(observed);
+  // Append in s_Ids order whatever ids does not hold yet, as before.
+  map<UUID, bool> present = new map<UUID, bool>();
+  foreach (UUID existing : ids) present.Set(existing, true);
+  foreach (UUID observed : s_Ids)
+  {
+   if (present.Contains(observed)) continue;
+   present.Set(observed, true);
+   ids.Insert(observed);
+  }
   return ids.Count() <= 65536;
+ }
+}
+
+// Set mirror of one persisted id list (EBG_MissionPersistenceState), so a membership test
+// is one lookup instead of a scan. Between loads the lists only grow; the mirror is rebuilt
+// when the state, the list instance, a load or the length changes, and every load forgets
+// it outright (EBG_MissionPersistence.ForgetIdMirrors). A hash map: rebuilding a sorted
+// set of up to 65536 ids would shift memory on every insert.
+class EBG_IdMirror
+{
+ protected ref map<UUID, bool> m_Ids = new map<UUID, bool>();
+ protected EBG_MissionPersistenceState m_State;
+ protected ref array<UUID> m_Source;
+ protected int m_Calls = -1;
+ protected int m_Count = -1;
+ bool Contains(EBG_MissionPersistenceState state, array<UUID> source, UUID id)
+ {
+  if (state != m_State || source != m_Source || state.DeserializeCalls != m_Calls || source.Count() != m_Count)
+  {
+   m_Ids.Clear();
+   foreach (UUID known : source) m_Ids.Set(known, true);
+   m_State = state;
+   m_Source = source;
+   m_Calls = state.DeserializeCalls;
+   m_Count = source.Count();
+  }
+  bool found = m_Ids.Contains(id);
+  if (EBG_DebugChecks.Enabled && found != source.Contains(id)) EBG_DebugChecks.Mismatch(string.Format("persisted id mirror id=%1", id));
+  return found;
+ }
+ void Forget()
+ {
+  m_State = null;
+  m_Source = null;
+  m_Calls = -1;
+  m_Count = -1;
+  m_Ids.Clear();
  }
 }
 
@@ -117,7 +201,12 @@ class EBG_MissionPersistence
    if (saved.GroupId != id || !saved.GroupPresent) continue;
    if (!saved.Members || saved.Members.IsEmpty()) return false;
    foreach (EBG_MissionMemberData member : saved.Members)
-    if (member.WasPlayer || state.EverPlayerIds.Contains(member.Id)) return false;
+   {
+    if (member.WasPlayer || EBG_MissionPlayerHistory.EverContains(state, member.Id))
+    {
+     return false;
+    }
+   }
    return true;
   }
   return false;
@@ -135,20 +224,32 @@ class EBG_MissionPersistence
  static bool ValidIds(array<UUID> ids)
  {
   if (!ids || ids.Count() > 65536) return false;
-  array<UUID> seen = {};
+  map<UUID, bool> seen = new map<UUID, bool>();
   foreach (UUID id : ids)
   {
    if (id.IsNull() || seen.Contains(id)) return false;
-   seen.Insert(id);
+   seen.Set(id, true);
   }
   return true;
  }
+ protected static ref EBG_IdMirror s_LineageMirror;
  static bool HasUnresolvedRelease(UUID id)
  {
   EBG_MissionPersistenceState state = EBG_MissionPersistenceState.Get();
   if (!state) return false;
   state.Ensure();
-  return !id.IsNull() && state.ReleasedLineageMembers.Contains(id);
+  if (id.IsNull())
+  {
+   return false;
+  }
+  if (!s_LineageMirror) s_LineageMirror = new EBG_IdMirror();
+  return s_LineageMirror.Contains(state, state.ReleasedLineageMembers, id);
+ }
+ // A load replaces the persisted id lists; their mirrors rebuild on the next lookup.
+ static void ForgetIdMirrors()
+ {
+  if (s_LineageMirror) s_LineageMirror.Forget();
+  EBG_MissionPlayerHistory.ForgetEverMirror();
  }
  static bool Reserves(UUID id)
  {
@@ -774,6 +875,7 @@ class EBG_MissionPersistenceSerializer : ScriptedStateSerializer
   if (!state || !context.ReadValue("ebgMissionVersion", version) || (version != 1 && version != 2) || !context.ReadValue("pilotValue", value) || !context.ReadValue("pilotToken", token) || token.Length() > 64) return false;
   state.Ensure();
   state.Groups.Clear(); state.EverPlayerIds.Clear(); state.ReleasedIds.Clear(); state.ReleasedLineageMembers.Clear(); state.ReleasedOrigins.Clear();
+  EBG_MissionPersistence.ForgetIdMirrors();
   state.LoadedVersion = version;
   state.Bound = false; state.BindingStarted = false;
   if (version == 2)

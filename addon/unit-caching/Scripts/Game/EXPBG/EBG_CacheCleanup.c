@@ -45,6 +45,9 @@ class EBG_CleanupObject
 	bool NativeRequested;
 	float NativeRemaining = -1;
 	string ReleaseReason;
+	// This row's position in its ledger's m_Objects, or -1 once removed. InsertObject and
+	// RemoveObject keep it exact; record-scoped scans visit rows in this order (RecordRows).
+	int LedgerIndex = -1;
 	void OnSlotChanged(InventoryStorageSlot oldSlot, InventoryStorageSlot newSlot)
 	{
 		if (EBG_CacheCleanup.Instance && Held && !FullDetached)
@@ -120,12 +123,33 @@ class EBG_CleanupMappingFailure
 class EBG_CacheCleanup
 {
 	static ref EBG_CacheCleanup Instance;
+	// Bumped whenever a row is inserted into, or rebound in, the live ledger (InsertObject,
+	// RebindObject; validation ledgers never bump). A removal that only moves a row binds
+	// nothing and does not bump. The scheduler re-runs its player-possession check after a bump.
+	static int s_EBG_BindVersion;
 	protected ref array<ref EBG_CleanupObject> m_Objects = {};
+	// Rows of each record, keyed by record Id; rows without a record are not listed. Every
+	// ledger keeps its own (validation ledgers hold rows of the same live records). The list
+	// order is irrelevant: RecordRows sorts by LedgerIndex.
+	protected ref map<int, ref array<EBG_CleanupObject>> m_RowsByGroup = new map<int, ref array<EBG_CleanupObject>>();
+	// Rows of each member (a row's Member is set before InsertObject and never changes; rows
+	// without a member are not listed), for PlayerPossession. List order is irrelevant.
+	protected ref map<EBG_CacheMember, ref array<EBG_CleanupObject>> m_RowsByMember = new map<EBG_CacheMember, ref array<EBG_CleanupObject>>();
 	protected ref map<EntityID, ref array<EBG_CleanupObject>> m_ObjectLookup = new map<EntityID, ref array<EBG_CleanupObject>>();
 	protected ref array<IEntity> m_ReleasedForever = {};
 	protected ref array<UUID> m_ReleasedIds = {};
 	protected ref array<UUID> m_ReleasedLineageMembers = {};
 	protected ref array<string> m_ReleasedOrigins = {};
+	// Set mirrors of the three arrays above, for membership tests. The arrays keep the save
+	// order; every insert goes through AddReleasedId, AddLineageMember or AddOrigin.
+	protected ref set<string> m_ReleasedIdSet = new set<string>();
+	protected ref set<string> m_LineageSet = new set<string>();
+	protected ref set<string> m_OriginSet = new set<string>();
+	// The persisted lineage and origins this ledger last imported (ImportPersistentNegatives).
+	protected EBG_MissionPersistenceState m_ImportedState;
+	protected int m_ImportedCalls;
+	protected int m_ImportedLineageCount;
+	protected int m_ImportedOriginCount;
 	protected ref array<ref EBG_CacheGroup> m_RegisteredGroups = {};
 	protected ref array<ref EBG_PendingNativeBelongings> m_PendingBirths = {};
 	protected bool m_BirthRetryQueued;
@@ -173,22 +197,38 @@ class EBG_CacheCleanup
 	}
 	void ImportPersistentNegatives(array<UUID> ids)
 	{
-		foreach (UUID id : ids) if (!id.IsNull() && !m_ReleasedIds.Contains(id)) m_ReleasedIds.Insert(id);
+		foreach (UUID id : ids) if (!id.IsNull()) AddReleasedId(id);
 		EBG_MissionPersistenceState state = EBG_MissionPersistenceState.Get();
 		if (!state) return;
 		state.Ensure();
-		foreach (UUID member : state.ReleasedLineageMembers) if (!m_ReleasedLineageMembers.Contains(member)) m_ReleasedLineageMembers.Insert(member);
-		foreach (string origin : state.ReleasedOrigins) if (!m_ReleasedOrigins.Contains(origin)) m_ReleasedOrigins.Insert(origin);
+		// Ready() calls this on every pump until binding ends. The persisted lineage and
+		// origins change only through Deserialize (a new DeserializeCalls) or by appending (a
+		// new count), so an unchanged state has nothing left to import.
+		if (state == m_ImportedState && state.DeserializeCalls == m_ImportedCalls && state.ReleasedLineageMembers.Count() == m_ImportedLineageCount && state.ReleasedOrigins.Count() == m_ImportedOriginCount) return;
+		foreach (UUID member : state.ReleasedLineageMembers) AddLineageMember(member);
+		foreach (string origin : state.ReleasedOrigins) AddOrigin(origin);
+		m_ImportedState = state;
+		m_ImportedCalls = state.DeserializeCalls;
+		m_ImportedLineageCount = state.ReleasedLineageMembers.Count();
+		m_ImportedOriginCount = state.ReleasedOrigins.Count();
 	}
 	bool ExportPersistentNegatives(array<UUID> ids)
 	{
 		foreach (IEntity entity : m_ReleasedForever) if (entity) RememberReleasedId(entity);
-		foreach (UUID id : m_ReleasedIds) if (!ids.Contains(id)) ids.Insert(id);
+		// Each target is deduplicated through a set built from it once. Append order and the
+		// limits are unchanged.
+		set<string> present = new set<string>();
+		foreach (UUID saved : ids) present.Insert(saved);
+		foreach (UUID id : m_ReleasedIds) if (!present.Contains(id)) { ids.Insert(id); present.Insert(id); }
 		EBG_MissionPersistenceState state = EBG_MissionPersistenceState.Get();
 		if (!state) return false;
 		state.Ensure();
-		foreach (UUID member : m_ReleasedLineageMembers) if (!state.ReleasedLineageMembers.Contains(member)) state.ReleasedLineageMembers.Insert(member);
-		foreach (string origin : m_ReleasedOrigins) if (!state.ReleasedOrigins.Contains(origin)) state.ReleasedOrigins.Insert(origin);
+		present.Clear();
+		foreach (UUID savedMember : state.ReleasedLineageMembers) present.Insert(savedMember);
+		foreach (UUID member : m_ReleasedLineageMembers) if (!present.Contains(member)) { state.ReleasedLineageMembers.Insert(member); present.Insert(member); }
+		present.Clear();
+		foreach (string savedOrigin : state.ReleasedOrigins) present.Insert(savedOrigin);
+		foreach (string origin : m_ReleasedOrigins) if (!present.Contains(origin)) { state.ReleasedOrigins.Insert(origin); present.Insert(origin); }
 		return ids.Count() <= 65536 && state.ReleasedOrigins.Count() <= 65536 && state.ReleasedLineageMembers.Count() <= 65536;
 	}
 	// Capture lineage while ownership is still established. No inventory is adopted.
@@ -198,7 +238,9 @@ class EBG_CacheCleanup
 		if (!system) return;
 		array<IEntity> riders = {};
 		CollectProvenanceRiders(record, system, riders);
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (object.Group != record || !object.Held || !object.Entity || !object.Member || object.Member.WasPlayer) continue;
 			UUID id = system.GetId(object.Entity);
@@ -275,7 +317,9 @@ class EBG_CacheCleanup
 	// parented inside them ride with the same root and are left out of the save with them.
 	protected void CollectProvenanceRiders(EBG_CacheGroup record, PersistenceSystem system, array<IEntity> riders)
 	{
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (riders.Count() >= 2048) return;
 			if (object.Group != record || !object.Member || object.Member.WasPlayer || (object.Member.Entity && object.Member.Entity.EBG_WasPlayerControlled())) continue;
@@ -310,7 +354,9 @@ class EBG_CacheCleanup
 		array<IEntity> riders = {};
 		CollectProvenanceRiders(record, system, riders);
 		int skipped;
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (object.Group != record || !object.Member || !object.Entity || !object.Held || CanExportInertBelongings(object, system) || CanExportInertCorpseHead(object, system)) continue;
 			if (object.Member.WasPlayer || (object.Member.Entity && object.Member.Entity.EBG_WasPlayerControlled())) continue;
@@ -326,7 +372,7 @@ class EBG_CacheCleanup
 	// member's whole group on the next load ("retained UUID-less transfer lineage").
 	bool HasReleasedLineage(EBG_CacheMember member)
 	{
-		return member && !member.PersistentId.IsNull() && m_ReleasedLineageMembers.Contains(member.PersistentId);
+		return member && !member.PersistentId.IsNull() && KnownLineageMember(member.PersistentId);
 	}
 	protected bool IsInertDeathLeafProof(EBG_CleanupObject object)
 	{
@@ -467,13 +513,15 @@ class EBG_CacheCleanup
 	protected bool CanRollbackPersistentScalar(EBG_MissionScalarBackup backup)
 	{
 		EBG_MissionHeadBackup headBackup = EBG_MissionHeadBackup.Cast(backup);
-		if (headBackup) return headBackup.Safe() && !m_ReleasedLineageMembers.Contains(headBackup.Target.Map.MemberId) && !m_ReleasedIds.Contains(headBackup.Target.Map.MemberId);
+		if (headBackup)
+			return headBackup.Safe() && !KnownLineageMember(headBackup.Target.Map.MemberId) && !KnownReleasedId(headBackup.Target.Map.MemberId);
 		PersistenceSystem system = PersistenceSystem.GetInstance();
 		if (!system || !backup.Entity || !backup.Member || backup.Member.EBG_WasPlayerControlled()) return false;
 		if (system.GetId(backup.Member) != backup.Target.Map.MemberId || backup.Entity.GetParent() != backup.OriginalParent || Holder(backup.Entity) != backup.OriginalHolder) return false;
 		if (system.GetId(backup.Entity) != backup.ResolvedNativeId) return false;
 		if (FullShape(backup.Entity) != backup.Target.Map.ShapeSignature || SCR_ResourceNameUtils.GetPrefabName(backup.Entity) != backup.Target.Map.Prefab) return false;
-		if (m_ReleasedForever.Contains(backup.Entity) || m_ReleasedIds.Contains(system.GetId(backup.Entity)) || m_ReleasedLineageMembers.Contains(system.GetId(backup.Member))) return false;
+		if (m_ReleasedForever.Contains(backup.Entity) || KnownReleasedId(system.GetId(backup.Entity)) || KnownLineageMember(system.GetId(backup.Member)))
+			return false;
 		SCR_ChimeraCharacter holder = SCR_ChimeraCharacter.Cast(Holder(backup.Entity));
 		if (holder && (holder != backup.Member || holder.EBG_WasPlayerControlled())) return false;
 		if (backup.Target.Map.NativeScabbardSlot && backup.Member.EBG_FindClothBlade() != backup.Entity) return false;
@@ -628,7 +676,11 @@ class EBG_CacheCleanup
 					bool ownHolder = holder == object.Member.Entity || holder == entity;
 					if (!ownHolder)
 						foreach (EBG_CleanupObject ancestor : objects) if (ancestor.Entity == holder && ancestor.Member == object.Member && ancestor.Held) ownHolder = true;
-					if (!ownHolder || m_ReleasedIds.Contains(entry.NativeId) || m_ReleasedIds.Contains(system.GetId(entity))) { reason = "Original object transferred or permanently released"; return false; }
+					if (!ownHolder || KnownReleasedId(entry.NativeId) || KnownReleasedId(system.GetId(entity)))
+					{
+						reason = "Original object transferred or permanently released";
+						return false;
+					}
 					if (entry.StoredInventorySlot)
 					{
 						entry.Object = object; bool slotMatches = MatchesStoredInventorySlot(entry, parent, entity, system, true); entry.Object = null;
@@ -754,11 +806,15 @@ class EBG_CacheCleanup
 		{
 			if (object.Inventory) object.Inventory.m_OnParentSlotChangedInvoker.Remove(object.OnSlotChanged);
 			object.Held = false;
+			object.LedgerIndex = -1;
 		}
 		Instance.m_Objects.Clear();
+		Instance.m_RowsByGroup.Clear();
+		Instance.m_RowsByMember.Clear();
 		Instance.m_ObjectLookup.Clear();
 		Instance.m_ReleasedForever.Clear();
 		Instance.m_ReleasedIds.Clear();
+		Instance.m_ReleasedIdSet.Clear();
 		Instance.m_RegisteredGroups.Clear();
 		Instance = null;
 	}
@@ -807,12 +863,20 @@ class EBG_CacheCleanup
 	protected void InsertObject(EBG_CleanupObject object)
 	{
 		m_Objects.Insert(object);
+		object.LedgerIndex = m_Objects.Count() - 1;
+		GroupIndexAdd(object);
+		MemberIndexAdd(object);
 		IndexObject(object);
+		if (!m_ValidationOnly) s_EBG_BindVersion++;
 	}
 	protected void RemoveObject(int index)
 	{
+		EBG_CleanupObject row = m_Objects[index];
+		GroupIndexRemove(row);
+		MemberIndexRemove(row);
+		row.LedgerIndex = -1;
 		// Native deletion may already have nulled Entity; use the retained key.
-		UnindexObject(m_Objects[index]);
+		UnindexObject(row);
 		EBG_CleanupObject moved;
 		if (index < m_Objects.Count() - 1)
 		{
@@ -821,13 +885,103 @@ class EBG_CacheCleanup
 		}
 		m_Objects.Remove(index);
 		// Remove swaps in the last row. Its alias priority follows its new position.
-		if (moved) IndexObject(moved);
+		if (moved)
+		{
+			moved.LedgerIndex = index;
+			IndexObject(moved);
+		}
+	}
+	// Removes one row at its maintained position (the RecordRows prune loops). A row that
+	// has already left the ledger is left alone.
+	protected void RemoveRow(EBG_CleanupObject object)
+	{
+		int index = object.LedgerIndex;
+		if (index < 0 || index >= m_Objects.Count() || m_Objects[index] != object)
+		{
+			if (EBG_DebugChecks.Enabled) EBG_DebugChecks.Mismatch("ledger index of a removed row");
+			return;
+		}
+		RemoveObject(index);
+	}
+	protected void GroupIndexAdd(EBG_CleanupObject object)
+	{
+		if (!object.Group) return;
+		array<EBG_CleanupObject> rows = m_RowsByGroup.Get(object.Group.Id);
+		if (!rows)
+		{
+			rows = {};
+			m_RowsByGroup.Set(object.Group.Id, rows);
+		}
+		rows.Insert(object);
+	}
+	protected void GroupIndexRemove(EBG_CleanupObject object)
+	{
+		if (!object.Group) return;
+		array<EBG_CleanupObject> rows = m_RowsByGroup.Get(object.Group.Id);
+		if (!rows) return;
+		rows.RemoveItem(object);
+		if (rows.IsEmpty()) m_RowsByGroup.Remove(object.Group.Id);
+	}
+	protected void MemberIndexAdd(EBG_CleanupObject object)
+	{
+		if (!object.Member) return;
+		array<EBG_CleanupObject> rows = m_RowsByMember.Get(object.Member);
+		if (!rows)
+		{
+			rows = {};
+			m_RowsByMember.Set(object.Member, rows);
+		}
+		rows.Insert(object);
+	}
+	protected void MemberIndexRemove(EBG_CleanupObject object)
+	{
+		if (!object.Member) return;
+		array<EBG_CleanupObject> rows = m_RowsByMember.Get(object.Member);
+		if (!rows) return;
+		rows.RemoveItem(object);
+		if (rows.IsEmpty()) m_RowsByMember.Remove(object.Member);
+	}
+	// The rows whose Group is record, in ledger order: exactly the rows, and the order, that
+	// a full m_Objects scan filtered by Group == record visits. Rows without a record are not
+	// indexed, so a null record is answered by that full scan. Each caller passes its own
+	// list because these scans nest. With EBG_DebugChecks.Enabled the full scan also runs
+	// for every record and any difference is counted.
+	protected void RecordRows(EBG_CacheGroup record, notnull array<EBG_CleanupObject> outRows)
+	{
+		outRows.Clear();
+		if (!record)
+		{
+			foreach (EBG_CleanupObject unowned : m_Objects)
+				if (!unowned.Group) outRows.Insert(unowned);
+			return;
+		}
+		array<EBG_CleanupObject> indexed = m_RowsByGroup.Get(record.Id);
+		if (indexed)
+		{
+			// The Group test keeps out another record that happens to share the Id.
+			array<int> positions = {};
+			foreach (EBG_CleanupObject row : indexed)
+				if (row && row.Group == record && row.LedgerIndex >= 0 && row.LedgerIndex < m_Objects.Count() && m_Objects[row.LedgerIndex] == row) positions.Insert(row.LedgerIndex);
+			positions.Sort();
+			foreach (int position : positions) outRows.Insert(m_Objects[position]);
+		}
+		if (!EBG_DebugChecks.Enabled) return;
+		int scanned;
+		bool same = true;
+		foreach (EBG_CleanupObject expected : m_Objects)
+		{
+			if (expected.Group != record) continue;
+			if (scanned >= outRows.Count() || outRows[scanned] != expected) same = false;
+			scanned++;
+		}
+		if (!same || scanned != outRows.Count()) EBG_DebugChecks.Mismatch(string.Format("rows group=%1 indexed=%2 scanned=%3", record.Id, outRows.Count(), scanned));
 	}
 	protected void RebindObject(EBG_CleanupObject object, IEntity entity)
 	{
 		UnindexObject(object);
 		object.Entity = entity;
 		IndexObject(object);
+		if (!m_ValidationOnly) s_EBG_BindVersion++;
 	}
 	bool IsHeld(IEntity entity)
 	{
@@ -1555,7 +1709,7 @@ class EBG_CacheCleanup
 	{
 		if (!entity || Find(entity) || m_ReleasedForever.Contains(entity)) return;
 		PersistenceSystem persistence = PersistenceSystem.GetInstance();
-		if (persistence && m_ReleasedIds.Contains(persistence.GetId(entity))) return;
+		if (persistence && KnownReleasedId(persistence.GetId(entity))) return;
 		EBG_CleanupObject object = new EBG_CleanupObject();
 		object.Entity = entity;
 		if (persistence) object.PersistentId = persistence.GetId(entity);
@@ -1597,7 +1751,10 @@ class EBG_CacheCleanup
 		SCR_IdentityInventoryItemComponent identity = SCR_IdentityInventoryItemComponent.Cast(inventory);
 		if (!identity || !identity.GetLinkedExtendedIdentity() || identity.GetLinkedExtendedIdentity().GetOwner() != character) { return "Native linked identity does not match the original owner"; }
 		PersistenceSystem persistence = PersistenceSystem.GetInstance();
-		if (m_ReleasedForever.Contains(item) || (persistence && m_ReleasedIds.Contains(persistence.GetId(item)))) { return "Permanent player-loot release forbids enrollment"; }
+		if (m_ReleasedForever.Contains(item) || (persistence && KnownReleasedId(persistence.GetId(item))))
+		{
+			return "Permanent player-loot release forbids enrollment";
+		}
 		// Native death callbacks can create/initialize belongings before these flags
 		// propagate. Only this final condition may be deferred; all provenance above
 		// must already be established and is checked again before registration.
@@ -1771,7 +1928,7 @@ class EBG_CacheCleanup
 		{
 			if (!previous.Contains(object.Group)) continue;
 			foreach (EBG_CacheGroup destination : destinations)
-				if (destination.Members.Contains(object.Member)) { object.Group = destination; break; }
+				if (destination.Members.Contains(object.Member)) { GroupIndexRemove(object); object.Group = destination; GroupIndexAdd(object); break; }
 		}
 		foreach (EBG_CacheGroup record : destinations)
 		{
@@ -1803,28 +1960,33 @@ class EBG_CacheCleanup
 		array<EBG_CleanupObject> riders = {};
 		PersistenceSystem system = PersistenceSystem.GetInstance();
 		bool playerMember = !member || member.WasPlayer || (member.Entity && member.Entity.EBG_WasPlayerControlled());
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
 		if (!playerMember)
 		{
-			foreach (EBG_CleanupObject candidate : m_Objects)
+			foreach (EBG_CleanupObject candidate : recordRows)
 				if (candidate.Group == record && candidate.Member == member && IsIdentitylessRider(candidate, system)) riders.Insert(candidate);
 		}
-		for (int i = m_Objects.Count() - 1; i >= 0; i--)
+		// Descending ledger order as before: each removal swaps in a row already visited.
+		for (int k = recordRows.Count() - 1; k >= 0; k--)
 		{
-			EBG_CleanupObject object = m_Objects[i];
+			EBG_CleanupObject object = recordRows[k];
 			if (object.Group != record || object.Member != member) continue;
 			ReleaseObject(object, true, !riders.Contains(object));
-			RemoveObject(i);
+			RemoveRow(object);
 		}
 	}
 	void ForgetPrefabMember(EBG_CacheGroup record, EBG_CacheMember member)
 	{
-		for (int i = m_Objects.Count() - 1; i >= 0; i--)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		for (int k = recordRows.Count() - 1; k >= 0; k--)
 		{
-			EBG_CleanupObject object = m_Objects[i];
+			EBG_CleanupObject object = recordRows[k];
 			if (object.Group != record || object.Member != member || !object.Entity) continue;
 			if (object.Entity != member.Entity && !EBG_FullCacheGroup.InventoryBelongsTo(object.Entity, member.Entity)) continue;
 			ReleaseObject(object, false);
-			RemoveObject(i);
+			RemoveRow(object);
 		}
 	}
 	// Called once at our prefab's birth, never on a later user inventory edit.
@@ -1914,13 +2076,13 @@ class EBG_CacheCleanup
 		if (object.Entity && !system.GetId(object.Entity).IsNull()) id = system.GetId(object.Entity);
 		if (!id.IsNull())
 		{
-			if (!m_ReleasedIds.Contains(id)) m_ReleasedIds.Insert(id);
+			AddReleasedId(id);
 			return;
 		}
 		UUID member = object.Member.PersistentId;
 		if (object.Member.Entity && !system.GetId(object.Member.Entity).IsNull()) member = system.GetId(object.Member.Entity);
 		if (member.IsNull()) return; // The owning record will refuse an identity-less save.
-		if (!m_ReleasedLineageMembers.Contains(member)) m_ReleasedLineageMembers.Insert(member);
+		AddLineageMember(member);
 		// Retain the complete original descriptor as native-save data. An unresolved
 		// generated identity protects its original member; it never adopts a new item.
 		EBG_MissionObjectData origin = new EBG_MissionObjectData();
@@ -1930,7 +2092,7 @@ class EBG_CacheCleanup
 		if (origin.Write(context) && context.IsValid())
 		{
 			string encoded = context.SaveToString();
-			if (encoded.Length() <= 32768 && !m_ReleasedOrigins.Contains(encoded)) m_ReleasedOrigins.Insert(encoded);
+			if (encoded.Length() <= 32768) AddOrigin(encoded);
 		}
 	}
 	void ReleaseGroup(EBG_CacheGroup record)
@@ -1943,21 +2105,52 @@ class EBG_CacheCleanup
 			if (!owner || owner.Group == record) { birth.Clear(); m_PendingBirths.Remove(pendingIndex); }
 		}
 		m_RegisteredGroups.RemoveItem(record);
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 			if (object.Group == record) ReleaseObject(object, false);
-		for (int i = m_Objects.Count() - 1; i >= 0; i--)
-			if (m_Objects[i].Group == record) RemoveObject(i);
+		for (int k = recordRows.Count() - 1; k >= 0; k--)
+			if (recordRows[k].Group == record) RemoveRow(recordRows[k]);
 		for (int i = m_ReleasedForever.Count() - 1; i >= 0; i--)
 			if (!m_ReleasedForever[i]) m_ReleasedForever.Remove(i);
 	}
+	// Only the rows of members bound to entity are visited (m_RowsByMember), in ledger order:
+	// exactly the rows, and the order, of the full m_Objects scan filtered the same way.
+	// Releasing a row changes no other row's filter, so the rows are chosen first. With
+	// EBG_DebugChecks.Enabled the full scan also runs and any difference is counted.
 	void PlayerPossession(IEntity entity)
 	{
-		foreach (EBG_CleanupObject object : m_Objects)
-			if (object.Held && object.Member && object.Member.Entity == entity)
+		array<int> positions = {};
+		foreach (EBG_CacheMember member, array<EBG_CleanupObject> memberRows : m_RowsByMember)
+		{
+			if (!member || member.Entity != entity) continue;
+			foreach (EBG_CleanupObject row : memberRows)
+				if (row && row.LedgerIndex >= 0 && row.LedgerIndex < m_Objects.Count() && m_Objects[row.LedgerIndex] == row) positions.Insert(row.LedgerIndex);
+		}
+		positions.Sort();
+		array<EBG_CleanupObject> possessed = {};
+		foreach (int position : positions)
+		{
+			EBG_CleanupObject candidate = m_Objects[position];
+			if (candidate.Held && candidate.Member && candidate.Member.Entity == entity) possessed.Insert(candidate);
+		}
+		if (EBG_DebugChecks.Enabled)
+		{
+			int scanned;
+			bool same = true;
+			foreach (EBG_CleanupObject expected : m_Objects)
 			{
-				object.ReleaseReason = "Original member became player-controlled";
-				ReleaseObject(object, true);
+				if (!expected.Held || !expected.Member || expected.Member.Entity != entity) continue;
+				if (scanned >= possessed.Count() || possessed[scanned] != expected) same = false;
+				scanned++;
 			}
+			if (!same || scanned != possessed.Count()) EBG_DebugChecks.Mismatch(string.Format("possession rows indexed=%1 scanned=%2", possessed.Count(), scanned));
+		}
+		foreach (EBG_CleanupObject object : possessed)
+		{
+			object.ReleaseReason = "Original member became player-controlled";
+			ReleaseObject(object, true);
+		}
 	}
 	void CheckTransfers()
 	{
@@ -1969,44 +2162,60 @@ class EBG_CacheCleanup
 	void CheckGroupTransfers(EBG_CacheGroup record)
 	{
 		if (!Replication.IsServer() || EBG_CacheManager.Unloading || !GetGame() || GetGame().GetWorld() != m_World) return;
-		if (record) record.CleanupNextAttempt = 0;
-		foreach (EBG_CleanupObject object : m_Objects)
+		if (!record)
 		{
-			if (record && object.Group != record) continue;
-			if (!object.Held || object.FullDetached || object.Corpse || !object.Entity) continue;
-			if (IsDetachedProjectile(object.Entity))
-			{
-				object.ReleaseReason = "Detached projectile/explosive returned to native handling";
-				ReleaseObject(object, true);
-				continue;
-			}
-			IEntity holder = Holder(object.Entity);
-			// Ordinary worn items and ground drops already have the exact original
-			// owner. Avoid searching every group's ledger for these common cases.
-			if (holder && (holder == object.Member.Entity || holder == object.Entity)) continue;
-			EBG_CleanupObject ownedContainer = Find(holder);
-			if (ownedContainer && ownedContainer.Held && ownedContainer.Member == object.Member) continue;
-			// Ground items retain their recorded origin. Any transfer to another
-			// character/container permanently releases them, even if later returned.
-			if (!holder || (holder != object.Entity && holder != object.Member.Entity))
-			{
-				object.ReleaseReason = string.Format("Ownership transfer: original member=%1, observed holder=%2", object.Member.Entity, holder);
-				ReleaseObject(object, true);
-			}
+			// The safety sweep: the same three passes over the whole ledger.
+			foreach (EBG_CleanupObject object : m_Objects) CheckObjectTransfer(object);
+			foreach (EBG_CleanupObject object : m_Objects) MaintainNativeProtection(object);
+			for (int i = m_Objects.Count() - 1; i >= 0; i--)
+				if (TransferPrunable(m_Objects[i])) RemoveObject(i);
+			return;
 		}
-		foreach (EBG_CleanupObject object : m_Objects)
-			if (!record || object.Group == record) MaintainNativeProtection(object);
-		// Preserve corpse death/age proof until every remaining owned item is gone.
-		// Native Full absence is temporary and must never discard transfer entries.
-		for (int i = m_Objects.Count() - 1; i >= 0; i--)
+		record.CleanupNextAttempt = 0;
+		// One record: the same three passes over its own rows in ledger order. Each pass
+		// reads the ledger afresh, as the full scans did.
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject transferRow : recordRows) CheckObjectTransfer(transferRow);
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject maintained : recordRows) MaintainNativeProtection(maintained);
+		RecordRows(record, recordRows);
+		// Descending ledger order as before: each removal swaps in a row already visited.
+		for (int k = recordRows.Count() - 1; k >= 0; k--)
+			if (TransferPrunable(recordRows[k])) RemoveRow(recordRows[k]);
+	}
+	// CheckGroupTransfers' first pass for one row.
+	protected void CheckObjectTransfer(EBG_CleanupObject object)
+	{
+		if (!object.Held || object.FullDetached || object.Corpse || !object.Entity) return;
+		if (IsDetachedProjectile(object.Entity))
 		{
-			EBG_CleanupObject removed = m_Objects[i];
-			if (record && removed.Group != record) continue;
-			if (removed.Entity || removed.Corpse || removed.FullDetached || (removed.Group && (removed.Group.Full || removed.Group.FullCleanup))) continue;
-			// Unresolved denial descriptors survive resaves; ReleaseGroup retires them.
-			if (IsInertDeathLeafProof(removed)) continue;
-			RemoveObject(i);
+			object.ReleaseReason = "Detached projectile/explosive returned to native handling";
+			ReleaseObject(object, true);
+			return;
 		}
+		IEntity holder = Holder(object.Entity);
+		// Ordinary worn items and ground drops already have the exact original
+		// owner. Avoid searching every group's ledger for these common cases.
+		if (holder && (holder == object.Member.Entity || holder == object.Entity)) return;
+		EBG_CleanupObject ownedContainer = Find(holder);
+		if (ownedContainer && ownedContainer.Held && ownedContainer.Member == object.Member) return;
+		// Ground items retain their recorded origin. Any transfer to another
+		// character/container permanently releases them, even if later returned.
+		if (!holder || (holder != object.Entity && holder != object.Member.Entity))
+		{
+			object.ReleaseReason = string.Format("Ownership transfer: original member=%1, observed holder=%2", object.Member.Entity, holder);
+			ReleaseObject(object, true);
+		}
+	}
+	// CheckGroupTransfers' prune test. Preserve corpse death/age proof until every remaining
+	// owned item is gone. Native Full absence is temporary and must never discard transfer entries.
+	protected bool TransferPrunable(EBG_CleanupObject removed)
+	{
+		if (removed.Entity || removed.Corpse || removed.FullDetached || (removed.Group && (removed.Group.Full || removed.Group.FullCleanup)))
+			return false;
+		// Unresolved denial descriptors survive resaves; ReleaseGroup retires them.
+		return !IsInertDeathLeafProof(removed);
 	}
 
 	void ReconcileZonePolicy(EBG_CacheZone zone)
@@ -2027,7 +2236,46 @@ class EBG_CacheCleanup
 		PersistenceSystem persistence = PersistenceSystem.GetInstance();
 		if (!persistence || !entity) return;
 		UUID id = persistence.GetId(entity);
-		if (!id.IsNull() && !m_ReleasedIds.Contains(id)) m_ReleasedIds.Insert(id);
+		if (!id.IsNull()) AddReleasedId(id);
+	}
+	// Membership of the released negatives through their set mirrors. With
+	// EBG_DebugChecks.Enabled the old array lookup runs as well and any difference is counted.
+	protected bool KnownReleasedId(UUID id)
+	{
+		bool known = m_ReleasedIdSet.Contains(id);
+		if (EBG_DebugChecks.Enabled && known != m_ReleasedIds.Contains(id)) EBG_DebugChecks.Mismatch(string.Format("released id %1", id));
+		return known;
+	}
+	protected bool KnownLineageMember(UUID member)
+	{
+		bool known = m_LineageSet.Contains(member);
+		if (EBG_DebugChecks.Enabled && known != m_ReleasedLineageMembers.Contains(member)) EBG_DebugChecks.Mismatch(string.Format("released lineage member %1", member));
+		return known;
+	}
+	protected bool KnownOrigin(string origin)
+	{
+		bool known = m_OriginSet.Contains(origin);
+		if (EBG_DebugChecks.Enabled && known != m_ReleasedOrigins.Contains(origin)) EBG_DebugChecks.Mismatch(string.Format("released origin of %1 characters", origin.Length()));
+		return known;
+	}
+	// Append once, to the array and its set together.
+	protected void AddReleasedId(UUID id)
+	{
+		if (KnownReleasedId(id)) return;
+		m_ReleasedIds.Insert(id);
+		m_ReleasedIdSet.Insert(id);
+	}
+	protected void AddLineageMember(UUID member)
+	{
+		if (KnownLineageMember(member)) return;
+		m_ReleasedLineageMembers.Insert(member);
+		m_LineageSet.Insert(member);
+	}
+	protected void AddOrigin(string origin)
+	{
+		if (KnownOrigin(origin)) return;
+		m_ReleasedOrigins.Insert(origin);
+		m_OriginSet.Insert(origin);
 	}
 	protected string FullShape(IEntity entity)
 	{
@@ -3189,7 +3437,7 @@ class EBG_CacheCleanup
 		}
 		EBG_CleanupObject existing = Find(entity);
 		if (existing && existing != object) { reason = "Cleanup restored item aliases another ownership record"; return FullRebindFailure(reason, entry, entity, true); }
-		if (entry.WasHeld && (m_ReleasedIds.Contains(persistence.GetId(entity)) || (!entry.NativeId.IsNull() && m_ReleasedIds.Contains(entry.NativeId))))
+		if (entry.WasHeld && (KnownReleasedId(persistence.GetId(entity)) || (!entry.NativeId.IsNull() && KnownReleasedId(entry.NativeId))))
 		{ reason = "Cleanup restored held item has permanent loot-release identity"; return FullRebindFailure(reason, entry, entity); }
 #ifdef EBG_ACCEPTANCE_TEST
 		if (parent && persistence.GetId(parent) != entry.ParentId) PrintFormat("[EBG CLEANUP VALIDATED PARENT MAP] original=%1 current=%2 originalParent=%3 currentParent=%4 loadedKind=%5 directParentMuzzles=%6", entry.NativeId, persistence.GetId(entity), entry.ParentId, persistence.GetId(parent), entry.LoadedSlotKind, entry.DirectParentMuzzles);
@@ -3336,7 +3584,10 @@ class EBG_CacheCleanup
 			if (!member.Dead || member.Entity) { return false; }
 		}
 		if (record.Group && record.Group.GetAgentsCount() > 0) { return false; }
-		foreach (EBG_CleanupObject object : m_Objects)
+		// Only this record's own rows can block: O(its rows), not the whole ledger.
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (object.Group == record && (object.Entity || object.FullDetached)) { return false; }
 		}
@@ -3360,7 +3611,9 @@ class EBG_CacheCleanup
 		float radius = zone.GroupWake;
 		if (zone.Strategy == 0) { center = zone.GetOrigin(); radius = zone.ZoneWake; }
 		if (EBG_CacheGeometry.AnyPlayer(players, center, radius, low, high, zone.Height != 0, zone.Above, zone.Below, 0)) { return true; }
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (object.Group != record || !object.Held || !object.Entity) continue;
 			vector position = object.Entity.GetOrigin();
@@ -3581,7 +3834,9 @@ class EBG_CacheCleanup
 	protected int CountCasualtyRows(EBG_CacheGroup record)
 	{
 		int rows;
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (!PendingCasualtyRow(object, record)) continue;
 			rows++;
@@ -3597,7 +3852,9 @@ class EBG_CacheCleanup
 	protected IEntity CollectCasualtyTargets(EBG_CacheGroup record, EBG_CacheMember member, array<EBG_CleanupObject> rows, array<IEntity> targets)
 	{
 		IEntity body;
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (object.Group != record || object.Member != member || !object.Held || !object.Entity || object.FullDetached) continue;
 			rows.Insert(object);
@@ -3716,7 +3973,9 @@ class EBG_CacheCleanup
 			lifetimeRequested = report.NativeRequested;
 		}
 		int released;
-		foreach (EBG_CleanupObject object : m_Objects)
+		array<EBG_CleanupObject> recordRows = {};
+		RecordRows(record, recordRows);
+		foreach (EBG_CleanupObject object : recordRows)
 		{
 			if (object.Group != record || object.Member != member || !object.Held || !object.Entity || object.FullDetached) continue;
 			object.ReleaseReason = "Cleanup blocked after bounded retries; native garbage handling resumed";

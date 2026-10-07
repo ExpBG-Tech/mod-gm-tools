@@ -66,6 +66,10 @@ class EAC_TrafficDirector
  protected ref TraceParam m_HiddenTrace = new TraceParam();
  protected ref array<IEntity> m_HiddenExcluded = {};
  protected ref array<vector> m_PathScratch = {};
+ // Serial of the Step now running, and whether one is running: Hidden() may reuse
+ // a party's remembered verdict only inside the Step that reached it.
+ protected int m_HiddenStep;
+ protected bool m_HiddenMemoOpen;
  // PickTown's three best destination towns and their ranks, retained so an
  // admission attempt every two seconds allocates nothing.
  protected ref array<vector> m_GoalScratch = {};
@@ -312,6 +316,12 @@ class EAC_TrafficDirector
  // Wire once before the module's half-second early return. No individual timers.
  void UpdateHorn()
  {
+  // Runs twice per server frame. With no party retained (traffic is off by
+  // default) and the polled count already zero, the rest of this method would
+  // change nothing at all, so it returns before Get() and GetActive()
+  // (civilians-a-04). The first frame after the last party goes still clears
+  // m_HornPolled below, exactly as before.
+  if (m_Parties.IsEmpty() && m_HornPolled == 0) return;
   if (Get() != this || !EAC_AmbientModule.GetActive()) return;
   m_HornPolled = 0;
   foreach (EAC_TrafficParty party : m_Parties)
@@ -386,43 +396,107 @@ class EAC_TrafficDirector
  // 2026-09-19), so placing a car asks for CAR_SPAWN_DISTANCE instead. The test reads
  // player characters only: a Game Master's free camera has no server-side position.
  static const float CAR_SPAWN_DISTANCE = 150;
+ // One verdict per party is remembered for the rest of the Step that reached it
+ // (performance plan civilians-b-01 a). Monitor proves a far car hidden, and in the
+ // same Step - the same world frame - CanRemove, DismountHidden and BoardHidden
+ // used to fire the same 5 x observers traces at the same origin again. Nothing
+ // between those calls moves an observer, the car or the crew (every physical
+ // operation ends the Step), so the remembered verdict is the one they would
+ // trace. Key: Step serial, world time, party, exact point and minimum. Outside
+ // Step (the controller-gap pump, fixtures) every call traces, as before.
  protected bool Hidden(EAC_TrafficParty party, vector position, array<IEntity> observers, float minimum = 60)
  {
-  if (EAC_PedestrianSpawner.GetObserverReason(m_World, observers) != EAC_ESpawnReason.NONE) return false;
-  foreach (IEntity observer : observers)
+  if (!party || !m_HiddenMemoOpen)
   {
-   if (vector.Distance(observer.GetOrigin(), position) < minimum) return false;
-   m_HiddenTrace.Start = ChimeraCharacter.Cast(observer).EyePosition();
-   m_HiddenTrace.Flags = TraceFlags.WORLD | TraceFlags.ENTS | TraceFlags.VISIBILITY | TraceFlags.ANY_CONTACT;
-   m_HiddenExcluded.Clear(); m_HiddenExcluded.Insert(observer);
-   IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(observer); if (vehicle) m_HiddenExcluded.Insert(vehicle);
-   if (party)
+   return ProveHidden(party, position, observers, minimum);
+  }
+  float worldTime = m_World.GetWorldTime();
+  bool same = party.HiddenStep == m_HiddenStep && party.HiddenTime == worldTime && party.HiddenMinimum == minimum;
+  vector at = party.HiddenAt;
+  if (same && at[0] == position[0] && at[1] == position[1] && at[2] == position[2])
+  {
+   return party.HiddenVerdict;
+  }
+  bool verdict = ProveHidden(party, position, observers, minimum);
+  party.HiddenStep = m_HiddenStep; party.HiddenTime = worldTime; party.HiddenMinimum = minimum;
+  party.HiddenAt = position; party.HiddenVerdict = verdict;
+  return verdict;
+ }
+
+ // The proof itself (civilians-b-01 b). Every observer's distance is tested before
+ // any trace, so a player standing inside `minimum` no longer costs the traces of
+ // the players listed before them. The nearest observer, the likeliest to see the
+ // point, is traced first and the rest follow in list order. The verdict is the
+ // same AND over the same side-effect-free tests; only the trace count changes.
+ protected bool ProveHidden(EAC_TrafficParty party, vector position, array<IEntity> observers, float minimum)
+ {
+  if (EAC_PedestrianSpawner.GetObserverReason(m_World, observers) != EAC_ESpawnReason.NONE)
+  {
+   return false;
+  }
+  int nearest = -1;
+  float nearestDistance;
+  foreach (int index, IEntity observer : observers)
+  {
+   float distance = vector.Distance(observer.GetOrigin(), position);
+   if (distance < minimum)
    {
-    if (party.Car) m_HiddenExcluded.Insert(party.Car);
-    foreach (EAC_TrafficOccupant row : party.Crew) if (row.Actor) m_HiddenExcluded.Insert(row.Actor);
+    return false;
    }
-   m_HiddenTrace.ExcludeArray = m_HiddenExcluded;
-   // Cover the car's corners as well as its roof; own crew/car cannot occlude proof.
-   for (int i = 0; i < 5; i++)
+   if (nearest < 0 || distance < nearestDistance) { nearest = index; nearestDistance = distance; }
+  }
+  if (nearest >= 0 && ObserverSees(party, position, observers[nearest]))
+  {
+   return false;
+  }
+  foreach (int other, IEntity watcher : observers)
+  {
+   if (other == nearest) continue;
+   if (ObserverSees(party, position, watcher))
    {
-    vector sample = position + "0 2.2 0";
-    if (i > 0)
-    {
-     vector right = "1 0 0", forward = "0 0 1";
-     if (party && party.Direction.LengthSq() > 0.5)
-     {
-      forward = party.Direction; right = Vector(forward[2], 0, -forward[0]);
-      if (party.Car) { vector transform[4]; party.Car.GetWorldTransform(transform); right = transform[0]; forward = transform[2]; }
-     }
-     int cornerX = i % 2;
-     int cornerZ = i / 3;
-     sample = position + right * (cornerX * 2.8 - 1.4) + forward * (cornerZ * 5.8 - 2.9) + "0 1.2 0";
-    }
-    m_HiddenTrace.End = sample;
-    if (m_World.TraceMove(m_HiddenTrace, null) >= 1) return false;
+    return false;
    }
   }
   return true;
+ }
+
+ // True when any of the five traces from this observer's eye to the point is
+ // unobstructed.
+ protected bool ObserverSees(EAC_TrafficParty party, vector position, IEntity observer)
+ {
+  m_HiddenTrace.Start = ChimeraCharacter.Cast(observer).EyePosition();
+  m_HiddenTrace.Flags = TraceFlags.WORLD | TraceFlags.ENTS | TraceFlags.VISIBILITY | TraceFlags.ANY_CONTACT;
+  m_HiddenExcluded.Clear(); m_HiddenExcluded.Insert(observer);
+  IEntity vehicle = CompartmentAccessComponent.GetVehicleIn(observer); if (vehicle) m_HiddenExcluded.Insert(vehicle);
+  if (party)
+  {
+   if (party.Car) m_HiddenExcluded.Insert(party.Car);
+   foreach (EAC_TrafficOccupant row : party.Crew) if (row.Actor) m_HiddenExcluded.Insert(row.Actor);
+  }
+  m_HiddenTrace.ExcludeArray = m_HiddenExcluded;
+  // Cover the car's corners as well as its roof; own crew/car cannot occlude proof.
+  for (int i = 0; i < 5; i++)
+  {
+   vector sample = position + "0 2.2 0";
+   if (i > 0)
+   {
+    vector right = "1 0 0", forward = "0 0 1";
+    if (party && party.Direction.LengthSq() > 0.5)
+    {
+     forward = party.Direction; right = Vector(forward[2], 0, -forward[0]);
+     if (party.Car) { vector transform[4]; party.Car.GetWorldTransform(transform); right = transform[0]; forward = transform[2]; }
+    }
+    int cornerX = i % 2;
+    int cornerZ = i / 3;
+    sample = position + right * (cornerX * 2.8 - 1.4) + forward * (cornerZ * 5.8 - 2.9) + "0 1.2 0";
+   }
+   m_HiddenTrace.End = sample;
+   if (m_World.TraceMove(m_HiddenTrace, null) >= 1)
+   {
+    return true;
+   }
+  }
+  return false;
  }
 
  protected bool PlaceOrder(EAC_TrafficParty party, ResourceName prefab, vector goal, bool boarding = false)
@@ -567,7 +641,13 @@ class EAC_TrafficDirector
    }
   }
   else if (!party.AllOutside()) return false;
-  if (!HealthyParty(party) || !FarFromObservers(party, observers, distance)) return false;
+  // Distance first (civilians-b-08): it is arithmetic and refuses on most ticks,
+  // while HealthyParty walks every hit zone of the car and the crew. Both are
+  // side-effect-free and both must pass, so the order changes no answer.
+  if (!FarFromObservers(party, observers, distance) || !HealthyParty(party))
+  {
+   return false;
+  }
   if (party.Car && !Hidden(party, party.Car.GetOrigin(), observers)) return false;
   foreach (EAC_TrafficOccupant row : party.Crew)
    if (row.Actor && !Hidden(party, row.Actor.GetOrigin(), observers)) return false;
@@ -1432,15 +1512,19 @@ class EAC_TrafficDirector
   m_GapStopped = false;
   // Kept for a controller gap: DrainParties applies the same removal distance.
   m_CleanupDistance = module.TrafficSleepDistance;
+  // Hidden() verdicts are shared inside this Step only; every exit closes it.
+  if (m_HiddenStep >= 1000000000) m_HiddenStep = 0;
+  m_HiddenStep++; m_HiddenMemoOpen = true;
   foreach (EAC_TrafficParty party : m_Parties) Monitor(module, party, observers, now);
   int count = m_Parties.Count();
   for (int i = 0; i < count && !m_Parties.IsEmpty(); i++)
   {
    m_Cursor = m_Cursor % m_Parties.Count();
    EAC_TrafficParty party = m_Parties[m_Cursor++];
-   if (Advance(module, party, observers, now)) return;
+   if (Advance(module, party, observers, now)) { m_HiddenMemoOpen = false; return; }
   }
   Admit(module, observers, now);
+  m_HiddenMemoOpen = false;
  }
 
  void EAC_RetireSessionPopulation()

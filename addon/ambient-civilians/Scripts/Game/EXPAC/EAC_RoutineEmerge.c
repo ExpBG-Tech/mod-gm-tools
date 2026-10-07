@@ -79,7 +79,7 @@ class EAC_RoutineEmerge
   EAC_ResidentClaim claim = activation.Claim;
   IEntity actor;
   if (claim) actor = claim.Character;
-  if (!claim || !claim.Committed || claim.Cache || !actor || !claim.Home.BuildingEntity || activation.PlayerTouched || claim.Resident.Dead || !claim.Resident.Wanted || module.GetResidentActivation(claim.Home, claim.Resident) != claim || !EAC_PedestrianSpawner.HasCivilianControl(actor, claim.Group))
+  if (!claim || !claim.Committed || claim.Cache || !actor || !claim.Home.BuildingEntity || activation.PlayerTouched || claim.Resident.Dead || !claim.Resident.Wanted || module.GetResidentActivation(claim.Home, claim.Resident) != claim || !EAC_PedestrianSpawner.HasCivilianControl(actor, claim.Group, activation))
   { Stop(); return; }
   // Danger owns the actor: abandon the walk out and let shelter respond.
   if (claim.AlarmUntil > now) { Finish("danger during emergence"); return; }
@@ -106,10 +106,11 @@ class EAC_RoutineEmerge
    }
    m_ScratchOrders.Clear(); m_Group.GetWaypoints(m_ScratchOrders);
    if (m_ScratchOrders.Count() != 1 || m_ScratchOrders[0] != m_Order || m_Group.GetCurrentWaypoint() != m_Order) { Finish("order replaced"); return; }
-   AICharacterMovementComponent movement = AICharacterMovementComponent.Cast(actor.FindComponent(AICharacterMovementComponent));
+   AICharacterMovementComponent movement = activation.CachedMovement(actor);
    m_ScratchRoute.Clear(); if (movement) movement.GetCurrentPath(m_ScratchRoute);
    // RouteAllowed itself skips its per-point sweep when no zone blocks transit
-   // (audit B1), so this stays one call rather than a loop here.
+   // (audit B1), so this stays one call rather than a loop here; it now takes
+   // one EAC_ExclusionZone.IsRouteAllowed verdict for the route (perf plan WP6).
    if (!movement || !EAC_CivilianShelter.RouteAllowed(actor.GetOrigin(), m_Destination, m_ScratchRoute)) { Finish("route rejected"); return; }
    if (vector.DistanceXZ(actor.GetOrigin(), m_Destination) <= 1.5)
    {
@@ -162,7 +163,7 @@ class EAC_RoutineEmerge
   m_Guard = EAC_MoveFailureGuard.Attach(m_Group, "emerge");
   m_Group.ActivateAI(); m_Group.PreventMaxLOD(60);
   EAC_RoutineStats.RecordPinnedSeconds(60);
-  AIControlComponent control = AIControlComponent.Cast(actor.FindComponent(AIControlComponent));
+  AIControlComponent control = activation.CachedAIControl(actor);
   if (control)
   {
    control.ActivateAI();

@@ -5,6 +5,10 @@ class EAC_AmbientModule : GenericEntity
 {
  // One active module schedules bounded indexing and pedestrian admission.
  protected static ref array<EAC_AmbientModule> s_Modules;
+ // Every module this machine has initialised in play mode, server or client replica
+ // (weak entries, removed by the destructor, nulls pruned on read). Only the GM debug
+ // view reads it, through AnyDebugOverlayRequested; s_Modules stays server-only.
+ protected static ref array<EAC_AmbientModule> s_KnownModules;
  protected static ref EAC_HomeIndex s_HomeIndex;
  protected static BaseWorld s_IndexWorld;
  protected static ref EAC_PopulationBudget s_Budget;
@@ -451,7 +455,16 @@ class EAC_AmbientModule : GenericEntity
  {
 		EXPBG_LazyStatics_EAC_AmbientModule();
   super.EOnInit(owner);
-  if (!GetGame().InPlayMode() || !Replication.IsServer()) return;
+  if (GetGame().InPlayMode() && !s_KnownModules.Contains(this)) s_KnownModules.Insert(this);
+  // Clients and edit-mode worlds never get past this line, and both frame handlers
+  // return at once there (GetActive() is null on a client and never returns a
+  // module that stopped here), so stop the engine calling them every frame. The
+  // server and a listen-server host keep FRAME for the 2 Hz scheduler and the horn.
+  if (!GetGame().InPlayMode() || !Replication.IsServer())
+  {
+   ClearEventMask(EntityEvent.FRAME | EntityEvent.POSTFRAME);
+   return;
+  }
   NormalizeSettings();
   s_Modules.Insert(this);
   // Duplicate-module notice (readiness plan S3). GetActive returns the first
@@ -498,6 +511,7 @@ class EAC_AmbientModule : GenericEntity
  {
 		EXPBG_LazyStatics_EAC_AmbientModule();
   s_Modules.RemoveItem(this);
+  s_KnownModules.RemoveItem(this);
   if (Replication.IsServer() && s_IndexWorld == GetWorld())
   {
    EAC_AmbientModule replacement = GetActive();
@@ -874,6 +888,27 @@ class EAC_AmbientModule : GenericEntity
   return null;
  }
 
+ // Whether any module this machine knows has debug output switched on, read from
+ // the replicated DebugLevel and DebugDraw. EAC_DebugView.Receive draws nothing
+ // unless the snapshot's module replica has DebugLevel > 0 or DebugDraw == 1, so
+ // while this is false a debug snapshot request could only come back empty.
+ static bool AnyDebugOverlayRequested()
+ {
+		EXPBG_LazyStatics_EAC_AmbientModule();
+  for (int i = s_KnownModules.Count() - 1; i >= 0; i--)
+  {
+   EAC_AmbientModule module = s_KnownModules[i];
+   if (!module)
+   {
+    s_KnownModules.Remove(i);
+    continue;
+   }
+   if (module.DebugLevel > 0 || module.DebugDraw == 1)
+    return true;
+  }
+  return false;
+ }
+
  static bool ContainsPopulationPoint(float x, float z, float centreX, float centreZ, float radius)
  {
   float dx = x - centreX;
@@ -1204,6 +1239,7 @@ class EAC_AmbientModule : GenericEntity
    summary += " | " + EAC_SchedulerStats.DescribeForced();
   }
   if (DebugLevel >= 3) summary += "\n" + EAC_SceneIndex.Describe();
+  if (DebugLevel >= 3) summary += " " + EAC_SceneVocabulary.Describe();
   if (DebugLevel >= 3) summary += "\n" + s_Spawner.DescribeMonitor();
   if (DebugLevel >= 3) summary += "\nindex queries=" + s_HomeIndex.GetQueryCount().ToString() + " cells=" + s_HomeIndex.GetRootCellCount().ToString() + " pending_cells=" + s_HomeIndex.GetPendingCellCount().ToString() + " saturated=" + s_HomeIndex.GetSaturatedCellCount().ToString() + " rejected_homes=" + s_HomeIndex.GetRejectedHomeCount().ToString();
   return summary;
@@ -1524,5 +1560,7 @@ class EAC_AmbientModule : GenericEntity
 	{
 		if (!s_Modules)
 			s_Modules = new array<EAC_AmbientModule>();
+		if (!s_KnownModules)
+			s_KnownModules = new array<EAC_AmbientModule>();
 	}
 }
