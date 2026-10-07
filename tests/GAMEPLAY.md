@@ -566,3 +566,32 @@ and buildings, alive members (casualties never respawned), posts and stops withi
 Full with nothing in the world, both overrides, exclusion of the restored squads;
 then C is woken onto its posts. Not covered: GM UI, a cold server restart, CDF
 (see EXPBG CDF Compat `tests/Run-CdfRoundTrip.ps1`), multiplayer.
+
+## Random Garrison (Unreleased)
+
+`tests/EXPG_RandomGarrisonGameplay.c` (driver class names fixed for the runner):
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RandomGarrisonGameplay.c -ExpectResult '\[EXPG RANDOM RESULT\] checks=[1-9]\d* failures=0 eligible=([6-9]|[1-9]\d+) excludedPlayers=[1-9]\d* buildings=4 squads=[4-8] distinct=1 inside=1 settings=1 nearPlayer=0 analysingSeen=1 cleared=1 leftovers=0 sameBuildings=1 samePrefabs=1 keptOnDelete=1 orphans=0 reason=completed' -TimeoutSeconds 600 -OrchestratorSlotGranted
+```
+
+The real Random Garrison prefab on the GM_Eden town centre at the driver point
+(municipal office, houses, police villa, fire station and pub within 90 m; no
+houses are spawned). A fake player stands at the centre (the module's
+`ObserverPositions` seam) with a player distance of 60 m. Settings: radius 150,
+4 buildings, share 100, squads 1-2, seed 4242, faction US with no second faction,
+fire teams, cache Off, wake 350, sleep 450; then Generate. The status is sampled
+every 0.5 s ("Analysing x/4" must appear and x never goes down). At Done: 4
+distinct buildings, each structurally eligible, within 150 m and at least 60 m
+(nearest bounds point) from the player; at least one eligible building left out
+near the player; 4-8 squads, as many as the zone's Ready garrisons; every soldier
+alive, fixed ones within 1.5 m of their posts, everyone inside the building, posts
+only planned, building or patrol (none around the building or at the spawn),
+checked twice 20 s apart; the garrisons' settings are the zone's; no generated
+soldier is ever within 59.5 m of the player; no squad deleted as never deployed
+and no refusal; a second Generate is refused. Clear: every squad and soldier is
+gone, no garrison of the zone is left and no chosen building has a garrison; the
+zone is Idle. Regenerate with the same seed: the same buildings in the same order
+with the same squads. Deleting the module (Keep garrisons) leaves every garrison
+active 10 s later. Deadline 540 s. Not covered: GM UI and the dialog, the radius
+mesh, saves and loads (native and CDF), a second faction, players, multiplayer.

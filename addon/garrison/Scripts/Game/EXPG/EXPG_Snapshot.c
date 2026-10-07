@@ -200,8 +200,9 @@ class EXPG_GarrisonSnapshot
 {
  // Unique per garrison; made at adoption and kept across saves.
  string Token;
- // Reserved for the Random Garrison zone module: the id of the module that made
- // this garrison. Written and read, unused by this version.
+ // The Random Garrison module that made this garrison ("rg:<hi>-<lo>"; empty for
+ // EXPBG Add Garrison). Always written; optional on read: a ledger without it
+ // loads with an empty value. The module finds its garrisons again by it.
  string GeneratedBy;
  // Record order: placement of later squads and the shared plan depend on it.
  int OrderIndex;
@@ -246,7 +247,11 @@ class EXPG_GarrisonSnapshot
  bool Read(LoadContext context, out string reason)
  {
   reason = "unreadable garrison fields";
-  if (!context.ReadValue("token", Token) || !context.ReadValue("generatedBy", GeneratedBy) || !context.ReadValue("order", OrderIndex)) { return false; }
+  if (!context.ReadValue("token", Token)) { return false; }
+  // Optional: a ledger written without it (or with an empty one) reads as "".
+  GeneratedBy = string.Empty;
+  if (!context.ReadValueDefault("generatedBy", GeneratedBy, string.Empty)) { GeneratedBy = string.Empty; }
+  if (!context.ReadValue("order", OrderIndex)) { return false; }
   if (!context.ReadValue("mode", CacheMode) || !context.ReadValue("wake", WakeDistance) || !context.ReadValue("sleep", SleepDistance) || !context.ReadValue("cacheState", CacheState)) { return false; }
   if (!context.ReadValue("release", ReleaseRequested) || !context.ReadValue("releaseReason", ReleaseReason) || !context.ReadValue("leader", LeaderId)) { return false; }
   reason = "unreadable or unknown building";

@@ -54,6 +54,27 @@ class EXPG_PickerWaiter : EXPG_PlanWaiter
  }
 }
 
+// Server: EXPBG Add Garrison's hooks around the shared spawn (EXPG_GarrisonSpawner):
+// the vanilla placement callbacks that reserve the Game Master's budget, set the
+// author and raise the placement events.
+class EXPG_EditorSpawnCallbacks : EXPG_SpawnCallbacks
+{
+ SCR_PlacingEditorComponent Placing;
+ int OwnerPlayerId;
+ SCR_EditableEntityComponent Editable;
+
+ override void BeforeSpawn(ResourceName prefab)
+ {
+  if (Placing) Placing.EXPG_BeforeSpawnServer(prefab);
+ }
+
+ override void AfterSpawn(SCR_AIGroup squad, SCR_EditableEntityComponent editable)
+ {
+  Editable = editable;
+  if (Placing) Placing.EXPG_AfterSpawnServer(editable, OwnerPlayerId);
+ }
+}
+
 [BaseContainerProps(), SCR_BaseContainerCustomTitleUIInfo("m_Info")]
 class EXPG_AddGarrisonContextAction : SCR_BaseContextAction
 {
@@ -532,27 +553,17 @@ modded class SCR_PlacingEditorComponent
   if (!data || prefabID < 0) { EXPG_Reply("The editor prefab catalog is unavailable."); return; }
   ResourceName prefab = data.GetPrefab(prefabID);
   if (prefab.IsEmpty()) { EXPG_Reply("That squad is not in the server's editor catalog."); return; }
+  // The shared squad check (EXPG_GarrisonSpawn.c): an editable group spawning its
+  // own members, 1 to 32 unit slots that are all editable characters.
+  int memberCount;
+  string invalid;
+  if (!EXPG_SquadPrefab.Validate(prefab, memberCount, invalid)) { EXPG_Reply(invalid); return; }
   Resource resource = Resource.Load(prefab);
-  if (!resource || !resource.IsValid()) { EXPG_Reply("That squad prefab could not be loaded."); return; }
   IEntityComponentSource editableSource = SCR_EditableEntityComponentClass.GetEditableEntitySource(resource);
-  if (!editableSource || SCR_EditableEntityComponentClass.GetEntityType(editableSource) != EEditableEntityType.GROUP) { EXPG_Reply("Choose an infantry squad."); return; }
-  IEntitySource source = resource.GetResource().ToEntitySource();
-  array<ResourceName> members = {};
-  if (!source || !source.Get("m_aUnitPrefabSlots", members) || members.IsEmpty() || members.Count() > 32) { EXPG_Reply("Choose a verified infantry roster of 1 to 32 soldiers."); return; }
-  // No vanilla group prefab carries GROUPTYPE_INFANTRY, so verify the roster
-  // itself: every unit slot must be an editable character (as vanilla placing does).
-  foreach (ResourceName member : members)
-  {
-   Resource memberResource = Resource.Load(member);
-   IEntityComponentSource memberSource;
-   if (memberResource && memberResource.IsValid()) memberSource = SCR_EditableEntityComponentClass.GetEditableEntitySource(memberResource);
-   if (!memberSource || SCR_EditableEntityComponentClass.GetEntityType(memberSource) != EEditableEntityType.CHARACTER) { EXPG_Reply("Only infantry squads can garrison a building."); return; }
-  }
+  if (!editableSource) { EXPG_Reply("Choose an infantry squad."); return; }
   EXPG_GarrisonManager manager = EXPG_GarrisonManager.Get();
   string reason;
-  if (!manager || !manager.CanFit(building, members.Count(), reason)) { EXPG_Reply("Garrison was not placed. " + reason); return; }
-  vector transform[4];
-  building.GetWorldTransform(transform);
+  if (!manager || !manager.CanFit(building, memberCount, reason)) { EXPG_Reply("Garrison was not placed. " + reason); return; }
   EEditableEntityBudget blockingBudget;
   SetPlacingFlag(EEditorPlacingFlags.CHARACTER_PLAYER, false);
   // The building plan validates every post, so skip the preview transform: on
@@ -569,55 +580,45 @@ modded class SCR_PlacingEditorComponent
   if (!m_EXPG_Ticket.Consume(nonce, EXPG_Now())) { EXPG_Reject(nonce, "Garrison selection expired or was cancelled. Open EXPBG Add Garrison again."); return; }
   EXPG_ClearServer();
   Rpc(EXPG_CompleteOwner, nonce);
-  // A squad added to a garrisoned building spawns on open ground beside it, not at
-  // the origin, so new soldiers never shove existing guards off their posts.
-  if (manager.HasGarrison(building)) transform[3] = EXPG_ReinforcementSpawn(building, transform[3]);
-  // Keep the direct reference even if an invalid third-party prefab lacks editable data.
-  EntitySpawnParams spawn = new EntitySpawnParams();
-  spawn.TransformMode = ETransformMode.WORLD;
-  Math3D.MatrixCopy(transform, spawn.Transform);
-  OnBeforeEntityCreatedServer(prefab);
-  IEntity entity = GetGame().SpawnEntityPrefab(resource, GetGame().GetWorld(), spawn);
-  SCR_AIGroup group = SCR_AIGroup.Cast(entity);
-  if (!entity) { EXPG_Reply("The engine could not spawn that squad."); return; }
-  bool fresh = group && group.EXPG_BeginFreshRoster(members.Count());
-  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.GetEditableEntity(entity);
-  if (!group || !editable || !fresh)
-  {
-   if (group) group.EXPG_EndFreshRoster();
-   EXPG_Reply("The prefab did not create a verified editable squad; inspect the spawned entity."); return;
-  }
+  // The shared spawner (EXPG_GarrisonSpawn.c): a squad added to a garrisoned
+  // building spawns on open ground beside it; the vanilla placement callbacks run
+  // around the spawn in the editor's order (EXPG_EditorSpawnCallbacks); the fresh
+  // roster is adopted in the same call. A refused squad stays as normal AI.
   int playerId = GetManager().GetPlayerID();
+  EXPG_EditorSpawnCallbacks callbacks = new EXPG_EditorSpawnCallbacks();
+  callbacks.Placing = this;
+  callbacks.OwnerPlayerId = playerId;
+  EXPG_GarrisonSpawnRequest request = new EXPG_GarrisonSpawnRequest();
+  request.Structure = building;
+  request.Prefab = prefab;
+  request.Members = memberCount;
+  request.CreatorId = playerId;
+  request.Callbacks = callbacks;
+  string spawnFailure;
+  SCR_AIGroup group = EXPG_GarrisonSpawner.Spawn(request, spawnFailure);
+  if (!request.Squad || !callbacks.Editable) { EXPG_Reply(spawnFailure); return; }
+  // Adding to an already garrisoned building always deploys the whole squad.
+  if (!group) EXPG_Reply(spawnFailure);
+  else if (request.Reinforcing) EXPG_Reply(string.Format("Garrison reinforcement is deploying: all %1 soldiers join this building's garrison, on free posts first, then on extra positions in and around the building.", memberCount));
+  else EXPG_Reply(string.Format("Garrison is deploying: all %1 soldiers take the building's posts first, then patrol inside, then more watch positions and places close around the building. Nobody is removed.", memberCount));
+  GetOnPlaceEntityServer().Invoke(prefabID, callbacks.Editable, playerId);
+ }
+
+ // Server, EXPG_EditorSpawnCallbacks: the vanilla placement callbacks around the
+ // garrison squad's spawn, in the order the editor's own placement uses.
+ void EXPG_BeforeSpawnServer(ResourceName prefab)
+ {
+  OnBeforeEntityCreatedServer(prefab);
+ }
+
+ void EXPG_AfterSpawnServer(SCR_EditableEntityComponent editable, int playerId)
+ {
+  if (!editable) return;
   editable.EOnEditorPlace(null, null, 0, false, playerId);
   editable.SetAuthor(playerId);
   editable.OnCreatedServer(this);
   array<SCR_EditableEntityComponent> created = {editable};
   OnEntityCreatedServer(created);
-  // Adding to an already garrisoned building always deploys the whole squad.
-  bool reinforcing = manager.HasGarrison(building);
-  if (!manager.AdoptFresh(group, building, playerId, members.Count()))
-  {
-   group.EXPG_EndFreshRoster();
-   EXPG_Reply("The squad remains under normal AI control because garrison assignment was refused.");
-  }
-  else if (reinforcing) EXPG_Reply(string.Format("Garrison reinforcement is deploying: all %1 soldiers join this building's garrison, on free posts first, then on extra positions in and around the building.", members.Count()));
-  else EXPG_Reply(string.Format("Garrison is deploying: all %1 soldiers take the building's posts first, then patrol inside, then more watch positions and places close around the building. Nobody is removed.", members.Count()));
-  GetOnPlaceEntityServer().Invoke(prefabID, editable, playerId);
- }
-
- // Dry ground 4 m outside the building's bounds, first of the four sides that is not water.
- protected vector EXPG_ReinforcementSpawn(IEntity building, vector origin)
- {
-  vector mins, maxs;
-  building.GetWorldBounds(mins, maxs);
-  vector center = (mins + maxs) * 0.5;
-  array<vector> sides = {Vector(maxs[0] + 4, 0, center[2]), Vector(mins[0] - 4, 0, center[2]), Vector(center[0], 0, maxs[2] + 4), Vector(center[0], 0, mins[2] - 4)};
-  foreach (vector side : sides)
-  {
-   side[1] = GetGame().GetWorld().GetSurfaceY(side[0], side[2]);
-   if (!ChimeraWorldUtils.TryGetWaterSurfaceSimple(GetGame().GetWorld(), side + "0 0.5 0")) return side;
-  }
-  return origin;
  }
 
  // Every server refusal or result is logged once on the server and once on the owner.

@@ -273,8 +273,11 @@ modded class EXPG_BuildingPlan
   }
   foreach (IEntity door : m_TraversableDoors)
   {
+   if (!door) continue;
    NavmeshCustomLinkComponent link = NavmeshCustomLinkComponent.Cast(door.FindComponent(NavmeshCustomLinkComponent));
-   PrintFormat("[EXPG PORTAL] origin=%1 angles=%2 soldiers=%3", door.GetOrigin(), door.GetAngles(), link.HasLinkOfNavmeshType("Soldiers"));
+   // Doors without a custom navmesh link (most building doors) are reported too.
+   bool soldiers = link && link.HasLinkOfNavmeshType("Soldiers");
+   PrintFormat("[EXPG PORTAL] origin=%1 angles=%2 link=%3 soldiers=%4", door.GetOrigin(), door.GetAngles(), link != null, soldiers);
   }
  }
 }

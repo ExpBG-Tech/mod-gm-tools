@@ -51,9 +51,16 @@ class EXPG_InteriorLeaf
 class EXPG_InteriorRover
 {
  ref EXPG_GarrisonMember Member;
+ // His garrison (Adds owns it).
+ EXPG_InteriorAdd Garrison;
  vector Last;
  float Travelled;
  ref array<int> Claims = {};
+ // Cache cycle: judged once, at the first poll after his own garrison woke
+ // (SampleRovers); cleared by CheckRestored for the next cycle.
+ bool Sampled;
+ bool SampledBack;
+ string SampledWhy;
 }
 
 // Any refusal, normal-AI retention or survivor release fails the run.
@@ -444,6 +451,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!Check(valid, string.Format("add %1 member %2: patroller bound on an indoor stop", number, member.CacheMember.Id))) return false;
    EXPG_InteriorRover rover = new EXPG_InteriorRover();
    rover.Member = member;
+   rover.Garrison = add;
    Rovers.Insert(rover);
   }
   return true;
@@ -618,25 +626,64 @@ class EXPG_GarrisonGameplay : GenericEntity
   foreach (EXPG_InteriorAdd add : Adds) if (!Active(add) || !Asleep(add.Record, full)) return false;
   return true;
  }
- // Awake, every survivor bound to his control in his own group.
- bool AllAwake()
+ // One garrison awake, every survivor bound to his control in its own group.
+ bool AddAwake(EXPG_InteriorAdd add)
  {
-  foreach (EXPG_InteriorAdd add : Adds)
+  if (!add || !Active(add) || !Awake(add.Record)) return false;
+  foreach (EXPG_GarrisonMember member : add.Record.Members)
   {
-   if (!Active(add) || !Awake(add.Record)) return false;
-   foreach (EXPG_GarrisonMember member : add.Record.Members)
-   {
-    if (member.CacheMember.Dead) continue;
-    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
-    if (!actor || actor.GetCharacterGroup() != add.Group) return false;
-    if (member.Fixed && !member.Post) return false;
-    if (!member.Fixed && !member.Patrol) return false;
-   }
+   if (member.CacheMember.Dead) continue;
+   SCR_ChimeraCharacter actor = member.CacheMember.Entity;
+   if (!actor || actor.GetCharacterGroup() != add.Group) return false;
+   if (member.Fixed && !member.Post) return false;
+   if (!member.Fixed && !member.Patrol) return false;
   }
   return true;
  }
- // Survivors back as patrollers near their claimed stops; the casualty stays dead
- // and no add has more soldiers than survivors.
+ // Awake, every survivor bound to his control in his own group.
+ bool AllAwake()
+ {
+  foreach (EXPG_InteriorAdd add : Adds) if (!AddAwake(add)) return false;
+  return true;
+ }
+ // A roaming patroller whose claim is an indoor walking stop outside every door zone.
+ bool StillPatrolling(EXPG_GarrisonMember member)
+ {
+  EXPG_PatrolControl patrol = member.Patrol;
+  if (!member.CacheMember.Entity || !patrol || member.Fixed || member.PostKind != EXPG_Placement.ROAM || patrol.ClaimedNode() < 0) return false;
+  EXPG_BuildingNode claim = Plan.Nodes[patrol.ClaimedNode()];
+  return claim.IndoorWalk && !claim.DoorBlock;
+ }
+ // A woken patroller stands on the stop he woke on only for his first dwell (at
+ // least 10 s: EXPG_PatrolControl.Start, RestartDwell); after it his claim is the
+ // destination of his next leg. Another garrison's 10 s restore safety hold can
+ // keep AllAwake false past that dwell (run 2026-10-07 04:39: judged 10.9 s after
+ // the patrol squad woke, two claims were already next stops 5 and 7.6 m away), so
+ // each rover is judged at the first poll after his own garrison is awake and bound.
+ void SampleRovers()
+ {
+  foreach (EXPG_InteriorRover sampled : Rovers)
+  {
+   EXPG_GarrisonMember woken = sampled.Member;
+   if (sampled.Sampled || woken == Casualty || woken.CacheMember.Dead || !AddAwake(sampled.Garrison)) continue;
+   sampled.Sampled = true;
+   sampled.SampledBack = StillPatrolling(woken);
+   sampled.SampledWhy = string.Format("actor=%1 patrol=%2 fixed=%3 kind=%4", woken.CacheMember.Entity != null, woken.Patrol != null, woken.Fixed, woken.PostKind);
+   if (sampled.SampledBack)
+   {
+    SCR_ChimeraCharacter wokeActor = woken.CacheMember.Entity;
+    EXPG_BuildingNode wokeStop = Plan.Nodes[woken.Patrol.ClaimedNode()];
+    float wokeDistance = vector.DistanceXZ(wokeActor.GetOrigin(), wokeStop.Position);
+    sampled.SampledBack = wokeDistance <= 1.5;
+    sampled.SampledWhy += string.Format(" node=%1 moving=%2 dist=%3 at=%4 stop=%5", woken.Patrol.ClaimedNode(), woken.Patrol.IsMoving(), wokeDistance, wokeActor.GetOrigin(), wokeStop.Position);
+   }
+   PrintFormat("[EXPG INTERIOR WOKE] member=%1 back=%2 %3", woken.CacheMember.Id, sampled.SampledBack, sampled.SampledWhy);
+  }
+ }
+ // Survivors woke as patrollers near their claimed stops (judged at their own
+ // garrison's wake, SampleRovers) and still patrol an indoor stop (by now possibly
+ // the destination of a leg); the casualty stays dead and no add has more soldiers
+ // than survivors.
  int CheckRestored(string label)
  {
   int rovers = 0;
@@ -649,15 +696,20 @@ class EXPG_GarrisonGameplay : GenericEntity
     continue;
    }
    if (member.CacheMember.Dead) continue;
+   bool back = rover.Sampled && rover.SampledBack && StillPatrolling(member);
    SCR_ChimeraCharacter actor = member.CacheMember.Entity;
    EXPG_PatrolControl patrol = member.Patrol;
-   bool back = actor && patrol && !member.Fixed && member.PostKind == EXPG_Placement.ROAM && patrol.ClaimedNode() >= 0;
-   if (back)
+   string why = string.Format("sampled=%1 woke=[%2] now: actor=%3 patrol=%4 fixed=%5 kind=%6", rover.Sampled, rover.SampledWhy, actor != null, patrol != null, member.Fixed, member.PostKind);
+   if (actor && patrol && patrol.ClaimedNode() >= 0)
    {
     EXPG_BuildingNode node = Plan.Nodes[patrol.ClaimedNode()];
-    back = node.IndoorWalk && !node.DoorBlock && vector.DistanceXZ(actor.GetOrigin(), node.Position) <= 1.5;
+    why += string.Format(" node=%1 moving=%2 phase=%3 indoor=%4 doorBlock=%5 dist=%6 at=%7 stop=%8", patrol.ClaimedNode(), patrol.IsMoving(), patrol.PatrolPhase(), node.IndoorWalk, node.DoorBlock, vector.DistanceXZ(actor.GetOrigin(), node.Position), actor.GetOrigin(), node.Position);
    }
-   PrintFormat("[EXPG INTERIOR RESTORED] cycle=%1 member=%2 patroller=%3", label, member.CacheMember.Id, back);
+   else if (actor)
+   {
+    why += string.Format(" at=%1", actor.GetOrigin());
+   }
+   PrintFormat("[EXPG INTERIOR RESTORED] cycle=%1 member=%2 patroller=%3 %4", label, member.CacheMember.Id, back, why);
    if (back) rovers++;
   }
   foreach (EXPG_InteriorAdd add : Adds)
@@ -666,8 +718,10 @@ class EXPG_GarrisonGameplay : GenericEntity
    foreach (EXPG_GarrisonMember counted : add.Record.Members) if (!counted.CacheMember.Dead) living++;
    if (add.Group.GetAgentsCount() > living || add.Record.Members.Count() != SQUAD) Replenished++;
   }
-  Check(rovers == LivingRovers(), string.Format("%1: every surviving patroller is back as a patroller near his stop: %2 of %3", label, rovers, LivingRovers()));
+  Check(rovers == LivingRovers(), string.Format("%1: every surviving patroller woke as a patroller near his stop and still patrols: %2 of %3", label, rovers, LivingRovers()));
   Check(Replenished == 0, string.Format("%1: nobody replenished: %2", label, Replenished));
+  // The next cache cycle judges every rover again at his own wake.
+  foreach (EXPG_InteriorRover judged : Rovers) judged.Sampled = false;
   return rovers;
  }
  override void EOnFrame(IEntity owner, float timeSlice)
@@ -913,6 +967,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   }
   if (Phase == 13)
   {
+   SampleRovers();
    if (!AllAwake())
    {
     if (Now() - PhaseStarted > 60) { Check(false, "every garrison woke from Full within 60 s"); Finish("full wake"); }
@@ -937,6 +992,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   }
   if (Phase == 15)
   {
+   SampleRovers();
    if (!AllAwake())
    {
     if (Now() - PhaseStarted > 60) { Check(false, "every garrison woke from Simulation within 60 s"); Finish("simulation wake"); }

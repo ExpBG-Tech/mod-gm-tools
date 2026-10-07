@@ -7,6 +7,7 @@ ETW_TimeSkipModule {
     Name "#EXPBG-TimeSkip_Name"
     Description "#EXPBG-TimeSkip_Description"
     Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_Image "{E4C2BC10932DF14B}UI/Textures/EXPTW/ETW_TimeSkip_Card.edds"
     m_aAuthoredLabels {
      ENTITYTYPE_SYSTEM 157026
     }

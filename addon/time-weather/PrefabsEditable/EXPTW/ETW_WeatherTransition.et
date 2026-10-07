@@ -7,6 +7,7 @@ ETW_WeatherModule {
     Name "#EXPBG-WeatherTransition_Name"
     Description "#EXPBG-WeatherTransition_Description"
     Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_Image "{8AEA55BFD706F00B}UI/Textures/EXPTW/ETW_WeatherTransition_Card.edds"
     m_aAuthoredLabels {
      ENTITYTYPE_SYSTEM 157026
     }

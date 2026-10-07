@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{840DC0BF687F0F0D}Configs/Systems/Persistence/Configuration/EXPGR/RandomGarrison.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

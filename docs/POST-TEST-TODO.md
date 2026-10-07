@@ -158,3 +158,7 @@ Every new addon: own folder `addon/<name>/`, EXPBG label 157026, EXPBG prefix in
 
 ### F7 `ambient-unrest` (Civil Protest Zone)
 - [ ] Circular zone: 10-15 unarmed civilians in one group gather at the centre, static (no roaming/stance change), protest animation loop (arms raised, shouting), angry crowd audio from Ambient Sounds.
+
+### F8 `random-garrison` (Random Garrison zone)
+- [s] Systems zone that garrisons random buildings in a radius with random squads (count or share of buildings, 1-4 squads per building, squad sizes, one or two factions with one faction per building, distance from players, seed); every squad is an ordinary garrison saved by the garrison ledger with the zone's token. Source and portable guard `tests/Test-RandomGarrison.ps1` done; build, contracts, native fixture `tests/EXPG_RandomGarrisonGameplay.c` and the Add Garrison regressions pending.
+- [ ] GM acceptance on the retail server and client: place, Generate, Stop, Clear, Regenerate, status after reopening, radius mesh, a client joining during a generation, a native save/load and a CDF save/load with generated garrisons.

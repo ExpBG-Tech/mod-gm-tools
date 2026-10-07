@@ -1,5 +1,49 @@
 # EXPBG GM Tools validation gates
 
+## Random Garrison (Unreleased)
+
+Portable: `tests/Test-RandomGarrison.ps1` (run by `tests/Test-Tools.ps1`) checks
+the following:
+
+- the module is registered last in `tools/pack.json` with its own `Edit.conf`,
+  `Systems.conf` and `GameMaster.conf` (vanilla identities), the prefab, the
+  browser name without EXPBG and the native zone serializer registration;
+- the attribute list order, each class's `m_Key` against the module's `KEY_*`
+  constants, the preset rows, the restore-only saved state and the dialog filter
+  (attribute class names are permanent CDF save keys);
+- the zone never spawns, steps a plan or reserves a budget itself: it uses the
+  shared spawner (`EXPG_GarrisonSpawn.c`) with its token, background analyses
+  (`EXPG_PlanWaiter.Background`) and the manager's additive views
+  (`PlanCount`, `CollectGenerated`, `AssignedSoldiers`, `Discard`);
+- EXPBG Add Garrison uses the same validator and spawner with its budget checks,
+  ticket and vanilla placement callbacks in their order;
+- the garrison ledger always writes `generatedBy` and reads it with a default
+  (ledgers without it still load; schema stays 1);
+- the census, catalog and director bounds, the rules (with a PowerShell model of
+  the building target), the Enforce gotchas, ASCII/LF, the contract and fixture
+  wiring and the docs.
+
+Native (pending, run by the orchestrator):
+
+- build.ps1 compile;
+- Run-Contracts (`[EXPG RANDOM CONTRACT RESULT] rules=1 shuffle=1 packing=1`
+  from `tests/EXPG_RandomGarrisonTest.c`);
+- fixture `tests/EXPG_RandomGarrisonGameplay.c` (command in `tests/GAMEPLAY.md`);
+- regressions, because Add Garrison now goes through the shared spawner: the
+  default fixture, `-FreshTrim`, RepeatGarrison, PostSpread, ScanProgress,
+  Interior, Ledger.
+
+Pending gates:
+
+- GM session (retail server and client): place the zone, the radius mesh, the
+  dialog (factions list, presets, status after reopening), Generate, Stop, Clear,
+  Regenerate, a client joining during a generation;
+- a native save and load with generated garrisons: the zone comes back Stopped
+  ("Loaded: ...") and Clear or Regenerate finds its garrisons again;
+- a CDF save and load with EXPBG CDF Compat (attribute restore of the token);
+- a modded faction (RHS) catalog: squads that spawn no members or carry stale
+  size labels are rejected or bucketed by their roster.
+
 ## Garrison save bridge and no trimming (Unreleased)
 
 Portable: `tests/Test-GarrisonLedger.ps1` (run by `tests/Test-Tools.ps1`) checks

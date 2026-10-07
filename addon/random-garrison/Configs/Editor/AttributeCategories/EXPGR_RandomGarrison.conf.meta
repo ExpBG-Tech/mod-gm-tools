@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{FEF745598F49F211}Configs/Editor/AttributeCategories/EXPGR_RandomGarrison.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

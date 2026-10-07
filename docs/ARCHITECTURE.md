@@ -199,7 +199,8 @@ second; only flags set there are cleared. A squad the editor protects from
 deletion is not portable and saves as an ordinary squad.
 
 The ledger (`EXPG_Snapshot.c`, schema 1) records per garrison: token,
-`GeneratedBy` (reserved for the Random Garrison module), record order, building
+`GeneratedBy` (the Random Garrison zone token; read with a default, so ledgers
+without it load), record order, building
 (prefab and transform, found again with the Ambient Destruction identity rule),
 cache mode and distances, cache state (awake, Simulation, Full), release request,
 leader, the squad (`EBG_CacheGroupSnapshot.CaptureForLedger`, tolerant: orders it
@@ -239,6 +240,60 @@ player comes within wake distance. Survivors are pinned (maximum AI LOD) in thei
 spawning call before they join the squad and released only after they are bound
 to their posts. A missing or ambiguous building restores the survivors as an
 ordinary squad at their saved world positions.
+
+## Random Garrison
+
+`addon/random-garrison` (`EXPGR` folder, `EXPG_RandomGarrison*`/`EXPG_RG*` classes,
+log prefix `[EXPG RANDOM]`). One Systems entity per zone; all work runs on the
+server; clients only receive the radius (GM area mesh) and the status line.
+
+Ownership. Every squad is an ordinary garrison created through the shared spawn
+API (`EXPG_GarrisonSpawn.c`: `EXPG_SquadPrefab.Validate`, then
+`EXPG_GarrisonSpawner.Spawn`: CanFit, spawn, fresh roster, AdoptFresh), the same
+path EXPBG Add Garrison takes. The zone writes its token (`rg:<hi>-<lo>`, two
+24-bit halves) into the record's `GeneratedBy` and keeps no list of its squads:
+`EXPG_GarrisonManager.CollectGenerated(token)` finds them, also after a load (the
+ledger saves `GeneratedBy`; ledgers without it load with an empty value). Caching,
+settings, Force Move, alarms and interior behaviour are those of any garrison;
+casualties are never refilled and a zone never generates again by itself.
+
+Flow. A static director (100 ms, at most 64 zones round robin, about 2 ms of zone
+script per tick) runs census, catalog and generation. Census: 64 m cells over the
+circle's bounding square, one spatial query per cell (512 callbacks, quadrant split
+on saturation), then at most 32 eligibility checks per tick (whole intact building,
+not a ruin or part, not an Ambient Destruction collapse, inside the planner's
+limits, no rejected prefab path, doors or an interior volume). Eligible buildings
+are sorted by position and prefab, shuffled with the seed; buildings near players
+(bounds plus 5 m) are left out after the shuffle, the first Target are queued, the
+rest are reserves. Each building draws its faction and squad count from its own
+generator (seed and building key), so results do not depend on analysis order.
+A generation runs with the settings it started with (Generate copies them; later
+edits wait for Regenerate, cache settings apply at once). Before any analysis every
+faction a building can draw must have a squad of an enabled size. One faction per
+building: with Allow garrisoned a building keeps the faction already in it, and one
+held by another faction (or by several) is skipped.
+Analyses are background plan waiters: the zone never steps a plan, the manager's
+pump keeps its 4 ms budget, Game Masters' requests go first, and no analysis starts
+above 56 plans. Squads: one spawn every 1.5 s across zones, at most two spawning at
+once, one at a time per building; the squad must fit the building's planned posts
+minus the soldiers already there, so fresh squads are never trimmed. A squad that
+does not take its posts within 60 s is deleted (one retry with a smaller size).
+Clear discards the zone's garrisons one per tick (`EXPG_GarrisonManager.Discard`,
+nobody woken or respawned) and deletes their squads and soldiers 8 entities per
+tick; soldiers who left a squad (surrender, possession) are kept.
+
+Saves. Squads that have not taken their posts, and every squad or soldier waiting
+to be deleted (Clear, Stop, a deleted zone: `EXPG_RetireList`, handed over from
+`EXPG_SaveExclusion` in the same call), are kept out of every save until deleted
+(flag and native tracking, repeated before each native save); a Ready garrison
+saves itself in the garrison ledger. The zone is saved by
+`EXPG_RandomGarrisonSerializer` (`rgVersion` 1: settings, faction keys, token,
+generated, last seed, outcomes; generated is true once a squad of the zone has
+taken its posts, also in a save made during a run) and,
+for CDF, by its attributes (durable values, faction key hashes, a hidden saved-state
+attribute with the token). A loaded zone comes back Stopped (or Idle) and never
+resumes. With CDF but without the EXPBG CDF Compat bridge, Prepare for Save stops a
+generation first and the released garrisons are no longer the zone's.
 
 ## Boundaries
 

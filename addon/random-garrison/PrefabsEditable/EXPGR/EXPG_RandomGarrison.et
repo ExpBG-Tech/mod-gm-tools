@@ -1,0 +1,38 @@
+EXPG_RandomGarrisonModule {
+ ID "B6DDE983E3A03AA9"
+ components {
+  SCR_EditableEntityComponent "{FAC497A4814A262B}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{A67C085DBBD76EC9}" {
+    Name "#EXPBG-RandomGarrison_Name"
+    Description "#EXPBG-RandomGarrison_Description"
+    Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_Image "{5ACF724CA7564555}UI/Textures/EXPBG_Garrison/EXPG_Card.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM 157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{BF3A1DB079FFE56A}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{4B6595596EB998EE}" {
+  }
+  EXPG_RandomGarrisonAreaComponent "{BAFC62C77B5FFA65}" {
+   m_eShape ELLIPSE
+   m_fHeight 4
+   m_vResolution 48
+   m_bFollowTerrain 1
+   m_bStretchMaterial 0
+   m_Material "{E65E61D1541003E2}Assets/Editor/VirtualArea/VirtualArea.emat"
+   m_bActiveEveryFrameOnInit 0
+   m_bHideInWorkbench 1
+  }
+  EXPG_RandomGarrisonVisibilityComponent "{AA4A0D29E22A5F3B}" {
+   m_State RENDERED
+  }
+ }
+}

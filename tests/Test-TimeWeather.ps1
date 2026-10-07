@@ -51,6 +51,7 @@ Assert ($skipPrefab -match '(?m)^ETW_TimeSkipModule \{' -and $skipPrefab -match 
 foreach ($prefab in $weatherPrefab, $skipPrefab) {
  Assert ($prefab -match 'SpatialRelevancy 0' -and $prefab -match 'Streamable Disabled') 'modules must be always relevant (status RplProps, broadcast fade RPC)'
  Assert ($prefab -match 'ENTITYTYPE_SYSTEM 157026' -and $prefab -match 'EXPBG_Badge_UI\.edds') 'modules carry the EXPBG label and badge'
+ Assert ($prefab -match 'm_Image "\{[0-9A-F]{16}\}UI/Textures/EXPTW/ETW_\w+_Card\.edds"') 'modules carry their cooked EXPBG card'
 }
 $language = Join-Path $repo 'addon/unit-caching/Language'
 $source = Read-Text (Join-Path $language 'EXPBG_Localization.st')
@@ -180,7 +181,7 @@ foreach ($path in $sources) {
   Assert (!($line -match '\S.*\breturn\s+[^;\s]' -and $line -notmatch '^\s*return\b' -and $line -notmatch '^\s*//')) "non-void return must be on its own line in ${path}: $($line.Trim())"
  }
 }
-foreach ($file in Get-ChildItem -LiteralPath $module -Recurse -File) {
+foreach ($file in Get-ChildItem -LiteralPath $module -Recurse -File | Where-Object { $_.Extension -notin '.png', '.edds' }) {
  $bytes = [IO.File]::ReadAllBytes($file.FullName)
  Assert (($bytes | Where-Object { $_ -gt 127 }).Count -eq 0) "non-ASCII byte in $($file.FullName)"
  Assert (!($bytes -contains 13)) "CR line ending in $($file.FullName)"

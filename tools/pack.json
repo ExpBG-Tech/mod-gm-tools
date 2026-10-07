@@ -139,6 +139,14 @@
         "repository": "ExpBG-Tech/mod-gm-tools",
         "note": "Developed in this repository."
       }
+    },
+    {
+      "name": "random-garrison",
+      "title": "Random Garrison",
+      "origin": {
+        "repository": "ExpBG-Tech/mod-gm-tools",
+        "note": "Developed in this repository."
+      }
     }
   ],
   "merge": [

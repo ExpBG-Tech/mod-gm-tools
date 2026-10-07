@@ -1,5 +1,42 @@
 # EXPBG GM Tools changelog
 
+## 0.1.12
+
+- Time and Weather: "Weather Transition" and "Time Skip" show EXPBG preview
+  cards in the entity browser instead of the missing-image sign (0.1.11 left
+  the cards out until the textures were cooked).
+- New module Random Garrison (Systems): place "Random Garrison", set it up and
+  choose Generate. It garrisons random buildings within its radius (default
+  150 m): a number of buildings (1-32, default 4) or a share of those that can
+  be garrisoned, each with one to four random squads (default 1-2) from the Game
+  Master squad list of one faction (default USSR), or of two factions with each
+  building drawing one, so one building never holds both. Squad sizes go by the
+  number of soldiers (fire teams, squads, large, small teams); a squad only goes
+  where it fits the building's posts, and medical, logistics and essential squads
+  are skipped by default. No building closer than 200 m (adjustable) to a player
+  character is used; Game Master cameras do not count. A seed repeats a
+  generation (0, the default, draws a new one and shows it). Every squad is an
+  ordinary EXPBG garrison: posts, indoor patrols, caching with the zone's cache
+  mode and distances (a change applies to the zone's garrisons at once), Force
+  Move and Add Garrison work as usual, casualties are never refilled and the zone
+  never generates again by itself. Regenerate clears the zone's garrisons and
+  generates again, Clear generated garrisons deletes them, Stop ends the work in
+  progress and keeps what has deployed. Deleting the zone keeps its garrisons
+  (default) or deletes them. A read-only status row shows the progress (reopen
+  the attributes to refresh). Garrisons and zone settings are saved with the
+  mission (native saves; CDF saves with EXPBG CDF Compat) and after a load the
+  zone finds its garrisons again; it never resumes by itself. Building analyses
+  run after any waiting EXPBG Add Garrison request.
+- Garrison: EXPBG Add Garrison now refuses a squad whose prefab does not spawn its
+  soldiers by itself (it used to wait 45 s and leave an empty squad). The garrison
+  save ledger keeps which Random Garrison zone made each garrison; saves from
+  0.1.11 still load.
+- Garrison: a guard who came to rest 0.5 to 1 m from his post on a spot that
+  could not become his post was sent back to it about ten times a second for as
+  long as he stood there: the log filled with "came to rest ... not a plausible
+  post; sent back to it" and his garrison could not cache. Within 1 m he counts
+  as on his post (as before) and now holds where he stands.
+
 ## 0.1.11
 
 - Garrison: garrisons are saved with the mission. Build a mission, save it and

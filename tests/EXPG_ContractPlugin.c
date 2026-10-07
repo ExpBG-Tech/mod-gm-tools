@@ -10,9 +10,13 @@ class EXPG_ContractPlugin : WorkbenchPlugin
   bool missingActor = EXPG_PatrolControlTest.RejectMissingActor();
   bool capacity = EXPG_FullCacheTest.CapacityContract();
   bool createdSlot = EXPG_FullCacheTest.CreatedSlotContract();
+  bool randomRules = EXPG_RandomGarrisonTest.Rules();
+  bool randomShuffle = EXPG_RandomGarrisonTest.Shuffle();
+  bool randomPacking = EXPG_RandomGarrisonTest.Packing();
   PrintFormat("[EXPG FULL CONTRACT RESULT] capacity=%1 createdSlot=%2", capacity, createdSlot);
   PrintFormat("[EXPG CONTRACT RESULT] graph=%1 editor=%2 attributes=%3 corridor=%4 missingActor=%5", graph, editor, attributes, corridor, missingActor);
-  if (graph && editor && attributes && corridor && missingActor && capacity && createdSlot) { Workbench.Exit(0); }
+  PrintFormat("[EXPG RANDOM CONTRACT RESULT] rules=%1 shuffle=%2 packing=%3", randomRules, randomShuffle, randomPacking);
+  if (graph && editor && attributes && corridor && missingActor && capacity && createdSlot && randomRules && randomShuffle && randomPacking) { Workbench.Exit(0); }
   else { Workbench.Exit(1); }
  }
 }

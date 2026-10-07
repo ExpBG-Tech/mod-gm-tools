@@ -53,6 +53,14 @@ StringTable {
    Id "EXPBG-ProtestZone_Name"
    Target_en_us "Civil Protest Zone"
   }
+  CustomStringTableItem "{6E2B9A41D07C35F8}" {
+   Id "EXPBG-RandomGarrison_Description"
+   Target_en_us "Garrisons random buildings within its radius: choose Generate in its attributes and up to 32 buildings (count or share of the eligible ones) each get one to four random squads of one or two factions (one faction per building), away from players. Every squad is an ordinary EXPBG garrison with caching and is saved with the mission; Regenerate, Clear and Stop act on this zone's garrisons only."
+  }
+  CustomStringTableItem "{CEE956A82EA2D37E}" {
+   Id "EXPBG-RandomGarrison_Name"
+   Target_en_us "Random Garrison"
+  }
   CustomStringTableItem "{9444A69B3D4A03FB}" {
    Id "EXPBG-SurrenderModule_Description"
    Target_en_us "Global module: AI squads that take heavy casualties may surrender. Prisoners drop their weapons, sit down and can be interrogated by players for squad positions or identity intel. Place one; every copy edits the same global settings."

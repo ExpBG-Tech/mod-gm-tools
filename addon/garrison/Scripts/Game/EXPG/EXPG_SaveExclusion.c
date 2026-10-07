@@ -167,6 +167,32 @@ class EXPG_SaveExclusion
   s_Confirmed.Remove(index);
  }
 
+ // A discarded garrison's entity that its caller now deletes (Random Garrison Clear):
+ // it leaves this set WITHOUT being handed back, so no later sync puts it into a save
+ // before it is gone; flagged/untracked say what this file had changed.
+ static bool HandOver(IEntity entity, out bool flagged, out bool untracked)
+ {
+  flagged = false;
+  untracked = false;
+  if (!entity)
+  {
+   return false;
+  }
+  CheckWorld();
+  int index = s_Entities.Find(entity);
+  if (index < 0)
+  {
+   return false;
+  }
+  flagged = s_Flagged[index];
+  untracked = s_Untracked[index];
+  s_Entities.Remove(index);
+  s_Flagged.Remove(index);
+  s_Untracked.Remove(index);
+  s_Confirmed.Remove(index);
+  return true;
+ }
+
  // Everything goes back (all garrisons released, or a load replaced them).
  static void ReleaseAll()
  {

@@ -22,6 +22,7 @@ modules into a single Workshop item and engine project
 | AI Global Skills | `addon/ai-global-skills` | Developed here |
 | Ambient Unrest | `addon/ambient-unrest` | Developed here |
 | Time and Weather | `addon/time-weather` | Developed here |
+| Random Garrison | `addon/random-garrison` | Developed here |
 
 Exact source commits and former Workshop IDs are recorded in
 [`tools/pack.json`](tools/pack.json). Module folders keep the original class
@@ -198,6 +199,26 @@ The only dependency is the base game (`58D0FB3206B6F859`).
     transition completes under the black screen.
   - Module settings are saved with native mission saves. A running transition
     is not: after loading, the weather reached so far stays.
+- **Random Garrison**: place "Random Garrison" from Systems, set it up in its
+  "EXPBG Random Garrison" attributes and choose Generate. Within its radius
+  (default 150 m, shown in the editor) it garrisons a number of buildings (1-32,
+  or a share of the buildings that can be garrisoned) with one to four random
+  squads each from the Game Master squad list of one faction, or of two with each
+  building drawing one (so one building never holds both). Squad sizes go by the
+  number of soldiers (fire teams, squads, large, small teams) and a squad only
+  goes where it fits the building's posts; support squads are skipped by default.
+  No building closer than 200 m (adjustable) to a player character is used. The
+  seed (0: a new one each time, shown in the status) repeats a generation. Every
+  squad is an ordinary EXPBG garrison with its cache mode and distances (set on
+  the zone, applied to its garrisons at once); casualties are never refilled.
+  Regenerate clears the zone's garrisons and generates again, Clear generated
+  garrisons deletes them, Stop ends the work in progress and keeps what has
+  deployed. Deleting the zone keeps its garrisons (or deletes them, if set). The
+  read-only status row shows the progress (reopen the attributes to refresh).
+  Garrisons are saved with the mission like any garrison and the zone finds its
+  own again after a load; a loaded zone never generates by itself. Mission
+  makers can give the prefab a fixed squad list and have it generate once at
+  mission start.
 
 ## CDF Game Master Save
 

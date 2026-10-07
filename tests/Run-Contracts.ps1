@@ -25,7 +25,7 @@ New-Item -ItemType Directory -Path $logs | Out-Null
 $arguments = @('-disableCrashReporter','-noThrow','-wbModule=ResourceManager','-plugin=EXPG_ContractPlugin','-gproj',(Join-Path $addon $project.addon.project),'-profile',"$run/profile",'-logsDir',$logs,'-addonsDir',$dependencies)
 $native = Invoke-PrivateProcess (Join-Path $config.WorkbenchRoot 'ArmaReforgerWorkbenchSteamDiag.exe') $arguments $config.GameRoot "$run/native-output.log" 120
 $text = (Get-ChildItem -LiteralPath $logs -Recurse -Filter '*.log' -File | Get-Content -Raw) -join "`n"
-$passed = $native.ExitCode -eq 0 -and $text -match '\[EXPG CONTRACT RESULT\] graph=1 editor=1 attributes=1 corridor=1 missingActor=1' -and $text -match 'Game destroyed' -and $text -notmatch 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed'
+$passed = $native.ExitCode -eq 0 -and $text -match '\[EXPG CONTRACT RESULT\] graph=1 editor=1 attributes=1 corridor=1 missingActor=1' -and $text -match '\[EXPG RANDOM CONTRACT RESULT\] rules=1 shuffle=1 packing=1' -and $text -match 'Game destroyed' -and $text -notmatch 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed'
 @{source=$source;run=$run;passed=$passed;nativeExitCode=$native.ExitCode;worldLoaded=$false;gameplay=$false} | ConvertTo-Json | Set-Content -LiteralPath "$run/result.json"
 $text -split "`n" | Where-Object { $_ -match '\[EXPG|SCRIPT\s+\(E\)|Can.t compile' } | Write-Output
 if (!$passed) { throw "Native contracts failed; inspect $run" }

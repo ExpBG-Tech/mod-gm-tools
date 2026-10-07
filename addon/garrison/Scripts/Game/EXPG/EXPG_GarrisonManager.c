@@ -248,7 +248,8 @@ class EXPG_GarrisonRecord
  // A Full restore whose safety check keeps failing waits at most 10 s (WakeFull).
  float WakeHeldSince = -1;
  // Persistence (EXPG_Snapshot.c). The token is made at adoption and kept across
- // saves; GeneratedBy is reserved for the Random Garrison module.
+ // saves. GeneratedBy: "" for EXPBG Add Garrison, "rg:<hi>-<lo>" for a garrison a
+ // Random Garrison module made (EXPG_GarrisonSpawner.Spawn); saved in the ledger.
  string Token;
  string GeneratedBy;
  // Settings live in the record: a Full-cached garrison has no squad in the world.
@@ -570,6 +571,9 @@ class EXPG_PlanWaiter
  int Percent = -1;
  bool Queued;
  float Sent = -1000;
+ // A module's request (Random Garrison): it keeps the plan in use but never takes
+ // a Game Master's analysis turn (NextAnalysis); it is analysed when none waits.
+ bool Background;
 
  // Rate limited: a new percentage at most four times a second, the same one again
  // every two seconds (the Game Master's client gives up after 15 silent seconds).
@@ -845,7 +849,7 @@ class EXPG_GarrisonManager
    return;
   }
   plan.LastUsed = Now();
-  plan.WaitedAt = Now();
+  if (!waiter.Background) { plan.WaitedAt = Now(); }
   if (!plan.Done) { waiter.Report(plan.Progress(), false, Now()); return; }
   // A request that showed progress sees it reach 100 %; a cached plan opens silently.
   if (waiter.Percent >= 0 && waiter.Percent < 100 && !waiter.Queued)
@@ -1146,6 +1150,104 @@ class EXPG_GarrisonManager
    if (!record.Finished && record.Plan.Structure == building) { return true; }
   }
   return false;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Random Garrison (addon/random-garrison): read-only views and the per-garrison
+ // discard. The module never steps a plan itself and keeps no list of its squads.
+ //------------------------------------------------------------------------------------------------
+ int PlanCount()
+ {
+  return m_Plans.Count();
+ }
+
+ // Unfinished garrisons a module made (GeneratedBy), in record order.
+ int CollectGenerated(string generatedBy, notnull array<ref EXPG_GarrisonRecord> outRecords)
+ {
+  outRecords.Clear();
+  if (generatedBy.IsEmpty())
+  {
+   return 0;
+  }
+  foreach (EXPG_GarrisonRecord record : m_Records)
+  {
+   if (!record.Finished && record.GeneratedBy == generatedBy) { outRecords.Insert(record); }
+  }
+  return outRecords.Count();
+ }
+
+ // Living guards of the unfinished garrisons in a building (Full-cached ones
+ // included); a squad still taking its posts counts with its requested size.
+ int AssignedSoldiers(IEntity building)
+ {
+  if (!building)
+  {
+   return 0;
+  }
+  int count;
+  foreach (EXPG_GarrisonRecord record : m_Records)
+  {
+   if (record.Finished || record.Plan.Structure != building) { continue; }
+   if (!record.Ready) { count += record.FreshRequested; continue; }
+   foreach (EXPG_GarrisonMember member : record.Members)
+   {
+    if (!member.CacheMember.Dead) { count++; }
+   }
+  }
+  return count;
+ }
+
+ // Faction keys of the unfinished garrisons in a building, without duplicates; a
+ // Full-cached or loaded squad (no group in the world) gives its snapshot's key.
+ int GarrisonFactions(IEntity building, notnull array<string> outFactions)
+ {
+  outFactions.Clear();
+  if (!building)
+  {
+   return 0;
+  }
+  foreach (EXPG_GarrisonRecord record : m_Records)
+  {
+   if (record.Finished || !record.Plan || record.Plan.Structure != building) { continue; }
+   string factionKey = string.Empty;
+   if (record.Group) { factionKey = record.Group.GetFactionName(); }
+   else if (record.Full && record.Full.LedgerSquad()) { factionKey = record.Full.LedgerSquad().FactionName; }
+   if (!factionKey.IsEmpty() && !outFactions.Contains(factionKey)) { outFactions.Insert(factionKey); }
+  }
+  return outFactions.Count();
+ }
+
+ // One garrison is forgotten at once, as a load forgets them (DiscardAll): nobody
+ // is woken or respawned. The caller deletes its squad and soldiers. False when the
+ // garrison has already finished.
+ bool Discard(EXPG_GarrisonRecord record, string why)
+ {
+  if (!record || record.Finished)
+  {
+   return false;
+  }
+  if (record.Full)
+  {
+   record.Full.Abandon();
+   record.Full = null;
+   record.FullRecord = null;
+  }
+  if (record.Simulation)
+  {
+   bool present = false;
+   foreach (EBG_SimulationAgent saved : record.Simulation.Members)
+   {
+    if (saved.Character) { present = true; }
+    else if (saved.Devices) { saved.Devices.Discard(); }
+   }
+   string ignored;
+   if (present) { EBG_SimulationCache.Restore(record.Simulation, ignored); }
+   record.Simulation = null;
+  }
+  record.RequestRelease(why);
+  record.FinishRelease();
+  PrintFormat("[EXPG Garrison] group=%1 discarded (%2); nobody was woken or respawned", record.Group, why);
+  return true;
  }
 
  // Other unfinished garrisons of this record's building, awake or cached. With
@@ -2705,7 +2807,10 @@ class EXPG_GarrisonManager
     if (member.OnPost(actor.GetOrigin()))
     {
      member.Returning = false;
-     member.Post.Return(member.PostPoint());
+     // On his post within its 1 m tolerance: the post control watches the spot he
+     // stands on, so the same small offset (over the 0.5 m drift) is not reported
+     // again every tick (a loop that held caching and flooded the log).
+     member.Post.Return(actor.GetOrigin());
     }
     else if (Now() - member.ReturnSent >= 3 && EXPG_GarrisonMember.AtRest(actor))
     {
