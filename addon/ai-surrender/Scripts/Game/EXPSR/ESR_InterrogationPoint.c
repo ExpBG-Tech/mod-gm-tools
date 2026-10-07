@@ -71,9 +71,9 @@ class ESR_InterrogationPoint : GenericEntity
    ClearEventMask(EntityEvent.FRAME);
    return;
   }
-  // Dedicated server: nobody aims an interaction cast here and the point only feeds
-  // streaming relevance, so it has no frame follow; ESR_SurrenderManager.Upkeep moves it.
-  if (System.IsConsoleApp()) ClearEventMask(EntityEvent.FRAME);
+  // Dedicated server: no local player, so FollowInterval keeps the point within one second
+  // of his face (a sit-down or GM move never leaves the server copy stale for long);
+  // ESR_SurrenderManager.Upkeep also moves it.
   if (m_bCollider) return;
   autoptr PhysicsGeomDef geoms[] = {PhysicsGeomDef("", PhysicsGeom.CreateSphere(COLLIDER_RADIUS), "material/default", EPhysicsLayerDefs.Interaction)};
   m_bCollider = Physics.CreateStaticEx(this, geoms) != null;

@@ -1,11 +1,12 @@
 #requires -Version 7.0
 # Portable guard for the WP12 AI Surrender performance fixes (0.1.15 performance plan).
-#  ai-modules-01: a dedicated server (System.IsConsoleApp) clears the interrogation point's
-#   frame event in EOnInit but keeps its collider; ESR_SurrenderManager.Upkeep (5 s, one
-#   shot) calls Point.Follow() before the unchanged "> 1 m from his face" respawn test, and
-#   also for an unconscious or possessed prisoner it otherwise skips. Clients and a
-#   listen-server host keep EOnFrame: 0.1 s while the local controlled entity is within
-#   20 m of the point, 1 s otherwise. Follow keeps the head bone index per prisoner entity
+#  ai-modules-01: every machine keeps EOnFrame with a countdown: 0.1 s while the local
+#   controlled entity is within 20 m of the point, 1 s otherwise. A dedicated server has no
+#   local entity, so its copy follows once a second (never left stale for 5 s after a
+#   sit-down or a GM move, which the server's action checks read) and keeps its collider;
+#   ESR_SurrenderManager.Upkeep (5 s, one shot) also calls Point.Follow() before the
+#   unchanged "> 1 m from his face" respawn test, and for an unconscious or possessed
+#   prisoner it otherwise skips. Follow keeps the head bone index per prisoner entity
 #   (looked up again for a new entity, never kept while missing); FacePosition, used by the
 #   manager, still looks it up and computes the face with the same math.
 #  ai-modules-04: PublishMarker records each marker id in a lazily created FIFO
@@ -57,12 +58,9 @@ Assert ((Get-Block $pointClass 'void\s+ESR_InterrogationPoint\s*\(').Body -match
 $init = (Get-Block $pointClass 'override\s+void\s+EOnInit\s*\(\s*IEntity\s+owner\s*\)').Body
 $playMode = Get-Block $init 'if\s*\(\s*!\s*GetGame\(\)\.InPlayMode\(\)\s*\)'
 Assert ($playMode.Body -match 'ClearEventMask\(EntityEvent\.FRAME\);' -and $playMode.Body -match 'return;') 'outside play mode the frame event is still cleared before anything else'
-$console = [regex]::Match($init, 'if\s*\(\s*System\.IsConsoleApp\(\)\s*\)\s*ClearEventMask\(\s*EntityEvent\.FRAME\s*\)\s*;')
-Assert $console.Success 'EOnInit must clear the frame event on a dedicated server: if (System.IsConsoleApp()) ClearEventMask(EntityEvent.FRAME);'
-Assert ($console.Index -gt $playMode.Close) 'the dedicated-server clear comes after the play-mode check'
+Assert (!([regex]::IsMatch($init, 'IsConsoleApp'))) 'a dedicated server keeps the frame follow (FollowInterval gives it 1 s without a local entity): no IsConsoleApp clear in EOnInit'
 $collider = $init.IndexOf('Physics.CreateStaticEx(this, geoms)')
-Assert ($collider -gt $console.Index) 'the dedicated server still creates the interaction collider (the clear must not return early)'
-Assert (!([regex]::IsMatch($init.Substring($console.Index + $console.Length, $collider - $console.Index - $console.Length), 'IsConsoleApp[^;]*return'))) 'no dedicated-server return before the collider'
+Assert ($collider -gt $playMode.Close) 'every play-mode machine creates the interaction collider'
 
 $frame = (Get-Block $pointClass 'override\s+void\s+EOnFrame\s*\(\s*IEntity\s+owner\s*,\s*float\s+timeSlice\s*\)').Body
 Assert ([regex]::IsMatch($frame, '^\s*m_fFollowIn\s*-=\s*timeSlice\s*;\s*if\s*\(\s*m_fFollowIn\s*>\s*0\s*\)\s*return\s*;\s*m_fFollowIn\s*=\s*FollowInterval\(\)\s*;\s*Follow\(\)\s*;\s*$')) 'EOnFrame keeps its countdown and takes the next interval from FollowInterval()'
@@ -202,4 +200,4 @@ foreach ($name in @('ESR_InterrogationPoint.c', 'ESR_SurrenderManager.c')) {
 foreach ($body in @($interval, $fromBone, $prisonerFace, $track, $drop)) {
  Assert (!($body -match 'Math\.RandomFloat|Math\.RandomInt')) 'the new methods draw no random numbers'
 }
-Write-Host 'PASS: AI Surrender WP12: a dedicated server clears the interrogation point frame event (collider kept) and Upkeep calls Point.Follow() before the unchanged 1 m respawn test (and for skipped prisoners); clients follow at 0.1 s within 20 m of the local entity and 1 s farther; the head bone is cached per prisoner entity with the unchanged face math; published markers are capped at 128 through a lazily created FIFO that removes only the oldest still-existing marker via the old RemoveMarker body and is cleared per world. No engine was launched.'
+Write-Host 'PASS: AI Surrender WP12: a dedicated server follows the interrogation point at 1 Hz (no local entity; collider kept) and Upkeep calls Point.Follow() before the unchanged 1 m respawn test (and for skipped prisoners); clients follow at 0.1 s within 20 m of the local entity and 1 s farther; the head bone is cached per prisoner entity with the unchanged face math; published markers are capped at 128 through a lazily created FIFO that removes only the oldest still-existing marker via the old RemoveMarker body and is cleared per world. No engine was launched.'

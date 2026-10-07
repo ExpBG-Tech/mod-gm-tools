@@ -22,8 +22,8 @@ $addonRoot = Join-Path $repo 'addon'
 # EOnSimulate, EOnPostSimulate, EOnFixedFrame, EOnPostFixedFrame, OnPrepareControls,
 # OnMenuUpdate, UpdateValues), 'void Update(float' and zero-delay repeating CallLater.
 $PerFrameAllowed = [ordered]@{
- 'ai-surrender/EXPSR/ESR_InterrogationPoint.c|SetEventMask(FRAME)' = @(1, 'interrogation point follows the prisoner head on clients (10 Hz within 20 m, else 1 Hz); dedicated servers clear FRAME and follow from the 5 s upkeep')
- 'ai-surrender/EXPSR/ESR_InterrogationPoint.c|EOnFrame' = @(1, 'interrogation point follows the prisoner head on clients (10 Hz within 20 m, else 1 Hz); dedicated servers clear FRAME and follow from the 5 s upkeep')
+ 'ai-surrender/EXPSR/ESR_InterrogationPoint.c|SetEventMask(FRAME)' = @(1, 'interrogation point follows the prisoner head on clients (10 Hz within 20 m, else 1 Hz); a dedicated server has no local entity and follows at 1 Hz, plus the 5 s upkeep')
+ 'ai-surrender/EXPSR/ESR_InterrogationPoint.c|EOnFrame' = @(1, 'interrogation point follows the prisoner head on clients (10 Hz within 20 m, else 1 Hz); a dedicated server has no local entity and follows at 1 Hz, plus the 5 s upkeep')
  'ai-surrender/EXPSR/ESR_ResultDialog.c|OnMenuUpdate' = @(1, 'runs only while the dialog is open')
  'ambient-civilians/EXPAC/EAC_AmbientModule.c|SetEventMask(FRAME|POSTFRAME)' = @(1, 'server civilian scheduler; EOnInit clears it on clients and outside play mode')
  'ambient-civilians/EXPAC/EAC_AmbientModule.c|EOnPostFrame' = @(1, 'server civilian scheduler, budgeted per frame')
