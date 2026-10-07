@@ -14,12 +14,13 @@
 class EAC_CivilianFactions
 {
  static const int MAX_FACTIONS = 16;
- protected static ref array<string> s_Keys = {};
- protected static ref array<string> s_Names = {};
+ protected static ref array<string> s_Keys;
+ protected static ref array<string> s_Names;
  protected static BaseWorld s_World;
 
  protected static void Build()
  {
+		EXPBG_LazyStatics_EAC_CivilianFactions();
   BaseWorld world;
   if (GetGame()) world = GetGame().GetWorld();
   if (world && world == s_World && !s_Keys.IsEmpty()) return;
@@ -56,21 +57,25 @@ class EAC_CivilianFactions
   }
  }
 
- static int Count() { Build(); return s_Keys.Count(); }
+ static int Count() {
+		EXPBG_LazyStatics_EAC_CivilianFactions(); Build(); return s_Keys.Count(); }
  static string KeyAt(int index)
  {
+		EXPBG_LazyStatics_EAC_CivilianFactions();
   Build();
   if (index < 0 || index >= s_Keys.Count()) return EAC_AmbientModule.CIV_FACTION;
   return s_Keys[index];
  }
  static string NameAt(int index)
  {
+		EXPBG_LazyStatics_EAC_CivilianFactions();
   Build();
   if (index < 0 || index >= s_Names.Count()) return "Vanilla civilians";
   return s_Names[index];
  }
  static string Describe()
  {
+		EXPBG_LazyStatics_EAC_CivilianFactions();
   Build();
   string text = "civilian_factions=" + s_Keys.Count().ToString();
   for (int i = 0; i < s_Keys.Count(); i++) text += " " + i.ToString() + ":" + s_Keys[i];
@@ -116,4 +121,15 @@ class EAC_CivilianFactions
   if (vehiclesFrom) theme.Vehicles = vehiclesFrom.Vehicles;
   return theme;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_CivilianFactions()
+	{
+		if (!s_Keys)
+			s_Keys = new array<string>();
+		if (!s_Names)
+			s_Names = new array<string>();
+	}
 }

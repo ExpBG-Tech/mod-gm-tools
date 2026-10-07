@@ -16,11 +16,12 @@ class EAC_ScenePropSample
 class EAC_SceneVocabulary
 {
  static const int MAX_MEMO = 512;
- protected static ref map<string, int> s_Memo = new map<string, int>();
+ protected static ref map<string, int> s_Memo;
  protected static BaseWorld s_World;
 
  static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_SceneVocabulary();
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
   s_Memo.Clear(); s_World = world;
@@ -162,6 +163,7 @@ class EAC_SceneVocabulary
  // trace classification, which is safe; they are never guessed at.
  static int Classify(ResourceName resource)
  {
+		EXPBG_LazyStatics_EAC_SceneVocabulary();
   CheckWorld();
   string path = resource;
   if (path == "") return 0;
@@ -244,4 +246,13 @@ class EAC_SceneVocabulary
   EAC_RoutineAnchors.Face(facing.Normalized(), position, transform);
   return true;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_SceneVocabulary()
+	{
+		if (!s_Memo)
+			s_Memo = new map<string, int>();
+	}
 }

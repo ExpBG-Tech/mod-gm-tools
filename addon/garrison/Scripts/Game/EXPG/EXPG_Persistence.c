@@ -318,7 +318,7 @@ class EXPG_GarrisonNotice
 {
  protected static string s_Message;
  protected static float s_Until;
- protected static ref array<int> s_Told = {};
+ protected static ref array<int> s_Told;
  protected static BaseWorld s_World;
 
  protected static float Now()
@@ -329,6 +329,7 @@ class EXPG_GarrisonNotice
 
  static void Post(string message)
  {
+		EXPBG_LazyStatics_EXPG_GarrisonNotice();
   if (!Replication.IsServer() || message.IsEmpty() || !GetGame()) { return; }
   Print("[EXPG LOAD NOTICE] " + message);
   s_World = GetGame().GetWorld();
@@ -341,6 +342,7 @@ class EXPG_GarrisonNotice
  // Server; cheap when nothing is pending. Called by the garrison pump.
  static void Deliver()
  {
+		EXPBG_LazyStatics_EXPG_GarrisonNotice();
   if (s_Message.IsEmpty() || !GetGame()) { return; }
   if (s_World != GetGame().GetWorld() || Now() > s_Until)
   {
@@ -361,6 +363,15 @@ class EXPG_GarrisonNotice
    s_Told.Insert(playerId);
   }
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EXPG_GarrisonNotice()
+	{
+		if (!s_Told)
+			s_Told = new array<int>();
+	}
 }
 
 modded class SCR_EditorManagerEntity

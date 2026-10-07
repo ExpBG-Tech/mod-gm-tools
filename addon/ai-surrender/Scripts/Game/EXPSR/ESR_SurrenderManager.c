@@ -178,18 +178,20 @@ class ESR_SurrenderManager
  protected static bool s_bQueued;
  protected static bool s_bUpkeep;
  protected static int s_iCommanderSerial;
- protected static ref array<SCR_AIGroup> s_aQueue = {};
- protected static ref array<ref ESR_SquadRecord> s_aSquads = {};
- protected static ref array<ref ESR_Prisoner> s_aPrisoners = {};
- protected static ref array<ref ESR_Commander> s_aCommanders = {};
+ protected static ref array<SCR_AIGroup> s_aQueue;
+ protected static ref array<ref ESR_SquadRecord> s_aSquads;
+ protected static ref array<ref ESR_Prisoner> s_aPrisoners;
+ protected static ref array<ref ESR_Commander> s_aCommanders;
 
  //------------------------------------------------------------------------------------------------
  // State and switches
  //------------------------------------------------------------------------------------------------
  static bool IsListening() { return s_bListening; }
  // Server-side hooks run while new surrenders are possible or prisoners need upkeep.
- static bool IsWatching() { return s_bListening || !s_aPrisoners.IsEmpty(); }
- static int PrisonerCount() { return s_aPrisoners.Count(); }
+ static bool IsWatching() {
+		EXPBG_LazyStatics_ESR_SurrenderManager(); return s_bListening || !s_aPrisoners.IsEmpty(); }
+ static int PrisonerCount() {
+		EXPBG_LazyStatics_ESR_SurrenderManager(); return s_aPrisoners.Count(); }
 
  static void Trace(string text)
  {
@@ -217,6 +219,7 @@ class ESR_SurrenderManager
  // prisoners of this session are kept.
  static void OnFirstModule()
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!GetGame()) return;
   ScriptCallQueue queue = GetGame().GetCallqueue();
   queue.Remove(ESR_SurrenderManager.ProcessQueue);
@@ -254,6 +257,7 @@ class ESR_SurrenderManager
 
  static ESR_Prisoner FindPrisoner(IEntity entity)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!entity) return null;
   foreach (ESR_Prisoner prisoner : s_aPrisoners)
   {
@@ -264,6 +268,7 @@ class ESR_SurrenderManager
 
  static ESR_Prisoner FindByPoint(ESR_InterrogationPoint point)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!point) return null;
   foreach (ESR_Prisoner prisoner : s_aPrisoners)
   {
@@ -317,6 +322,7 @@ class ESR_SurrenderManager
 
  protected static ESR_SquadRecord Squad(SCR_AIGroup group, bool create)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   for (int i = s_aSquads.Count() - 1; i >= 0; i--)
   {
    ESR_SquadRecord existing = s_aSquads[i];
@@ -336,6 +342,7 @@ class ESR_SurrenderManager
 
  protected static void Queue(SCR_AIGroup group)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!s_aQueue.Contains(group)) s_aQueue.Insert(group);
   ScheduleQueue();
  }
@@ -349,6 +356,7 @@ class ESR_SurrenderManager
 
  protected static void ProcessQueue()
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   s_bQueued = false;
   int processed;
   while (!s_aQueue.IsEmpty() && processed < GROUPS_PER_PASS)
@@ -363,6 +371,7 @@ class ESR_SurrenderManager
 
  protected static void Evaluate(SCR_AIGroup group)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!s_bListening || !IsCandidateSquad(group)) return;
   array<AIAgent> agents = {};
   int total = group.GetAgents(agents);
@@ -480,6 +489,7 @@ class ESR_SurrenderManager
  // "must carry" setting is on.
  static bool StartGrenade(SCR_ChimeraCharacter character, SCR_AIGroup group)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!Replication.IsServer() || !character || FindPrisoner(character) || FindCommander(character)) return false;
   PruneCommanders();
   if (s_aCommanders.Count() >= MAX_COMMANDERS) return false;
@@ -705,6 +715,7 @@ class ESR_SurrenderManager
  // asleep in a cache gets his AI back.
  protected static void EndCommander(ESR_Commander commander, string reason, bool wake)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!commander) return;
   s_aCommanders.RemoveItem(commander);
   commander.Ending = reason;
@@ -720,6 +731,7 @@ class ESR_SurrenderManager
  // Records whose leader is gone or that outlived every timer (a world change).
  protected static void PruneCommanders()
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   float now = Now();
   for (int i = s_aCommanders.Count() - 1; i >= 0; i--)
   {
@@ -730,6 +742,7 @@ class ESR_SurrenderManager
 
  static ESR_Commander FindCommander(IEntity entity)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!entity) return null;
   foreach (ESR_Commander commander : s_aCommanders)
   {
@@ -740,6 +753,7 @@ class ESR_SurrenderManager
 
  static ESR_Commander FindCommanderById(int id)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   foreach (ESR_Commander commander : s_aCommanders)
   {
    if (commander && commander.Id == id) return commander;
@@ -750,11 +764,13 @@ class ESR_SurrenderManager
  // Test and diagnostics access.
  static int CommanderCount()
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   return s_aCommanders.Count();
  }
 
  static ESR_Commander GetCommanderAt(int index)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!s_aCommanders.IsIndexValid(index)) return null;
   return s_aCommanders[index];
  }
@@ -825,6 +841,7 @@ class ESR_SurrenderManager
  //------------------------------------------------------------------------------------------------
  static bool Surrender(SCR_ChimeraCharacter character, SCR_AIGroup group)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!Replication.IsServer() || !character || FindPrisoner(character) || FindCommander(character) || s_aPrisoners.Count() >= MAX_PRISONERS) return false;
   SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(character.GetCharacterController());
   AIControlComponent control = AIControlComponent.Cast(character.FindComponent(AIControlComponent));
@@ -1142,12 +1159,14 @@ class ESR_SurrenderManager
 
  static void Release(ESR_Prisoner prisoner, string reason)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   int index = s_aPrisoners.Find(prisoner);
   if (index >= 0) ReleaseAt(index, reason);
  }
 
  protected static void ReleaseAt(int index, string reason)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!s_aPrisoners.IsIndexValid(index)) return;
   ESR_Prisoner prisoner = s_aPrisoners[index];
   DeletePoint(prisoner);
@@ -1158,6 +1177,7 @@ class ESR_SurrenderManager
 
  protected static void StartUpkeep()
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (s_bUpkeep || s_aPrisoners.IsEmpty() || !GetGame()) return;
   s_bUpkeep = true;
   GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.Upkeep, UPKEEP_MS, false);
@@ -1166,6 +1186,7 @@ class ESR_SurrenderManager
  // Bounded: at most MAX_PRISONERS entries, constant work each.
  protected static void Upkeep()
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   s_bUpkeep = false;
   for (int i = s_aPrisoners.Count() - 1; i >= 0; i--)
   {
@@ -1249,6 +1270,7 @@ class ESR_SurrenderManager
  // Test and diagnostics access to the last interrogation state of a prisoner.
  static ESR_Prisoner GetPrisonerAt(int index)
  {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
   if (!s_aPrisoners.IsIndexValid(index)) return null;
   return s_aPrisoners[index];
  }
@@ -1408,6 +1430,21 @@ class ESR_SurrenderManager
   markers.OnAskRemoveStaticMarker(markerId);
   Trace(string.Format("intel marker %1 expired", markerId));
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_ESR_SurrenderManager()
+	{
+		if (!s_aQueue)
+			s_aQueue = new array<SCR_AIGroup>();
+		if (!s_aSquads)
+			s_aSquads = new array<ref ESR_SquadRecord>();
+		if (!s_aPrisoners)
+			s_aPrisoners = new array<ref ESR_Prisoner>();
+		if (!s_aCommanders)
+			s_aCommanders = new array<ref ESR_Commander>();
+	}
 }
 
 // Finds the squad a prisoner can give away: the nearest living squad of his side (or of a

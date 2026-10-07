@@ -37,9 +37,9 @@ class ETW_WeatherRunner
  protected static bool s_bCloudChange;
  protected static bool s_bCloudPending;
  protected static ref WeatherStateTransitionNode s_CloudNode;
- protected static ref array<int> s_aMode = {0, 0, 0, 0};
- protected static ref array<float> s_aFrom = {0, 0, 0, 0};
- protected static ref array<float> s_aTo = {0, 0, 0, 0};
+ protected static ref array<int> s_aMode;
+ protected static ref array<float> s_aFrom;
+ protected static ref array<float> s_aTo;
  protected static int s_iPlayer;
  protected static string s_sSource;
  protected static string s_sStatus = STATUS_IDLE;
@@ -108,6 +108,7 @@ class ETW_WeatherRunner
  //------------------------------------------------------------------------------------------------
  static int GetChannelMode(int channel)
  {
+		EXPBG_LazyStatics_ETW_WeatherRunner();
   if (!s_aMode.IsIndexValid(channel))
    return MODE_NONE;
   return s_aMode[channel];
@@ -222,6 +223,7 @@ class ETW_WeatherRunner
  // replaced was moving that value, which is then handed back like -1.
  static bool Start(string requested, int minutes, notnull array<float> targets, bool hold, int playerId, string source)
  {
+		EXPBG_LazyStatics_ETW_WeatherRunner();
   if (!Replication.IsServer())
    return false;
   TimeAndWeatherManagerEntity manager = Manager();
@@ -387,6 +389,7 @@ class ETW_WeatherRunner
  // mission load): stop and hand back the values this transition overrode.
  static void OnForeignWeather()
  {
+		EXPBG_LazyStatics_ETW_WeatherRunner();
   if (!IsRunning())
    return;
   for (int c = 0; c < CHANNELS; c++)
@@ -404,6 +407,7 @@ class ETW_WeatherRunner
  // Scenario Properties wind: that wind wins; the transition leaves wind alone from now on.
  static void OnForeignWind()
  {
+		EXPBG_LazyStatics_ETW_WeatherRunner();
   if (!IsRunning())
    return;
   if (s_aMode[CH_WIND_SPEED] == MODE_NONE && s_aMode[CH_WIND_DIR] == MODE_NONE)
@@ -416,6 +420,7 @@ class ETW_WeatherRunner
  //------------------------------------------------------------------------------------------------
  protected static void Tick()
  {
+		EXPBG_LazyStatics_ETW_WeatherRunner();
   if (!IsRunning())
   {
    GetGame().GetCallqueue().Remove(ETW_WeatherRunner.Tick);
@@ -460,6 +465,7 @@ class ETW_WeatherRunner
  //------------------------------------------------------------------------------------------------
  protected static void Complete(string reason)
  {
+		EXPBG_LazyStatics_ETW_WeatherRunner();
   TimeAndWeatherManagerEntity manager = s_Manager;
   BaseWeatherStateTransitionManager transitions;
   if (manager)
@@ -533,6 +539,7 @@ class ETW_WeatherRunner
  //------------------------------------------------------------------------------------------------
  protected static string Describe(int channel)
  {
+		EXPBG_LazyStatics_ETW_WeatherRunner();
   if (s_aMode[channel] == MODE_NONE)
    return "weather";
   if (s_aMode[channel] == MODE_RELEASE)
@@ -818,4 +825,17 @@ class ETW_WeatherRunner
   else
    manager.SetWindDirectionOverride(false);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_ETW_WeatherRunner()
+	{
+		if (!s_aMode)
+			s_aMode = {0, 0, 0, 0};
+		if (!s_aFrom)
+			s_aFrom = {0, 0, 0, 0};
+		if (!s_aTo)
+			s_aTo = {0, 0, 0, 0};
+	}
 }

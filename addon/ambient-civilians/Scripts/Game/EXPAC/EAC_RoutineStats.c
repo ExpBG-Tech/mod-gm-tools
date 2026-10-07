@@ -114,14 +114,14 @@ class EAC_RoutineStats
  // routines reached stop k+1, bounded by the module's own 1..4 clamp.
  static const int STOP_SLOTS = 4;
  protected static BaseWorld s_World;
- protected static ref array<int> s_Stops = {};
+ protected static ref array<int> s_Stops;
  protected static int s_Routines, s_RoutinesPlanned, s_PlannedStops, s_Legs, s_MultiStop, s_MaxStops;
  protected static int s_StopTravel, s_StopTravelCount, s_MaxStopTravel, s_RoutineSeconds, s_RoutineTravel, s_LegDeferred;
  protected static int s_IdleSpans, s_IdleSeconds, s_MaxIdleSeconds;
- protected static ref array<int> s_Attempts = {};
- protected static ref array<int> s_Accepts = {};
- protected static ref array<int> s_Wanted = {};
- protected static ref array<float> s_NextTrace = {};
+ protected static ref array<int> s_Attempts;
+ protected static ref array<int> s_Accepts;
+ protected static ref array<int> s_Wanted;
+ protected static ref array<float> s_NextTrace;
  protected static int s_IndoorAdmitted, s_IndoorRejected, s_Emerged, s_EmergeFailed, s_Fallback, s_IdleRecovered;
  // indoor_spawn counts CANDIDATES that passed the footprint/roof test, which is
  // how retail-1 read 2887/3248 with not one resident ever placed indoors. These
@@ -133,29 +133,29 @@ class EAC_RoutineStats
  // table_joined has never once been non-zero across six campaigns. Which gate
  // rejects the join was guessed at twice and both guesses were wrong, so count
  // the actual reason instead.
- protected static ref array<int> s_Invite = {};
- protected static ref array<int> s_Join = {};
- protected static ref array<int> s_Seat = {};
- protected static ref array<int> s_Acq = {};
- protected static ref array<int> s_VoiceReject = {};
- protected static ref array<int> s_Approach = {};
- protected static ref array<int> s_Walk = {};
- protected static ref array<int> s_MoveFailure = {};
- protected static ref array<int> s_Abort = {};
- protected static ref array<int> s_BeginLeg = {};
- protected static ref array<int> s_ClearDest = {};
- protected static ref array<int> s_ClearSample = {};
+ protected static ref array<int> s_Invite;
+ protected static ref array<int> s_Join;
+ protected static ref array<int> s_Seat;
+ protected static ref array<int> s_Acq;
+ protected static ref array<int> s_VoiceReject;
+ protected static ref array<int> s_Approach;
+ protected static ref array<int> s_Walk;
+ protected static ref array<int> s_MoveFailure;
+ protected static ref array<int> s_Abort;
+ protected static ref array<int> s_BeginLeg;
+ protected static ref array<int> s_ClearDest;
+ protected static ref array<int> s_ClearSample;
  // Cover-pose ladder (campaign 127). retry: the four-request batch was renewed
  // because the character was still busy. timeout: the pose never applied inside
  // COVER_WINDOW_SECONDS and the response proceeded without it.
  protected static int s_CoverTimeouts, s_CoverRetries;
- protected static ref array<int> s_SeatV = {};
- protected static ref array<int> s_AceProbe = {};
+ protected static ref array<int> s_SeatV;
+ protected static ref array<int> s_AceProbe;
  // The ambient cough has never once been confirmed audible. Separate the three
  // things that were previously indistinguishable: the interval firing, a speaker
  // actually being found and broadcast, and which event was chosen.
  protected static int s_VoiceRequested, s_VoiceIssued;
- protected static ref array<int> s_Voice = {};
+ protected static ref array<int> s_Voice;
  // Prewarm design 4.1 and 4.2 prerequisites. Nothing here changes behaviour;
  // these are the numbers that have to exist before the LOD pin can be shortened
  // or the walker's attempt ladder touched. Land the counters, run a campaign,
@@ -210,6 +210,7 @@ class EAC_RoutineStats
 
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   BaseWorld world = GetGame().GetWorld();
   // s_Stops must be in this guard. Leaving a counter array out of it resizes the
   // array on every call and silently resets every counter mid-world - this
@@ -290,6 +291,7 @@ class EAC_RoutineStats
 
  static void RecordAnchor(EAC_EAnchorKind kind, bool accepted)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Attempts, kind);
@@ -307,6 +309,7 @@ class EAC_RoutineStats
  // never once been accepted. One line per kind per ten seconds, server only.
  static void TraceRejection(EAC_EAnchorKind kind, string reason, float now)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   // Log hygiene (readiness plan S1). This class holds no module, so the level
@@ -327,6 +330,7 @@ class EAC_RoutineStats
 
  static void RecordWanted(EAC_EAnchorKind kind)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Wanted, kind);
@@ -403,6 +407,7 @@ class EAC_RoutineStats
  // acquisitions, two approach rejections, zero information about which line.
  static void RecordApproach(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Approach, reason);
@@ -410,6 +415,7 @@ class EAC_RoutineStats
 
  static string DescribeApproach()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "approach range=" + s_Approach[APR_RANGE].ToString();
   result += " anchor=" + s_Approach[APR_ANCHOR].ToString();
@@ -471,6 +477,7 @@ class EAC_RoutineStats
  // One refusal reason from EAC_PedestrianWalk.Step, or WLK_OK on acceptance.
  static void RecordWalk(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Walk, reason);
@@ -492,6 +499,7 @@ class EAC_RoutineStats
  // refuses anything - it only says what the removed box would have cost.
  static void RecordClearance(bool destination, int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   if (destination) { Bump(s_ClearDest, reason); return; }
@@ -523,6 +531,7 @@ class EAC_RoutineStats
 
  static int GetWalk(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (reason < 0 || reason >= WLK_REASONS) return 0;
   return s_Walk[reason];
@@ -531,6 +540,7 @@ class EAC_RoutineStats
  // One '+=' per term, same shape as DescribeApproach.
  static string DescribeWalk()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "walk tile=" + s_Walk[WLK_TILE].ToString();
   result += " nav=" + s_Walk[WLK_NAV].ToString();
@@ -559,6 +569,7 @@ class EAC_RoutineStats
 
  static void RecordMoveFailure(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_MoveFailure, reason);
@@ -566,6 +577,7 @@ class EAC_RoutineStats
 
  static int GetMoveFailure(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (reason < 0 || reason >= MOVE_REASONS) return 0;
   return s_MoveFailure[reason];
@@ -574,6 +586,7 @@ class EAC_RoutineStats
  // One '+=' per term, same shape as DescribeWalk.
  static string DescribeMoveFailures()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "move_failed unknown=" + s_MoveFailure[MOVE_UNKNOWN].ToString();
   result += " defused=" + s_MoveFailure[MOVE_DEFUSED].ToString();
@@ -588,6 +601,7 @@ class EAC_RoutineStats
  // One approach abort from EAC_CivilianActivity.Monitor, by first cause.
  static void RecordAbort(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Abort, reason);
@@ -595,6 +609,7 @@ class EAC_RoutineStats
 
  static int GetAbort(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (reason < 0 || reason >= ABORT_REASONS) return 0;
   return s_Abort[reason];
@@ -603,6 +618,7 @@ class EAC_RoutineStats
  // One '+=' per term, same shape as DescribeMoveFailures.
  static string DescribeAborts()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "aborts danger=" + s_Abort[ABORT_DANGER].ToString();
   result += " foreign_wp=" + s_Abort[ABORT_FOREIGN_WP].ToString();
@@ -619,6 +635,7 @@ class EAC_RoutineStats
  // retries, never a rest: see EAC_PedestrianSpawner.TryActivity.
  static void RecordBeginLegGate(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_BeginLeg, reason);
@@ -626,6 +643,7 @@ class EAC_RoutineStats
 
  static int GetBeginLegGate(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (reason < 0 || reason >= BLG_REASONS) return 0;
   return s_BeginLeg[reason];
@@ -741,6 +759,7 @@ class EAC_RoutineStats
 
  static void RecordVoiceReject(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_VoiceReject, reason);
@@ -748,6 +767,7 @@ class EAC_RoutineStats
 
  static void RecordAcquire(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Acq, reason);
@@ -755,6 +775,7 @@ class EAC_RoutineStats
 
  static string DescribeAcquire()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "acq nopath=" + s_Acq[ACQ_NOPATH].ToString();
   result += " homehas=" + s_Acq[ACQ_HOMEHAS].ToString();
@@ -785,6 +806,7 @@ class EAC_RoutineStats
  // whether a client resolved the name; only the client probe can say that.
  static void RecordVoiceIssued(int eventIndex)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   if (s_VoiceIssued < LIMIT) s_VoiceIssued++;
@@ -793,6 +815,7 @@ class EAC_RoutineStats
 
  static string DescribeVoice()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "voice requested=" + s_VoiceRequested.ToString();
   result += " issued=" + s_VoiceIssued.ToString();
@@ -816,6 +839,7 @@ class EAC_RoutineStats
 
  static void RecordSeatGate(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Seat, reason);
@@ -823,6 +847,7 @@ class EAC_RoutineStats
 
  static string DescribeSeats()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "seatgate acquired=" + s_Seat[SEAT_ACQUIRED].ToString();
   result += " toonear=" + s_Seat[SEAT_TOONEAR].ToString();
@@ -842,6 +867,7 @@ class EAC_RoutineStats
  // authored pose at all, which settles the route question outright.
  static void RecordVanillaSeat(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_SeatV, reason);
@@ -849,6 +875,7 @@ class EAC_RoutineStats
 
  static int GetVanillaSeat(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (reason < 0 || reason >= SEATV_REASONS) return 0;
   return s_SeatV[reason];
@@ -856,6 +883,7 @@ class EAC_RoutineStats
 
  static string DescribeVanillaSeats()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "seatv start=" + s_SeatV[SEATV_START].ToString();
   result += " noagent=" + s_SeatV[SEATV_NOAGENT].ToString();
@@ -881,6 +909,7 @@ class EAC_RoutineStats
  // candidate simply does not exist as far as the catalog is concerned.
  static void RecordAceProbe(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_AceProbe, reason);
@@ -888,6 +917,7 @@ class EAC_RoutineStats
 
  static int GetAceProbe(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (reason < 0 || reason >= ACE_REASONS) return 0;
   return s_AceProbe[reason];
@@ -898,6 +928,7 @@ class EAC_RoutineStats
  // ACE is loaded but every pose failed a gate, and the named reason says which.
  static string DescribeAceProbe()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "ace probed=" + s_AceProbe[ACE_PROBED].ToString();
   result += " nosample=" + s_AceProbe[ACE_NOSAMPLE].ToString();
@@ -914,6 +945,7 @@ class EAC_RoutineStats
 
  static void RecordInvite(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Invite, reason);
@@ -921,6 +953,7 @@ class EAC_RoutineStats
 
  static void RecordJoinGate(int reason)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   Bump(s_Join, reason);
@@ -928,6 +961,7 @@ class EAC_RoutineStats
 
  static string DescribeJoins()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "invite none=" + s_Invite[INVITE_NONE].ToString();
   result += " stale=" + s_Invite[INVITE_STALE].ToString();
@@ -991,6 +1025,7 @@ class EAC_RoutineStats
  // discards per-tick jumps over three metres as teleports.
  static void RecordStop(int leg, float travel)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   if (!Replication.IsServer()) return;
   CheckWorld();
   if (s_Legs < LIMIT) s_Legs++;
@@ -1051,6 +1086,7 @@ class EAC_RoutineStats
  // routine chained on after its first.
  static int GetFirstStops()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (s_Stops.IsEmpty()) return 0;
   return s_Stops[0];
@@ -1074,6 +1110,7 @@ class EAC_RoutineStats
  // "Formula too complex".
  static string DescribeRoutines()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "routines=" + s_Routines.ToString();
   result += "/" + s_RoutinesPlanned.ToString();
@@ -1137,6 +1174,7 @@ class EAC_RoutineStats
  // reads past the array rather than returning nothing (audit nit).
  static int GetAttempts(EAC_EAnchorKind kind)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (kind < 0 || kind >= EAC_RoutineAnchors.KINDS) return 0;
   return s_Attempts[kind];
@@ -1144,6 +1182,7 @@ class EAC_RoutineStats
 
  static int GetAccepts(EAC_EAnchorKind kind)
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   if (kind < 0 || kind >= EAC_RoutineAnchors.KINDS) return 0;
   return s_Accepts[kind];
@@ -1153,6 +1192,7 @@ class EAC_RoutineStats
  // towns lack that geometry and those routine slots are degrading to open ground.
  static string Describe()
  {
+		EXPBG_LazyStatics_EAC_RoutineStats();
   CheckWorld();
   string result = "anchors";
   for (int kind = 0; kind < EAC_RoutineAnchors.KINDS; kind++)
@@ -1194,4 +1234,51 @@ class EAC_RoutineStats
   result += DescribeAceProbe();
   return result;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_RoutineStats()
+	{
+		if (!s_Stops)
+			s_Stops = new array<int>();
+		if (!s_Attempts)
+			s_Attempts = new array<int>();
+		if (!s_Accepts)
+			s_Accepts = new array<int>();
+		if (!s_Wanted)
+			s_Wanted = new array<int>();
+		if (!s_NextTrace)
+			s_NextTrace = new array<float>();
+		if (!s_Invite)
+			s_Invite = new array<int>();
+		if (!s_Join)
+			s_Join = new array<int>();
+		if (!s_Seat)
+			s_Seat = new array<int>();
+		if (!s_Acq)
+			s_Acq = new array<int>();
+		if (!s_VoiceReject)
+			s_VoiceReject = new array<int>();
+		if (!s_Approach)
+			s_Approach = new array<int>();
+		if (!s_Walk)
+			s_Walk = new array<int>();
+		if (!s_MoveFailure)
+			s_MoveFailure = new array<int>();
+		if (!s_Abort)
+			s_Abort = new array<int>();
+		if (!s_BeginLeg)
+			s_BeginLeg = new array<int>();
+		if (!s_ClearDest)
+			s_ClearDest = new array<int>();
+		if (!s_ClearSample)
+			s_ClearSample = new array<int>();
+		if (!s_SeatV)
+			s_SeatV = new array<int>();
+		if (!s_AceProbe)
+			s_AceProbe = new array<int>();
+		if (!s_Voice)
+			s_Voice = new array<int>();
+	}
 }

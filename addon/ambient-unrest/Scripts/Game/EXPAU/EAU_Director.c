@@ -36,13 +36,13 @@ class EAU_Director
  static const int FACES_PER_TICK = 3;
  static const float PLAYER_REFRESH_SECONDS = 1;
  static const int MAX_ORPHANS = 512;
- protected static ref array<EAU_ProtestZone> s_Zones = {};
+ protected static ref array<EAU_ProtestZone> s_Zones;
  // Entities of deleted zones, removed a few per tick.
- protected static ref array<IEntity> s_Orphans = {};
- protected static ref EAU_Budget s_Budget = new EAU_Budget();
+ protected static ref array<IEntity> s_Orphans;
+ protected static ref EAU_Budget s_Budget;
  // Living player characters (plus fixture observers), refreshed at most once a second.
- protected static ref array<IEntity> s_Players = {};
- protected static ref array<IEntity> s_TestObservers = {};
+ protected static ref array<IEntity> s_Players;
+ protected static ref array<IEntity> s_TestObservers;
  protected static float s_NextPlayers;
  protected static BaseWorld s_World;
  protected static bool s_Scheduled;
@@ -55,6 +55,7 @@ class EAU_Director
  // Static records never outlive their world; the entities went with it.
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAU_Director();
   if (!GetGame()) return;
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
@@ -71,6 +72,7 @@ class EAU_Director
 
  static bool Register(EAU_ProtestZone zone)
  {
+		EXPBG_LazyStatics_EAU_Director();
   if (!zone || !GetGame() || !Replication.IsServer()) return false;
   CheckWorld();
   if (!s_World || zone.GetWorld() != s_World) return false;
@@ -91,6 +93,7 @@ class EAU_Director
 
  static void Unregister(EAU_ProtestZone zone, array<IEntity> leftovers)
  {
+		EXPBG_LazyStatics_EAU_Director();
   s_Zones.RemoveItem(zone);
   if (!GetGame() || !s_World || GetGame().GetWorld() != s_World || !leftovers) return;
   foreach (IEntity entity : leftovers)
@@ -117,6 +120,7 @@ class EAU_Director
 
  protected static void Compact()
  {
+		EXPBG_LazyStatics_EAU_Director();
   for (int i = s_Zones.Count() - 1; i >= 0; i--)
   {
    if (!s_Zones[i]) s_Zones.RemoveOrdered(i);
@@ -125,6 +129,7 @@ class EAU_Director
 
  protected static void Tick()
  {
+		EXPBG_LazyStatics_EAU_Director();
   if (!GetGame()) return;
   if (!s_World || GetGame().GetWorld() != s_World) { CheckWorld(); return; }
   Compact();
@@ -161,6 +166,7 @@ class EAU_Director
  // camera never wakes a crowd. Dead bodies do not count.
  static array<IEntity> Players(float now)
  {
+		EXPBG_LazyStatics_EAU_Director();
   if (now < s_NextPlayers) return s_Players;
   s_NextPlayers = now + PLAYER_REFRESH_SECONDS;
   s_Players.Clear();
@@ -203,6 +209,7 @@ class EAU_Director
  // module never calls it; null or an empty list removes them.
  static void SetTestObservers(array<IEntity> observers)
  {
+		EXPBG_LazyStatics_EAU_Director();
   s_TestObservers.Clear();
   if (observers)
   {
@@ -216,6 +223,7 @@ class EAU_Director
 
  static bool HasCrowdCapacity()
  {
+		EXPBG_LazyStatics_EAU_Director();
   int tracked;
   foreach (EAU_ProtestZone zone : s_Zones)
   {
@@ -237,6 +245,7 @@ class EAU_Director
 
  protected static void OnGameEnd()
  {
+		EXPBG_LazyStatics_EAU_Director();
   if (!GetGame() || !s_World || GetGame().GetWorld() != s_World) return;
   s_Ended = true;
   // The session is over: remove every crowd now instead of a few per tick.
@@ -267,6 +276,7 @@ class EAU_Director
 
  protected static void OnPersistenceBeforeSave(ESaveGameType saveType)
  {
+		EXPBG_LazyStatics_EAU_Director();
   if (!GetGame() || !s_World || GetGame().GetWorld() != s_World || !Replication.IsServer()) return;
   SCR_PersistenceSystem persistence = SCR_PersistenceSystem.GetByCurrentWorld();
   if (!persistence) return;
@@ -347,6 +357,7 @@ class EAU_Director
  // Unit Caching must never enroll, cache or regroup a protest crowd.
  static bool ReservesGroup(SCR_AIGroup group)
  {
+		EXPBG_LazyStatics_EAU_Director();
   if (!group || !Replication.IsServer()) return false;
   foreach (EAU_ProtestZone zone : s_Zones)
   {
@@ -355,7 +366,26 @@ class EAU_Director
   return s_Orphans.Contains(group);
  }
 
- static int GetZoneCount() { Compact(); return s_Zones.Count(); }
- static int GetOrphanCount() { return s_Orphans.Count(); }
+ static int GetZoneCount() {
+		EXPBG_LazyStatics_EAU_Director(); Compact(); return s_Zones.Count(); }
+ static int GetOrphanCount() {
+		EXPBG_LazyStatics_EAU_Director(); return s_Orphans.Count(); }
  static bool IsScheduled() { return s_Scheduled; }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAU_Director()
+	{
+		if (!s_Zones)
+			s_Zones = new array<EAU_ProtestZone>();
+		if (!s_Orphans)
+			s_Orphans = new array<IEntity>();
+		if (!s_Budget)
+			s_Budget = new EAU_Budget();
+		if (!s_Players)
+			s_Players = new array<IEntity>();
+		if (!s_TestObservers)
+			s_TestObservers = new array<IEntity>();
+	}
 }

@@ -46,21 +46,22 @@ class EGS_Manager
 	protected static int s_iEpoch;
 	protected static float s_fPendingUntil;
 	protected static float s_fNextPendingTry;
-	protected static ref array<AIAgent> s_aSweep = {};
-	protected static ref array<IEntity> s_aUnits = {};
-	protected static ref array<SCR_AIGroup> s_aGroups = {};
-	protected static ref array<ref EGS_GroupTimer> s_aTimers = {};
-	protected static ref array<SCR_AIGroup> s_aOverrideGroups = {};
-	protected static ref array<UUID> s_aPendingIds = {};
-	protected static ref array<int> s_aPendingRoe = {};
-	protected static ref array<SCR_ChimeraCharacter> s_aOverrideUnits = {};
-	protected static ref array<UUID> s_aPendingUnitIds = {};
-	protected static ref array<int> s_aPendingUnitRoe = {};
+	protected static ref array<AIAgent> s_aSweep;
+	protected static ref array<IEntity> s_aUnits;
+	protected static ref array<SCR_AIGroup> s_aGroups;
+	protected static ref array<ref EGS_GroupTimer> s_aTimers;
+	protected static ref array<SCR_AIGroup> s_aOverrideGroups;
+	protected static ref array<UUID> s_aPendingIds;
+	protected static ref array<int> s_aPendingRoe;
+	protected static ref array<SCR_ChimeraCharacter> s_aOverrideUnits;
+	protected static ref array<UUID> s_aPendingUnitIds;
+	protected static ref array<int> s_aPendingUnitRoe;
 
 	//------------------------------------------------------------------------------------------------
 	//! Reset all scheduler state when a new world starts.
 	protected static bool Ensure()
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!GetGame())
 			return false;
 
@@ -163,6 +164,7 @@ class EGS_Manager
 	//------------------------------------------------------------------------------------------------
 	static void QueueUnit(IEntity entity)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!entity || !Replication.IsServer() || !Ensure())
 			return;
 
@@ -175,6 +177,7 @@ class EGS_Manager
 	//------------------------------------------------------------------------------------------------
 	static void QueueGroup(SCR_AIGroup group)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!group || !Replication.IsServer() || !Ensure())
 			return;
 
@@ -206,6 +209,7 @@ class EGS_Manager
 	//! Logged once per group and change; repeating the current value logs nothing.
 	static void SetGroupRoe(SCR_AIGroup group, int value)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!group || !Replication.IsServer() || !Ensure() || !group.EGS_IsManaged())
 			return;
 
@@ -233,6 +237,7 @@ class EGS_Manager
 	//! or session load); applied to him at once. Logged once per soldier and change.
 	static void SetUnitRoe(SCR_ChimeraCharacter soldier, int value)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!soldier || !Replication.IsServer() || !Ensure())
 			return;
 
@@ -288,6 +293,7 @@ class EGS_Manager
 	//------------------------------------------------------------------------------------------------
 	static void ScheduleGroup(SCR_AIGroup group, int kind, float delaySeconds, int token)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!group || !Ensure())
 			return;
 
@@ -304,6 +310,7 @@ class EGS_Manager
 	//! One-shot timer of a soldier's own warning sequence (EGS_UnitRoe.c).
 	static void ScheduleUnit(SCR_AICombatComponent combat, int kind, float delaySeconds, int token)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!combat || !Ensure())
 			return;
 
@@ -360,6 +367,7 @@ class EGS_Manager
 	//------------------------------------------------------------------------------------------------
 	protected static void Tick()
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!Ensure() || !Replication.IsServer())
 		{
 			StopTick();
@@ -519,6 +527,7 @@ class EGS_Manager
 	//------------------------------------------------------------------------------------------------
 	protected static void ProcessTimers()
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (s_aTimers.IsEmpty())
 			return;
 
@@ -549,6 +558,7 @@ class EGS_Manager
 	//! Group overrides from a mission save bind to their groups by persistence id.
 	protected static void ProcessPendingOverrides()
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (s_aPendingIds.IsEmpty() && s_aPendingUnitIds.IsEmpty())
 			return;
 
@@ -602,6 +612,7 @@ class EGS_Manager
 	//! Mission save: per-group overrides keyed by persistence id.
 	static void ExportGroupOverrides(notnull array<UUID> outIds, notnull array<int> outRoe)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		outIds.Clear();
 		outRoe.Clear();
 		if (!Ensure())
@@ -632,6 +643,7 @@ class EGS_Manager
 	//------------------------------------------------------------------------------------------------
 	static void ImportGroupOverrides(notnull array<UUID> ids, notnull array<int> roe)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!Ensure())
 			return;
 
@@ -656,6 +668,7 @@ class EGS_Manager
 	//! Mission save: per-soldier overrides keyed by persistence id (bounded).
 	static void ExportUnitOverrides(notnull array<UUID> outIds, notnull array<int> outRoe)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		outIds.Clear();
 		outRoe.Clear();
 		if (!Ensure())
@@ -687,6 +700,7 @@ class EGS_Manager
 	//! Mission load: soldier overrides bind to their soldiers by persistence id (retried).
 	static void ImportUnitOverrides(notnull array<UUID> ids, notnull array<int> roe)
 	{
+		EXPBG_LazyStatics_EGS_Manager();
 		if (!Ensure())
 			return;
 
@@ -705,5 +719,32 @@ class EGS_Manager
 		s_fPendingUntil = Now() + PENDING_BIND_S;
 		s_fNextPendingTry = 0;
 		EnsureTick();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EGS_Manager()
+	{
+		if (!s_aSweep)
+			s_aSweep = new array<AIAgent>();
+		if (!s_aUnits)
+			s_aUnits = new array<IEntity>();
+		if (!s_aGroups)
+			s_aGroups = new array<SCR_AIGroup>();
+		if (!s_aTimers)
+			s_aTimers = new array<ref EGS_GroupTimer>();
+		if (!s_aOverrideGroups)
+			s_aOverrideGroups = new array<SCR_AIGroup>();
+		if (!s_aPendingIds)
+			s_aPendingIds = new array<UUID>();
+		if (!s_aPendingRoe)
+			s_aPendingRoe = new array<int>();
+		if (!s_aOverrideUnits)
+			s_aOverrideUnits = new array<SCR_ChimeraCharacter>();
+		if (!s_aPendingUnitIds)
+			s_aPendingUnitIds = new array<UUID>();
+		if (!s_aPendingUnitRoe)
+			s_aPendingUnitRoe = new array<int>();
 	}
 }

@@ -12,7 +12,7 @@ class EAC_DoorIndex
  protected static const int MAX_HOMES = 512;
  protected static const int MAX_DOORS = 8;
  protected static const float CHARACTER_WIDTH = 0.6;
- protected static ref map<IEntity, ref array<vector>> s_Doors = new map<IEntity, ref array<vector>>();
+ protected static ref map<IEntity, ref array<vector>> s_Doors;
  protected static BaseWorld s_World;
  protected static ref array<vector> s_Collected;
  protected static float s_NextQuery;
@@ -20,6 +20,7 @@ class EAC_DoorIndex
 
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_DoorIndex();
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
   // Drop previous mission records only; never touch entities belonging to it.
@@ -45,6 +46,7 @@ class EAC_DoorIndex
  // Null means "not known yet"; an empty array means "queried, none found".
  static array<vector> Get(IEntity home, float now)
  {
+		EXPBG_LazyStatics_EAC_DoorIndex();
   if (!home || !GetGame()) return null;
   CheckWorld();
   array<vector> cached = s_Doors.Get(home);
@@ -75,6 +77,7 @@ class EAC_DoorIndex
  // Filtered to this file's own radius so a neighbour's door is never attributed.
  static void Publish(IEntity home, array<vector> doors)
  {
+		EXPBG_LazyStatics_EAC_DoorIndex();
   if (!Replication.IsServer() || !home || !doors) return;
   CheckWorld();
   if (s_Doors.Contains(home) || s_Doors.Count() >= MAX_HOMES) return;
@@ -91,6 +94,7 @@ class EAC_DoorIndex
 
  static int Evict(array<IEntity> observers, int sleepDistance)
  {
+		EXPBG_LazyStatics_EAC_DoorIndex();
   CheckWorld();
   array<IEntity> stale = {};
   foreach (IEntity home, array<vector> doors : s_Doors)
@@ -112,5 +116,15 @@ class EAC_DoorIndex
 
  static int GetEvictedCount() { CheckWorld(); return s_Evicted; }
 
- static int CountKnownHomes() { CheckWorld(); return s_Doors.Count(); }
+ static int CountKnownHomes() {
+		EXPBG_LazyStatics_EAC_DoorIndex(); CheckWorld(); return s_Doors.Count(); }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_DoorIndex()
+	{
+		if (!s_Doors)
+			s_Doors = new map<IEntity, ref array<vector>>();
+	}
 }

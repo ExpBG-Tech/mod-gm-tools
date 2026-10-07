@@ -12,7 +12,7 @@ class EII_IntelComponent : ScriptComponent
  // Server: every intel item in play, for read-only lookups by other modules (AI Surrender
  // interrogation). Non-owning: an entry turns null when its item is deleted, and OnDelete
  // removes it. No item state is kept or changed here.
- protected static ref array<IEntity> s_aRegistered = {};
+ protected static ref array<IEntity> s_aRegistered;
 
  [Attribute("", UIWidgets.EditBox, "Intel title (up to 128 UTF-8 bytes)"), RplProp()]
  protected string m_sTitle;
@@ -61,6 +61,7 @@ class EII_IntelComponent : ScriptComponent
  // container or carried) into outItems and returns their count. Read-only.
  static int GetRegistered(notnull array<IEntity> outItems)
  {
+		EXPBG_LazyStatics_EII_IntelComponent();
   for (int i = s_aRegistered.Count() - 1; i >= 0; i--)
   {
    if (!s_aRegistered[i]) s_aRegistered.Remove(i);
@@ -104,6 +105,7 @@ class EII_IntelComponent : ScriptComponent
  }
  override void OnPostInit(IEntity owner)
  {
+		EXPBG_LazyStatics_EII_IntelComponent();
   super.OnPostInit(owner);
   if (!GetGame().InPlayMode()) return;
   m_Item = InventoryItemComponent.Cast(owner.FindComponent(InventoryItemComponent));
@@ -158,12 +160,22 @@ class EII_IntelComponent : ScriptComponent
  }
  override void OnDelete(IEntity owner)
  {
+		EXPBG_LazyStatics_EII_IntelComponent();
   if (m_Item) m_Item.m_OnParentSlotChangedInvoker.Remove(OnSlotChanged);
   if (s_aRegistered) s_aRegistered.RemoveItem(owner);
   Trace("deleted; local audio released");
   StopAudio();
   super.OnDelete(owner);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EII_IntelComponent()
+	{
+		if (!s_aRegistered)
+			s_aRegistered = new array<IEntity>();
+	}
 }
 
 [BaseContainerProps()]

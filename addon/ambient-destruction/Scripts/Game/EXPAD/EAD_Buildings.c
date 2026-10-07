@@ -33,20 +33,23 @@ class EAD_Buildings
  static const float COLLAPSE_INTERVAL = 3;
  protected static BaseWorld s_World;
  protected static float s_NextCollapse;
- protected static ref map<IEntity, ref EAD_BuildingChoice> s_Choices = new map<IEntity, ref EAD_BuildingChoice>();
- protected static ref array<ref EAD_BuildingChoice> s_History = {};
+ protected static ref map<IEntity, ref EAD_BuildingChoice> s_Choices;
+ protected static ref array<ref EAD_BuildingChoice> s_History;
  static void ResetLedger(BaseWorld world)
  {
+		EXPBG_LazyStatics_EAD_Buildings();
   s_World = world; s_Choices.Clear(); s_History.Clear(); s_NextCollapse = 0;
  }
  static void EnsureWorld(BaseWorld world) { if (s_World != world) ResetLedger(world); }
  static void GetLedger(array<ref EAD_BuildingChoice> choices)
  {
+		EXPBG_LazyStatics_EAD_Buildings();
   choices.Clear();
   foreach (EAD_BuildingChoice choice : s_History) choices.Insert(choice);
  }
  static void RestoreChoice(EAD_BuildingChoice choice, IEntity entity)
  {
+		EXPBG_LazyStatics_EAD_Buildings();
   choice.Entity = entity;
   if (entity) s_Choices.Set(entity, choice);
   s_History.Insert(choice);
@@ -203,6 +206,7 @@ class EAD_Buildings
  // Keep decorations away from a selected building even before its bounded scan reaches it.
  static bool MayCollapse(IEntity entity, EAD_Zone zone)
  {
+		EXPBG_LazyStatics_EAD_Buildings();
   if (zone.Enabled == 0 || zone.Destruction == 0 || !EAD_Policy.Near(entity.GetOrigin(), zone.GetOrigin(), zone.Radius, 0)) return false;
   EAD_BuildingChoice choice = s_Choices.Get(entity);
   if (choice) return choice.Selected && choice.TargetPhase == 0;
@@ -211,6 +215,7 @@ class EAD_Buildings
  }
  protected bool Visit(IEntity entity)
  {
+		EXPBG_LazyStatics_EAD_Buildings();
   m_Callbacks++;
   if (m_Callbacks >= MAX_CALLBACKS) { m_Aborted = true; return false; }
   if (!entity) return true;
@@ -350,4 +355,15 @@ class EAD_Buildings
   else if (m_Aborted) m_Unsupported++; // Minimum saturated tiles are incomplete.
   return true;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAD_Buildings()
+	{
+		if (!s_Choices)
+			s_Choices = new map<IEntity, ref EAD_BuildingChoice>();
+		if (!s_History)
+			s_History = new array<ref EAD_BuildingChoice>();
+	}
 }

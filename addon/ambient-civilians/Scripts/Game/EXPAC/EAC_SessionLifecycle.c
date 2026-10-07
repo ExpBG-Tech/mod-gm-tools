@@ -37,13 +37,13 @@ class EAC_SessionLifecycle
  // Parallel arrays: the editable this file flagged, whether StopTracking took it
  // out of vanilla persistence, and the Sync that last confirmed it. Weak
  // component references: a deleted entity leaves null, dropped on the next Sync.
- protected static ref array<SCR_EditableEntityComponent> s_Marked = {};
- protected static ref array<bool> s_Untracked = {};
- protected static ref array<int> s_Confirmed = {};
+ protected static ref array<SCR_EditableEntityComponent> s_Marked;
+ protected static ref array<bool> s_Untracked;
+ protected static ref array<int> s_Confirmed;
  // Whether this file set the NON_SERIALIZABLE flag. False for an entity that
  // already carried someone else's flag: it is still taken out of native
  // tracking (and handed back), but its flag is never cleared here.
- protected static ref array<bool> s_Flagged = {};
+ protected static ref array<bool> s_Flagged;
  protected static BaseWorld s_World;
  protected static float s_NextSync;
  protected static int s_SyncStamp;
@@ -75,6 +75,7 @@ class EAC_SessionLifecycle
  // Static records must not outlive their world; the entities went with it.
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_SessionLifecycle();
   if (!GetGame()) return;
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
@@ -117,6 +118,7 @@ class EAC_SessionLifecycle
  // Bounded by MAX_MARKED; no world scan.
  protected static void OnPersistenceBeforeSave(ESaveGameType saveType)
  {
+		EXPBG_LazyStatics_EAC_SessionLifecycle();
   if (!Replication.IsServer() || !GetGame()) return;
   CheckWorld();
   int before = s_Stopped;
@@ -147,6 +149,7 @@ class EAC_SessionLifecycle
  // Sync. Cheap when already flagged: one native array search.
  static void Keep(IEntity entity)
  {
+		EXPBG_LazyStatics_EAC_SessionLifecycle();
   if (!entity || !Replication.IsServer()) return;
   CheckWorld();
   HookSaves();
@@ -171,6 +174,7 @@ class EAC_SessionLifecycle
  // for loses the flag this file gave it.
  static void Sync(float now)
  {
+		EXPBG_LazyStatics_EAC_SessionLifecycle();
   if (!Replication.IsServer() || !GetGame()) return;
   CheckWorld();
   HookSaves();
@@ -194,6 +198,7 @@ class EAC_SessionLifecycle
 
  protected static void Release(int index)
  {
+		EXPBG_LazyStatics_EAC_SessionLifecycle();
   SCR_EditableEntityComponent editable = s_Marked[index];
   if (editable)
   {
@@ -208,9 +213,25 @@ class EAC_SessionLifecycle
   s_Marked.Remove(index); s_Untracked.Remove(index); s_Confirmed.Remove(index); s_Flagged.Remove(index);
  }
 
- static int GetMarkedCount() { CheckWorld(); return s_Marked.Count(); }
+ static int GetMarkedCount() {
+		EXPBG_LazyStatics_EAC_SessionLifecycle(); CheckWorld(); return s_Marked.Count(); }
  static int GetStoppedCount() { CheckWorld(); return s_Stopped; }
  static bool IsSaveHooked() { CheckWorld(); HookSaves(); return s_SaveHooked; }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_SessionLifecycle()
+	{
+		if (!s_Marked)
+			s_Marked = new array<SCR_EditableEntityComponent>();
+		if (!s_Untracked)
+			s_Untracked = new array<bool>();
+		if (!s_Confirmed)
+			s_Confirmed = new array<int>();
+		if (!s_Flagged)
+			s_Flagged = new array<bool>();
+	}
 }
 
 modded class SCR_EditableEntityComponent

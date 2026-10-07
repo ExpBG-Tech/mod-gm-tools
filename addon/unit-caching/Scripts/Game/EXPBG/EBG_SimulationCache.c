@@ -115,7 +115,7 @@ class EBG_SimulationPart
 modded class SCR_ChimeraCharacter
 {
  // Local owners with retained snapshots only; never a world/entity scan.
- protected static ref array<SCR_ChimeraCharacter> s_EBG_SimulationOwners = {};
+ protected static ref array<SCR_ChimeraCharacter> s_EBG_SimulationOwners;
  [RplProp(onRplName: "EBG_OnSimulationState"), NonSerialized()]
  protected bool m_EBG_SimulationCached;
  [NonSerialized()]
@@ -123,9 +123,11 @@ modded class SCR_ChimeraCharacter
  protected ref array<ref EBG_SimulationPart> m_EBG_SimulationParts;
  bool EBG_IsSimulationCached() { return m_EBG_SimulationCached; }
  bool EBG_HasSimulationInitialized() { return m_EBG_SimulationInitialized; }
- static void EBG_ClearSimulationOwnersForWorldCleanup() { s_EBG_SimulationOwners.Clear(); }
+ static void EBG_ClearSimulationOwnersForWorldCleanup() {
+		EXPBG_LazyStatics_SCR_ChimeraCharacter(); s_EBG_SimulationOwners.Clear(); }
  static SCR_ChimeraCharacter EBG_FindSimulationIdentityOwner(CharacterIdentityComponent identity)
  {
+		EXPBG_LazyStatics_SCR_ChimeraCharacter();
   if (!identity)
   {
    return null;
@@ -144,6 +146,7 @@ modded class SCR_ChimeraCharacter
  }
  static SCR_ChimeraCharacter EBG_FindSimulationPartOwner(IEntity entity)
  {
+		EXPBG_LazyStatics_SCR_ChimeraCharacter();
   if (!entity) return null;
   for (int i = s_EBG_SimulationOwners.Count() - 1; i >= 0; i--)
   {
@@ -207,6 +210,7 @@ modded class SCR_ChimeraCharacter
  }
  protected void EBG_CaptureSimulationTreeIndexed(IEntity entity, map<IEntity, bool> captured, bool first = false)
  {
+		EXPBG_LazyStatics_SCR_ChimeraCharacter();
   if (!m_EBG_SimulationInitialized || !entity || entity.IsDeleted() || EBG_SimulationHolder(entity) != this) return;
   if (!captured.Contains(entity))
   {
@@ -235,6 +239,7 @@ modded class SCR_ChimeraCharacter
  }
  protected void EBG_OnSimulationState()
  {
+		EXPBG_LazyStatics_SCR_ChimeraCharacter();
   if (!m_EBG_SimulationInitialized || !GetGame()) return;
   GetGame().GetCallqueue().Remove(EBG_FinishSimulationChange);
   if (m_EBG_SimulationCached)
@@ -255,6 +260,7 @@ modded class SCR_ChimeraCharacter
  }
  protected void EBG_ReconcileSimulationParts()
  {
+		EXPBG_LazyStatics_SCR_ChimeraCharacter();
   if (!m_EBG_SimulationParts) return;
   for (int i = m_EBG_SimulationParts.Count() - 1; i >= 0; i--)
   {
@@ -324,11 +330,21 @@ modded class SCR_ChimeraCharacter
  }
  void ~SCR_ChimeraCharacter()
  {
+		EXPBG_LazyStatics_SCR_ChimeraCharacter();
   s_EBG_SimulationOwners.RemoveItem(this);
   if (!GetGame()) return;
   GetGame().GetCallqueue().Remove(EBG_FinishSimulationChange);
   GetGame().GetCallqueue().Remove(EBG_OnSimulationState);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_SCR_ChimeraCharacter()
+	{
+		if (!s_EBG_SimulationOwners)
+			s_EBG_SimulationOwners = new array<SCR_ChimeraCharacter>();
+	}
 }
 
 modded class SCR_InventoryStorageManagerComponent

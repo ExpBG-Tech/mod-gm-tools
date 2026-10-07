@@ -231,11 +231,12 @@ class EXPG_SquadCatalog
 class EXPG_SquadPool
 {
  static const int MAX_FACTIONS = 24;
- protected static ref map<string, ref EXPG_SquadCatalog> s_Catalogs = new map<string, ref EXPG_SquadCatalog>();
+ protected static ref map<string, ref EXPG_SquadCatalog> s_Catalogs;
  protected static BaseWorld s_World;
 
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EXPG_SquadPool();
   if (!GetGame()) { return; }
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) { return; }
@@ -246,6 +247,7 @@ class EXPG_SquadPool
  // The faction's catalog for this world, started on first use.
  static EXPG_SquadCatalog Get(string factionId)
  {
+		EXPBG_LazyStatics_EXPG_SquadPool();
   CheckWorld();
   EXPG_SquadCatalog catalog;
   if (s_Catalogs.Find(factionId, catalog) && catalog)
@@ -311,6 +313,15 @@ class EXPG_SquadPool
   }
   return name;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EXPG_SquadPool()
+	{
+		if (!s_Catalogs)
+			s_Catalogs = new map<string, ref EXPG_SquadCatalog>();
+	}
 }
 
 // The faction's entity catalogs are built in its Init; reading them earlier logs an error.

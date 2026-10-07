@@ -14,9 +14,10 @@ class EBG_OptimizerControl
  static int ActingPlayer;
  protected static string s_LastReport;
  protected static string s_LastBlocked;
- protected static ref array<EBG_CacheZone> s_PreparedZones = {};
+ protected static ref array<EBG_CacheZone> s_PreparedZones;
  static void Reset()
  {
+		EXPBG_LazyStatics_EBG_OptimizerControl();
   Preparing = false; Disabling = false; State = 0; Pending = 0; Blocked = 0;
   EnabledZones = 0; DisabledZones = 0;
   Message = "No global operation"; s_LastReport = ""; s_LastBlocked = "";
@@ -47,6 +48,7 @@ class EBG_OptimizerControl
  }
  static void BeginPreparation()
  {
+		EXPBG_LazyStatics_EBG_OptimizerControl();
   Preparing = true; Disabling = false; State = 1;
   s_PreparedZones.Copy(EBG_CacheZone.Zones);
   Message = "Preparing all cache zones; do not save until Ready";
@@ -121,6 +123,7 @@ class EBG_OptimizerControl
  }
  static void Poll(EBG_CacheManager manager)
  {
+		EXPBG_LazyStatics_EBG_OptimizerControl();
   if (!Replication.IsServer() || !manager) return;
   EnabledZones = 0; DisabledZones = 0;
   foreach (EBG_CacheZone countedZone : EBG_CacheZone.Zones)
@@ -243,6 +246,15 @@ class EBG_OptimizerControl
    if (controller) controller.RefreshStatus();
   }
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EBG_OptimizerControl()
+	{
+		if (!s_PreparedZones)
+			s_PreparedZones = new array<EBG_CacheZone>();
+	}
 }
 
 [EntityEditorProps(category: "EXPBG/Optimizer", description: "Global controls for Optimizer cache zones only")]

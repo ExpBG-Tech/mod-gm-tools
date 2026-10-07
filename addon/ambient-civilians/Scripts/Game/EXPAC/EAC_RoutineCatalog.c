@@ -50,7 +50,7 @@ class EAC_RoutineCatalog
  // Runtime-detected slots are held apart from the authored ones, so the vanilla
  // catalog array is never rewritten and a world change can drop the optional
  // slots without rebuilding anything.
- protected static ref array<ref EAC_RoutineDefinition> s_Optional = {};
+ protected static ref array<ref EAC_RoutineDefinition> s_Optional;
  protected static BaseWorld s_OptionalWorld;
  protected static int s_OptionalSource = -1;
 
@@ -169,6 +169,7 @@ class EAC_RoutineCatalog
  // source count only moves once, when the probe first resolves.
  protected static void SyncOptional()
  {
+		EXPBG_LazyStatics_EAC_RoutineCatalog();
   BaseWorld world = GetGame().GetWorld();
   int source = EAC_AceAnimations.ValidCount();
   if (world == s_OptionalWorld && source == s_OptionalSource) return;
@@ -198,6 +199,7 @@ class EAC_RoutineCatalog
 
  static int Count()
  {
+		EXPBG_LazyStatics_EAC_RoutineCatalog();
   Catalog();
   return s_Entries.Count() + s_Optional.Count();
  }
@@ -205,13 +207,15 @@ class EAC_RoutineCatalog
  // How many of Count() are the authored vanilla slots. Stays 61 on every server.
  static int NativeCount() { Build(); return s_Entries.Count(); }
 
- static int OptionalCount() { Catalog(); return s_Optional.Count(); }
+ static int OptionalCount() {
+		EXPBG_LazyStatics_EAC_RoutineCatalog(); Catalog(); return s_Optional.Count(); }
 
  // Build() only, deliberately: the optional tail is resynchronised by Count() /
  // Catalog(), which every caller reaches first, so a per-element Get() in a
  // selection loop costs no extra world lookup.
  static EAC_RoutineDefinition Get(int index)
  {
+		EXPBG_LazyStatics_EAC_RoutineCatalog();
   Build();
   if (index < 0) return null;
   int authored = s_Entries.Count();
@@ -434,4 +438,13 @@ class EAC_RoutineCatalog
   }
   return Get(0);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_RoutineCatalog()
+	{
+		if (!s_Optional)
+			s_Optional = new array<ref EAC_RoutineDefinition>();
+	}
 }

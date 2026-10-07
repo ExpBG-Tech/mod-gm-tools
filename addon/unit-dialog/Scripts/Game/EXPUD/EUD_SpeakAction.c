@@ -8,7 +8,7 @@ class EUD_SpeakAction : ScriptedUserAction
  // Zero-duration actions re-perform while the key is held, and the broadcast
  // echoes to the performer; accept one perform per player per second per machine.
  static const int REPEAT_MS = 1000;
- protected static ref map<int, int> s_mEUD_LastPerform = new map<int, int>();
+ protected static ref map<int, int> s_mEUD_LastPerform;
 
  protected SCR_EditableCharacterComponent m_EUD_Unit;
 
@@ -44,6 +44,7 @@ class EUD_SpeakAction : ScriptedUserAction
 
  protected static bool Repeated(IEntity user)
  {
+		EXPBG_LazyStatics_EUD_SpeakAction();
   int player = GetGame().GetPlayerManager().GetPlayerIdFromControlledEntity(user);
   int now = System.GetTickCount();
   int last;
@@ -68,4 +69,13 @@ class EUD_SpeakAction : ScriptedUserAction
   if (authority) unit.EUD_PlayGesture();
   if (speaker) EUD_DialogWindow.Open(pOwnerEntity, unit);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EUD_SpeakAction()
+	{
+		if (!s_mEUD_LastPerform)
+			s_mEUD_LastPerform = new map<int, int>();
+	}
 }

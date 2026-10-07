@@ -8,13 +8,14 @@ class EAC_AutoExclusions
  static const int MAX_AREAS = 256;
  static const int MAX_ITEMS = 4096;
  protected static BaseWorld s_World;
- protected static ref array<vector> s_Centres = {};
- protected static ref array<float> s_Radii = {};
+ protected static ref array<vector> s_Centres;
+ protected static ref array<float> s_Radii;
  protected static bool s_Complete, s_Failed, s_WaitReported;
  protected static int s_Queries;
 
  static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_AutoExclusions();
   if (!GetGame()) return;
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
@@ -45,6 +46,7 @@ class EAC_AutoExclusions
 
  protected static void Add(vector centre, float radius)
  {
+		EXPBG_LazyStatics_EAC_AutoExclusions();
   // Only identical centres merge; nearby labels may cover distinct perimeters.
   for (int i = 0; i < s_Centres.Count(); i++)
   {
@@ -58,6 +60,7 @@ class EAC_AutoExclusions
 
  static void Prepare()
  {
+		EXPBG_LazyStatics_EAC_AutoExclusions();
   if (!GetGame() || !Replication.IsServer()) return;
   CheckWorld();
   if (!s_World || s_Complete) return;
@@ -107,12 +110,15 @@ class EAC_AutoExclusions
   PrintFormat("[EAC auto exclusions] ready areas=%1 descriptor_queries=%2 military_label_m=%3 airport_label_m=%4", s_Centres.Count(), s_Queries, MILITARY_RADIUS, AIRPORT_RADIUS);
  }
 
- static int GetCount() { return s_Centres.Count(); }
+ static int GetCount() {
+		EXPBG_LazyStatics_EAC_AutoExclusions(); return s_Centres.Count(); }
  static int GetQueryCount() { return s_Queries; }
- static bool AnyTransitBlocked() { return !IsReady() || !s_Centres.IsEmpty(); }
+ static bool AnyTransitBlocked() {
+		EXPBG_LazyStatics_EAC_AutoExclusions(); return !IsReady() || !s_Centres.IsEmpty(); }
 
  static bool IsPopulationAllowed(vector position)
  {
+		EXPBG_LazyStatics_EAC_AutoExclusions();
   if (!IsReady()) return false;
   // ponytail: linear in at most 256 fixed discs; use a grid only if profiled hot.
   for (int i = 0; i < s_Centres.Count(); i++)
@@ -122,6 +128,7 @@ class EAC_AutoExclusions
 
  static bool IsTransitAllowed(vector from, vector to)
  {
+		EXPBG_LazyStatics_EAC_AutoExclusions();
   if (!IsReady()) return false;
   for (int i = 0; i < s_Centres.Count(); i++)
    if (EAC_ExclusionZone.SegmentIntersectsDisc(from, to, s_Centres[i], s_Radii[i])) return false;
@@ -130,8 +137,20 @@ class EAC_AutoExclusions
 
  static string Describe()
  {
+		EXPBG_LazyStatics_EAC_AutoExclusions();
   if (s_Failed) return "auto exclusions FAILED (population blocked)";
   if (!IsReady()) return "auto exclusions preparing (population blocked)";
   return "auto exclusions ready areas=" + s_Centres.Count().ToString() + " queries=" + s_Queries.ToString();
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_AutoExclusions()
+	{
+		if (!s_Centres)
+			s_Centres = new array<vector>();
+		if (!s_Radii)
+			s_Radii = new array<float>();
+	}
 }

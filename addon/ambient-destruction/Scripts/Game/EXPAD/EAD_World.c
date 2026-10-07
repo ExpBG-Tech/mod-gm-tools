@@ -1,9 +1,9 @@
 // One call queue for every zone, on each machine. Props never schedule work.
 class EAD_World
 {
- protected static ref array<EAD_Zone> s_Zones = {};
- protected static ref array<int> s_Players = {};
- protected static ref array<IEntity> s_Observers = {};
+ protected static ref array<EAD_Zone> s_Zones;
+ protected static ref array<int> s_Players;
+ protected static ref array<IEntity> s_Observers;
  protected static BaseWorld s_World;
  protected static bool s_Scheduled;
  protected static float s_NextProximity, s_NextBuilding;
@@ -13,6 +13,7 @@ class EAD_World
  static const int MAX_LIVE = 1000;
  static void Register(EAD_Zone zone)
  {
+		EXPBG_LazyStatics_EAD_World();
   if (!zone || !GetGame()) return;
   if (s_World != zone.GetWorld())
   {
@@ -34,6 +35,7 @@ class EAD_World
  }
  static void Unregister(EAD_Zone zone)
  {
+		EXPBG_LazyStatics_EAD_World();
   s_Zones.RemoveItem(zone);
   if (s_Zones.IsEmpty() && GetGame())
   {
@@ -41,12 +43,15 @@ class EAD_World
    s_Scheduled = false;
   }
  }
- static int ZoneCount() { return s_Zones.Count(); }
- static void GetZones(array<EAD_Zone> zones) { zones.Copy(s_Zones); }
+ static int ZoneCount() {
+		EXPBG_LazyStatics_EAD_World(); return s_Zones.Count(); }
+ static void GetZones(array<EAD_Zone> zones) {
+		EXPBG_LazyStatics_EAD_World(); zones.Copy(s_Zones); }
  static int TickLastMs() { return s_TickLastMs; }
  static int TickPeakMs() { return s_TickPeakMs; }
  static bool WallMayCollapse(IEntity entity)
  {
+		EXPBG_LazyStatics_EAD_World();
   for (int depth = 0; entity && depth < 16; depth++)
   {
    if (EAD_Buildings.IsSupported(entity))
@@ -63,12 +68,14 @@ class EAD_World
  }
  static int LiveCount()
  {
+		EXPBG_LazyStatics_EAD_World();
   int count;
   foreach (EAD_Zone zone : s_Zones) { if (zone) count += zone.Live.Count(); }
   return count;
  }
  static bool Reserved(vector position, float extent, EAD_PropRecord companion = null)
  {
+		EXPBG_LazyStatics_EAD_World();
   foreach (EAD_Zone zone : s_Zones)
   {
    if (!zone || !EAD_Policy.Near(position, zone.GetOrigin(), zone.Radius, extent + 4)) continue;
@@ -83,6 +90,7 @@ class EAD_World
  }
  static void Tick()
  {
+		EXPBG_LazyStatics_EAD_World();
   if (!GetGame() || !s_World) return;
   for (int dead = s_Zones.Count() - 1; dead >= 0; dead--)
   {
@@ -153,4 +161,17 @@ class EAD_World
   s_TickLastMs = System.GetTickCount() - tickStarted;
   s_TickPeakMs = Math.Max(s_TickPeakMs, s_TickLastMs);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAD_World()
+	{
+		if (!s_Zones)
+			s_Zones = new array<EAD_Zone>();
+		if (!s_Players)
+			s_Players = new array<int>();
+		if (!s_Observers)
+			s_Observers = new array<IEntity>();
+	}
 }

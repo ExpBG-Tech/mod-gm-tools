@@ -83,10 +83,10 @@ class EAC_SceneIndex
  static const int MAX_BUCKET_RECORDS = 128;
 
  protected static BaseWorld s_World;
- protected static ref map<int, ref EAC_SceneRecord> s_Records = new map<int, ref EAC_SceneRecord>();
- protected static ref map<string, EAC_SceneSpot> s_FurnitureSlots = new map<string, EAC_SceneSpot>();
- protected static ref map<int, EAC_SceneSpot> s_HeldSeats = new map<int, EAC_SceneSpot>();
- protected static ref map<string, ref array<int>> s_RecordCells = new map<string, ref array<int>>();
+ protected static ref map<int, ref EAC_SceneRecord> s_Records;
+ protected static ref map<string, EAC_SceneSpot> s_FurnitureSlots;
+ protected static ref map<int, EAC_SceneSpot> s_HeldSeats;
+ protected static ref map<string, ref array<int>> s_RecordCells;
  protected static ref EAC_SceneJob s_Job;
  protected static ref array<ref EAC_ScenePropSample> s_Collected;
  protected static ref array<vector> s_CollectedDoors;
@@ -97,10 +97,11 @@ class EAC_SceneIndex
  protected static int s_SurveyCursor;
  protected static int s_PropSamples, s_SeatSamples;      // current home only
  protected static int s_RealSeats, s_SeatFull, s_SeatPrints, s_SurveyDebug;
- protected static ref array<int> s_KindSpots = {};
+ protected static ref array<int> s_KindSpots;
 
  static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World && s_KindSpots.Count() == EAC_RoutineAnchors.KINDS) return;
   s_World = world;
@@ -118,11 +119,13 @@ class EAC_SceneIndex
   s_KindSpots.Clear(); s_KindSpots.Resize(EAC_RoutineAnchors.KINDS);
  }
 
- static int CountRecords() { CheckWorld(); return s_Records.Count(); }
+ static int CountRecords() {
+		EXPBG_LazyStatics_EAC_SceneIndex(); CheckWorld(); return s_Records.Count(); }
  static int CountSpots() { CheckWorld(); return s_SpotTotal; }
 
  static EAC_SceneRecord Find(int homeId)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   return s_Records.Get(homeId);
  }
@@ -227,6 +230,7 @@ class EAC_SceneIndex
 
  protected static void BucketInsert(int homeId, vector centre)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   string key = BucketKey(centre);
   array<int> bucket = s_RecordCells.Get(key);
   if (!bucket)
@@ -242,6 +246,7 @@ class EAC_SceneIndex
  // record map has dropped.
  protected static void BucketRemove(int homeId, vector centre)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   array<int> bucket = s_RecordCells.Get(BucketKey(centre));
   if (!bucket) return;
   int at = bucket.Find(homeId);
@@ -250,6 +255,7 @@ class EAC_SceneIndex
 
  protected static EAC_SceneRecord Open(EAC_HouseholdRecord home, float now)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   EAC_SceneRecord record = new EAC_SceneRecord();
   record.HomeId = home.Id;
   s_Stamp++;
@@ -272,6 +278,7 @@ class EAC_SceneIndex
  // every row it inserted through EAC_QARemoveRecord before it returns.
  static bool EAC_QAInsertRecord(int homeId, vector centre, int spotCount)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   if (homeId == 0 || s_Records.Contains(homeId)) return false;
   EAC_SceneRecord record = new EAC_SceneRecord();
@@ -294,6 +301,7 @@ class EAC_SceneIndex
  // surveyed supply, and EAC_QARemoveRecord drops the record whole.
  static bool EAC_QAHoldFixtureSpot(int homeId, int residentId, vector position)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   EAC_SceneRecord record = s_Records.Get(homeId);
   if (!record || record.Faces.IsEmpty() || residentId == 0) return false;
@@ -320,6 +328,7 @@ class EAC_SceneIndex
  // record does not exist. Test-only, same seat as EAC_QAHoldFixtureSpot.
  static float EAC_QASpotReleasedAt(int homeId)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   EAC_SceneRecord record = s_Records.Get(homeId);
   if (!record) return -1;
@@ -332,6 +341,7 @@ class EAC_SceneIndex
 
  static void EAC_QARemoveRecord(int homeId)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   EAC_SceneRecord record = s_Records.Get(homeId);
   if (!record) return;
@@ -341,6 +351,7 @@ class EAC_SceneIndex
 
  protected static EAC_SceneSpot Store(EAC_SceneRecord record, int faceIndex, int kind, int mask, int source, vector transform[4])
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   if (!record || record.SpotCount >= MAX_SPOTS_PER_HOME || s_SpotTotal >= MAX_SPOTS_TOTAL) return null;
   if (faceIndex < 0 || faceIndex >= record.Faces.Count()) faceIndex = 0;
   EAC_SceneFace face = record.Faces[faceIndex];
@@ -476,6 +487,7 @@ class EAC_SceneIndex
 
  protected static void Close(EAC_SceneRecord record, float now)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   if (!record) return;
   if (record.SpotCount > 0) { record.State = 2; record.SurveyedAt = now; return; }
   // A record whose every sample hit a pending tile was never actually surveyed.
@@ -504,6 +516,7 @@ class EAC_SceneIndex
 
  protected static void Begin(EAC_AmbientModule module, array<IEntity> observers, float now)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   EAC_HomeIndex index = module.GetHomeIndex();
   if (!index) return;
   EAC_HouseholdRegistry registry = index.GetRegistry();
@@ -590,6 +603,7 @@ class EAC_SceneIndex
 
  protected static void PropUnit(BaseWorld world, AIPathfindingComponent path, float now)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   int total = 0;
   foreach (EAC_ScenePropSample prop : s_Job.Props) total += prop.Spots;
   if (s_Job.Cursor >= total) { s_Job.Phase = 3; s_Job.Cursor = 0; return; }
@@ -742,6 +756,7 @@ class EAC_SceneIndex
  // ones that would have failed the distance test anyway.
  static void CollectWithin(vector centre, float radius, int offset, int limit, out array<EAC_SceneRecord> found)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   found = {};
   CheckWorld();
   if (s_Records.Count() == 0) return;
@@ -791,6 +806,7 @@ class EAC_SceneIndex
  // Which spot a resident holds is owned here, by spot.OccupantId.
  static bool ReserveFrom(EAC_SceneRecord record, EAC_AmbientModule module, EAC_ResidentClaim claim, EAC_RoutineDefinition routine, float now, out vector transform[4])
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   Math3D.MatrixIdentity4(transform);
   if (!Replication.IsServer() || !module || !record || record.State != 2) return false;
   if (!claim || !claim.Character || !claim.Group || !routine) return false;
@@ -836,7 +852,8 @@ class EAC_SceneIndex
   return false;
  }
 
- static EAC_SceneSpot HeldSeat(int residentId) { CheckWorld(); return s_HeldSeats.Get(residentId); }
+ static EAC_SceneSpot HeldSeat(int residentId) {
+		EXPBG_LazyStatics_EAC_SceneIndex(); CheckWorld(); return s_HeldSeats.Get(residentId); }
 
  // How long a just-released position stays out of the offer. ReserveFrom stamps
  // the same span when it hands a spot out, and both releases below now stamp it
@@ -859,6 +876,7 @@ class EAC_SceneIndex
  // handle can never free a position somebody else is standing on.
  static void Release(int homeId, int residentId)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   s_HeldSeats.Remove(residentId);
   if (!Replication.IsServer() || residentId == 0) return;
   CheckWorld();
@@ -878,6 +896,7 @@ class EAC_SceneIndex
  // A dead, cached or player-touched resident must not keep holding a position.
  static void ReleaseAllFor(int residentId)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   s_HeldSeats.Remove(residentId);
   if (!Replication.IsServer() || residentId == 0) return;
   CheckWorld();
@@ -900,6 +919,7 @@ class EAC_SceneIndex
  // Called before the lease is released, while OccupantId still names the holder.
  static int FailHeld(int residentId)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   if (!Replication.IsServer() || residentId == 0) return 0;
   CheckWorld();
   int retired;
@@ -919,6 +939,7 @@ class EAC_SceneIndex
  // otherwise hide.
  static int HeldCount()
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   float now = GetGame().GetWorld().GetWorldTime() * 0.001;
   int held = 0;
@@ -931,6 +952,7 @@ class EAC_SceneIndex
 
  static string DescribeKinds()
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   int verified = 0;
   foreach (int id, EAC_SceneRecord record : s_Records)
@@ -945,6 +967,7 @@ class EAC_SceneIndex
 
  static string Describe()
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   string result = "scene_index queries=" + s_Queries.ToString() + " saturated=" + s_Saturated.ToString();
   result += " props=" + s_PropsFound.ToString() + " samples=" + s_Samples.ToString();
@@ -964,6 +987,7 @@ class EAC_SceneIndex
 
  static void AppendDebugDrawData(array<vector> positions, array<int> kinds)
  {
+		EXPBG_LazyStatics_EAC_SceneIndex();
   CheckWorld();
   if (!positions || !kinds) return;
   int shown = 0;
@@ -981,4 +1005,21 @@ class EAC_SceneIndex
    }
   }
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_SceneIndex()
+	{
+		if (!s_Records)
+			s_Records = new map<int, ref EAC_SceneRecord>();
+		if (!s_FurnitureSlots)
+			s_FurnitureSlots = new map<string, EAC_SceneSpot>();
+		if (!s_HeldSeats)
+			s_HeldSeats = new map<int, EAC_SceneSpot>();
+		if (!s_RecordCells)
+			s_RecordCells = new map<string, ref array<int>>();
+		if (!s_KindSpots)
+			s_KindSpots = new array<int>();
+	}
 }

@@ -68,8 +68,8 @@ class EAC_PedestrianSpawner
  // is static and is never re-entered: it only calls world.TraceMove. Both are
  // refilled at the top of each observer's turn, so nothing survives a call except
  // plain entity pointers.
- protected static ref TraceParam s_HiddenTrace = new TraceParam();
- protected static ref array<IEntity> s_HiddenExcluded = {};
+ protected static ref TraceParam s_HiddenTrace;
+ protected static ref array<IEntity> s_HiddenExcluded;
 
  // Residents this near any observer are monitored at the full 2 Hz: a gunshot
  // reaction a player can watch must not wait two seconds. Everyone else is swept
@@ -288,6 +288,7 @@ class EAC_PedestrianSpawner
 
  static int GetHiddenReason(BaseWorld world, vector position, array<IEntity> observers, IEntity exclude = null, float minimumDistance = 50)
  {
+		EXPBG_LazyStatics_EAC_PedestrianSpawner();
   if (!world) return EAC_ESpawnReason.UNKNOWN_OBSERVER;
   int reason = GetObserverReason(world, observers);
   if (reason != EAC_ESpawnReason.NONE) return reason;
@@ -1638,4 +1639,15 @@ class EAC_PedestrianSpawner
    activation.Emerge.EAC_KeepSessionHelpers();
   }
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_PedestrianSpawner()
+	{
+		if (!s_HiddenTrace)
+			s_HiddenTrace = new TraceParam();
+		if (!s_HiddenExcluded)
+			s_HiddenExcluded = new array<IEntity>();
+	}
 }

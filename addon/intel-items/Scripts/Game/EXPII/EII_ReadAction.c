@@ -2,7 +2,7 @@ class EII_ReadAction : ScriptedUserAction
 {
  // Zero-duration actions re-perform every few frames while the key is held.
  static const int REPEAT_MS = 1000;
- protected static ref map<int, int> s_mLastPerform = new map<int, int>();
+ protected static ref map<int, int> s_mLastPerform;
 
  override bool HasLocalEffectOnlyScript() { return false; }
  override bool CanBroadcastScript() { return true; }
@@ -14,6 +14,7 @@ class EII_ReadAction : ScriptedUserAction
  // within REPEAT_MS of the previous one (held key, echoed broadcast) is ignored.
  protected static bool Repeated(IEntity user)
  {
+		EXPBG_LazyStatics_EII_ReadAction();
   int player = GetGame().GetPlayerManager().GetPlayerIdFromControlledEntity(user);
   int now = System.GetTickCount();
   int last;
@@ -45,4 +46,13 @@ class EII_ReadAction : ScriptedUserAction
   if (title.IsEmpty()) title = "Intel";
   EII_ReadDialog.Open(title, content);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EII_ReadAction()
+	{
+		if (!s_mLastPerform)
+			s_mLastPerform = new map<int, int>();
+	}
 }

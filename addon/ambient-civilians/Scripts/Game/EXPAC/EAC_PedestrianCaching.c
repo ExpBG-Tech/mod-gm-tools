@@ -2,8 +2,8 @@
 class EAC_PedestrianCaching
 {
  static const int MAX_CACHE_LOGS = 3;
- protected static ref array<ref SCR_PersistentDamageEffect> s_EffectScratch = {};
- protected static ref array<AIWaypoint> s_OrderScratch = {};
+ protected static ref array<ref SCR_PersistentDamageEffect> s_EffectScratch;
+ protected static ref array<AIWaypoint> s_OrderScratch;
 
  static bool CanLogCache(EAC_AmbientModule module, EAC_PedestrianActivation activation)
  {
@@ -44,6 +44,7 @@ class EAC_PedestrianCaching
 
  protected static bool CanRemove(EAC_AmbientModule module, EAC_PedestrianActivation activation, array<IEntity> observers, float now)
  {
+		EXPBG_LazyStatics_EAC_PedestrianCaching();
   EAC_ResidentClaim claim = activation.Claim;
   if (!claim || !claim.Committed || !Distant(module, claim.Character, observers)) return false;
   if (activation.Activity) return Blocked(module, "activity cleanup pending");
@@ -131,4 +132,15 @@ class EAC_PedestrianCaching
   if (cache.IsComplete()) module.FinishResidentCache(claim);
   return true;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_PedestrianCaching()
+	{
+		if (!s_EffectScratch)
+			s_EffectScratch = new array<ref SCR_PersistentDamageEffect>();
+		if (!s_OrderScratch)
+			s_OrderScratch = new array<AIWaypoint>();
+	}
 }

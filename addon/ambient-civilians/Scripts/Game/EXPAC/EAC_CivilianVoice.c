@@ -50,13 +50,13 @@ class EAC_CivilianVoice
  static const ResourceName CIVILIAN_BANK = "{CA1A00000A000000}Sounds/EXPAC/EAC_CivilianSounds.acp";
  static const string CUSTOM_PREFIX = "SOUND_EAC_";
  // Mumbling and drinking are excluded at selection and at the playback boundary.
- protected static ref array<string> s_Events = {"SOUND_VOICE_COUGH", "SOUND_EAC_COUGH", "SOUND_EAC_THROAT", "SOUND_EAC_SNEEZE", "SOUND_EAC_NOSE", "SOUND_EAC_YAWN", "SOUND_EAC_SIGH", "SOUND_EAC_HICCUP", "SOUND_EAC_BURP", "SOUND_EAC_HUM", "SOUND_EAC_WHISTLE", "SOUND_EAC_LAUGH"};
+ protected static ref array<string> s_Events;
  // Default repeat pause; livelier settings scale it down, never below ten seconds.
  static const float CATEGORY_COOLDOWN = 75;
- protected static ref array<float> s_CategoryUntil = {};
+ protected static ref array<float> s_CategoryUntil;
  // Relative chance per event, same order as s_Events. Everyday sounds dominate;
  // the comic ones are rare.
- protected static ref array<int> s_Weights = {0, 16, 12, 5, 5, 9, 12, 3, 2, 10, 10, 6};
+ protected static ref array<int> s_Weights;
 
  protected static float s_NextGlobal;
  protected static int s_Interval = 15;
@@ -72,6 +72,7 @@ class EAC_CivilianVoice
  protected static BaseWorld s_World;
  static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   BaseWorld world;
   if (GetGame()) world = GetGame().GetWorld();
   if (world == s_World) return;
@@ -94,12 +95,14 @@ class EAC_CivilianVoice
 
  static int EventCount()
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   return s_Events.Count();
  }
 
  // Short labels distinguish each event in the mission counters.
  static string ShortName(int index)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (index < 0 || index >= s_Events.Count()) return "other";
   if (index == 0) return "native_cough";
   string name = s_Events[index];
@@ -110,6 +113,7 @@ class EAC_CivilianVoice
 
  static int IndexOfEvent(string eventName)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   for (int i = 0; i < s_Events.Count(); i++)
   {
    if (s_Events[i] == eventName) return i;
@@ -126,6 +130,7 @@ class EAC_CivilianVoice
  // Weighted pick over the allowlist. Integer arithmetic only; no float modulo.
  static string PickEvent(float now = 0, int interval = 15)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (s_CategoryUntil.Count() != s_Events.Count()) { s_CategoryUntil.Clear(); s_CategoryUntil.Resize(s_Events.Count()); }
   int total = 0;
   for (int i = 0; i < s_Weights.Count() && i < s_Events.Count(); i++)
@@ -178,6 +183,7 @@ class EAC_CivilianVoice
  // A false result on the native-component route can report a speaker refusal.
  static bool PlayLocal(IEntity entity, string eventName)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   // The client entry point. A listener never runs Step, so this is where a
   // client notices a world change.
   CheckWorld();
@@ -228,11 +234,11 @@ class EAC_CivilianVoice
  // that the refusal is a property of the prefab (its sound component lacks the
  // voice bank), so one report retires every resident spawned from that prefab
  // for the rest of the mission. Nothing is retried on a different route.
- protected static ref array<string> s_BlockedPrefabs = {};
+ protected static ref array<string> s_BlockedPrefabs;
  protected static int s_BlockReports, s_GateBlocked;
  static const int MAX_BLOCKED_PREFABS = 8;
  static const int REFUSALS_TO_BLOCK = 6;
- protected static ref map<string, int> s_RefusalCounts = new map<string, int>();
+ protected static ref map<string, int> s_RefusalCounts;
 
  protected static string PrefabOf(IEntity entity)
  {
@@ -248,12 +254,13 @@ class EAC_CivilianVoice
  // for every resident on the server. A refusal is only meaningful for a speaker
  // this server asked that client to voice, and this is the list that proves it.
  // Small, bounded and reset per world; oldest entry drops first.
- protected static ref array<IEntity> s_Broadcast = {};
+ protected static ref array<IEntity> s_Broadcast;
  static const int MAX_BROADCAST_MEMORY = 16;
  protected static int s_BlockRefused;
 
  protected static void RememberBroadcast(IEntity speaker)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (!speaker) return;
   if (s_Broadcast.Contains(speaker)) return;
   if (s_Broadcast.Count() >= MAX_BROADCAST_MEMORY) s_Broadcast.RemoveOrdered(0);
@@ -263,6 +270,7 @@ class EAC_CivilianVoice
  // True only for an entity this server recently chose as a speaker.
  static bool WasBroadcast(IEntity speaker)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (!speaker) return false;
   return s_Broadcast.Contains(speaker);
  }
@@ -275,6 +283,7 @@ class EAC_CivilianVoice
 
  static void BlockSpeaker(IEntity entity)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (!Replication.IsServer()) return;
   s_BlockReports++;
   string name = PrefabOf(entity);
@@ -298,18 +307,21 @@ class EAC_CivilianVoice
 
  static bool IsBlockedSpeaker(IEntity entity)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (s_BlockedPrefabs.IsEmpty()) return false;
   string name = PrefabOf(entity);
   if (name == "") return false;
   return s_BlockedPrefabs.Contains(name);
  }
 
- static int BlockedPrefabCount() { return s_BlockedPrefabs.Count(); }
+ static int BlockedPrefabCount() {
+		EXPBG_LazyStatics_EAC_CivilianVoice(); return s_BlockedPrefabs.Count(); }
  static int BlockReports() { return s_BlockReports; }
  static int GateBlocked() { return s_GateBlocked; }
 
  static string DescribeSpeakers()
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   string s = "voice speakers blocked_prefabs=" + s_BlockedPrefabs.Count().ToString();
   s += " reports=" + s_BlockReports.ToString();
   s += " gate_blocked=" + s_GateBlocked.ToString();
@@ -351,12 +363,13 @@ class EAC_CivilianVoice
  static int LocalNoComponent() { return s_LocalNoComponent; }
 
  static const int MAX_LOCAL_VOICES = 4;
- protected static ref array<ref EAC_LocalCivilianVoice> s_LocalVoices = {};
- protected static ref array<ref EAC_PendingCivilianVoice> s_PendingVoices = {};
+ protected static ref array<ref EAC_LocalCivilianVoice> s_LocalVoices;
+ protected static ref array<ref EAC_PendingCivilianVoice> s_PendingVoices;
  protected static bool s_LocalUpdating;
 
  static void ReceiveLocal(RplId target, string eventName, vector origin, int audibleRange, int debugLevel)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (System.IsConsoleApp() || !GetGame() || !GetGame().GetWorld() || !IsApprovedEvent(eventName)) return;
   CheckWorld();
   EAC_PendingCivilianVoice pending = new EAC_PendingCivilianVoice();
@@ -411,6 +424,7 @@ class EAC_CivilianVoice
 
  protected static void StopLocalVoices()
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (GetGame()) GetGame().GetCallqueue().Remove(UpdateLocalVoices);
   foreach (EAC_LocalCivilianVoice playing : s_LocalVoices)
    AudioSystem.TerminateSound(playing.Handle);
@@ -421,6 +435,7 @@ class EAC_CivilianVoice
 
  protected static void UpdateLocalVoices()
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   CheckWorld();
   if (!s_World) return;
   float now = s_World.GetWorldTime() * 0.001;
@@ -501,6 +516,7 @@ class EAC_CivilianVoice
 
  protected static void RetuneInterval(int interval, float now)
  {
+		EXPBG_LazyStatics_EAC_CivilianVoice();
   if (interval <= 0 || interval == s_Interval) return;
   s_NextGlobal = now + Math.Max(0, s_NextGlobal - now) * interval / s_Interval;
   float categoryScale = Math.Max(10, CATEGORY_COOLDOWN * interval / 15.0) / Math.Max(10, CATEGORY_COOLDOWN * s_Interval / 15.0);
@@ -544,4 +560,27 @@ class EAC_CivilianVoice
    return;
   }
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_CivilianVoice()
+	{
+		if (!s_Events)
+			s_Events = {"SOUND_VOICE_COUGH", "SOUND_EAC_COUGH", "SOUND_EAC_THROAT", "SOUND_EAC_SNEEZE", "SOUND_EAC_NOSE", "SOUND_EAC_YAWN", "SOUND_EAC_SIGH", "SOUND_EAC_HICCUP", "SOUND_EAC_BURP", "SOUND_EAC_HUM", "SOUND_EAC_WHISTLE", "SOUND_EAC_LAUGH"};
+		if (!s_CategoryUntil)
+			s_CategoryUntil = new array<float>();
+		if (!s_Weights)
+			s_Weights = {0, 16, 12, 5, 5, 9, 12, 3, 2, 10, 10, 6};
+		if (!s_BlockedPrefabs)
+			s_BlockedPrefabs = new array<string>();
+		if (!s_RefusalCounts)
+			s_RefusalCounts = new map<string, int>();
+		if (!s_Broadcast)
+			s_Broadcast = new array<IEntity>();
+		if (!s_LocalVoices)
+			s_LocalVoices = new array<ref EAC_LocalCivilianVoice>();
+		if (!s_PendingVoices)
+			s_PendingVoices = new array<ref EAC_PendingCivilianVoice>();
+	}
 }

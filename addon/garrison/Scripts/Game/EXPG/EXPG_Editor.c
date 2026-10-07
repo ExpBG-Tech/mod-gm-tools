@@ -157,7 +157,7 @@ class EXPG_ReleaseAllGarrisonsContextAction : SCR_BaseContextAction
 
 modded class SCR_PlacingEditorComponent
 {
- protected static ref map<EntityID, SCR_PlacingEditorComponent> s_EXPG_Pickers = new map<EntityID, SCR_PlacingEditorComponent>();
+ protected static ref map<EntityID, SCR_PlacingEditorComponent> s_EXPG_Pickers;
  protected ref EXPG_EditorTicket m_EXPG_Ticket = new EXPG_EditorTicket();
  protected IEntity m_EXPG_Building;
  protected EntityID m_EXPG_BuildingID;
@@ -397,6 +397,7 @@ modded class SCR_PlacingEditorComponent
  // ticket starts now, not when the analysis started.
  bool EXPG_WaitReady(int nonce)
  {
+		EXPBG_LazyStatics_SCR_PlacingEditorComponent();
   if (nonce != m_EXPG_ServerNonce || !m_EXPG_Building)
    return true;
   SCR_PlacingEditorComponent other;
@@ -518,6 +519,7 @@ modded class SCR_PlacingEditorComponent
 
  protected void EXPG_ClearServer()
  {
+		EXPBG_LazyStatics_SCR_PlacingEditorComponent();
   GetGame().GetCallqueue().Remove(EXPG_ExpireServer);
   // Stop waiting; the building's analysis itself goes on for other requests.
   if (m_EXPG_Waiter)
@@ -680,4 +682,13 @@ modded class SCR_PlacingEditorComponent
   EXPG_ClearServer();
   super.EOnEditorDeleteServer();
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_SCR_PlacingEditorComponent()
+	{
+		if (!s_EXPG_Pickers)
+			s_EXPG_Pickers = new map<EntityID, SCR_PlacingEditorComponent>();
+	}
 }

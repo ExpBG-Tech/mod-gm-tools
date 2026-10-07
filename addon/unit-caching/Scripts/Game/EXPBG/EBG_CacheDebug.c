@@ -6,7 +6,7 @@ class EBG_CacheDebug
  static bool Closing;
  static int CleanedBodies;
  protected static CanvasWidget s_Panel;
- protected static ref array<ref CanvasWidgetCommand> s_Commands = {};
+ protected static ref array<ref CanvasWidgetCommand> s_Commands;
 
  static string One(float value) { return value.ToString(-1, 1); }
  static string Allocations()
@@ -100,12 +100,14 @@ class EBG_CacheDebug
  }
  static void Reset(bool closing = false)
  {
+		EXPBG_LazyStatics_EBG_CacheDebug();
   Closing = closing;
   if (s_Panel) { s_Panel.RemoveFromHierarchy(); }
   s_Panel = null; s_Commands.Clear(); Level = 0;
  }
  protected static void Line(string value, float x, float y, float size, int color = 0xffeeeeee)
  {
+		EXPBG_LazyStatics_EBG_CacheDebug();
   TextDrawCommand command = new TextDrawCommand();
   command.m_sText = value; command.m_Position = Vector(x, y, 0);
   command.m_iColor = color; command.m_fSize = size; command.m_iFontPropertiesId = 0;
@@ -114,11 +116,13 @@ class EBG_CacheDebug
  // Hide only the local widget; the server sample and debug Level are untouched.
  protected static void Hide()
  {
+		EXPBG_LazyStatics_EBG_CacheDebug();
   if (s_Panel) { s_Panel.RemoveFromHierarchy(); }
   s_Panel = null; s_Commands.Clear();
  }
  static void Draw(string serverText, int receivedAt)
  {
+		EXPBG_LazyStatics_EBG_CacheDebug();
   if (Closing) { return; }
   if (serverText == "" || !GetGame().GetPlayerController())
   {
@@ -177,6 +181,15 @@ class EBG_CacheDebug
   }
   s_Panel.SetDrawCommands(s_Commands);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EBG_CacheDebug()
+	{
+		if (!s_Commands)
+			s_Commands = new array<ref CanvasWidgetCommand>();
+	}
 }
 
 // The always-replicated game mode carries one aggregate snapshot, including JIP.

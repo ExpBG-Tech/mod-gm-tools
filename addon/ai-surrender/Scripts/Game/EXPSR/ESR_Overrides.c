@@ -38,11 +38,11 @@ class ESR_Overrides
  static const int BIND_RETRY_MS = 2000;
  static const float BIND_SECONDS = 120;
 
- protected static ref array<SCR_AIGroup> s_aGroups = {};
- protected static ref array<SCR_ChimeraCharacter> s_aUnits = {};
- protected static ref array<UUID> s_aPendingIds = {};
- protected static ref array<bool> s_aPendingUnits = {};
- protected static ref array<int> s_aPendingValues = {};
+ protected static ref array<SCR_AIGroup> s_aGroups;
+ protected static ref array<SCR_ChimeraCharacter> s_aUnits;
+ protected static ref array<UUID> s_aPendingIds;
+ protected static ref array<bool> s_aPendingUnits;
+ protected static ref array<int> s_aPendingValues;
  protected static float s_fBindUntil;
  protected static bool s_bBindQueued;
 
@@ -266,6 +266,7 @@ class ESR_Overrides
  // Keeps the save registry in step: entities with an override in, others out. Bounded.
  protected static void Track(SCR_AIGroup squad, SCR_ChimeraCharacter soldier)
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   if (squad)
   {
    int groupIndex = s_aGroups.Find(squad);
@@ -308,6 +309,7 @@ class ESR_Overrides
 
  protected static void PruneGroups()
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   for (int i = s_aGroups.Count() - 1; i >= 0; i--)
   {
    if (!s_aGroups[i] || !s_aGroups[i].ESR_HasOverrides())
@@ -317,6 +319,7 @@ class ESR_Overrides
 
  protected static void PruneUnits()
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   for (int i = s_aUnits.Count() - 1; i >= 0; i--)
   {
    if (!s_aUnits[i] || !s_aUnits[i].ESR_HasOverrides())
@@ -330,6 +333,7 @@ class ESR_Overrides
  // Every tracked entity with a persistence id: its id, then COUNT values each.
  static void Export(notnull array<UUID> groupIds, notnull array<int> groupValues, notnull array<UUID> unitIds, notnull array<int> unitValues)
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   groupIds.Clear();
   groupValues.Clear();
   unitIds.Clear();
@@ -362,6 +366,7 @@ class ESR_Overrides
  // Loaded entities may appear after this state: bind by id, retrying for BIND_SECONDS.
  static void Import(notnull array<UUID> groupIds, notnull array<int> groupValues, notnull array<UUID> unitIds, notnull array<int> unitValues)
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   s_aPendingIds.Clear();
   s_aPendingUnits.Clear();
   s_aPendingValues.Clear();
@@ -378,6 +383,7 @@ class ESR_Overrides
 
  protected static void AddPending(UUID id, bool unit, notnull array<int> values, int row)
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   if (id.IsNull() || (row + 1) * COUNT > values.Count())
    return;
   s_aPendingIds.Insert(id);
@@ -388,12 +394,14 @@ class ESR_Overrides
 
  static int PendingCount()
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   return s_aPendingIds.Count();
  }
 
  // Bounded by the pending list (at most 2 x MAX_TRACKED); one retry timer at a time.
  static void BindPending()
  {
+		EXPBG_LazyStatics_ESR_Overrides();
   s_bBindQueued = false;
   if (s_aPendingIds.IsEmpty() || !GetGame())
    return;
@@ -435,6 +443,23 @@ class ESR_Overrides
   s_bBindQueued = true;
   GetGame().GetCallqueue().CallLater(ESR_Overrides.BindPending, BIND_RETRY_MS, false);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_ESR_Overrides()
+	{
+		if (!s_aGroups)
+			s_aGroups = new array<SCR_AIGroup>();
+		if (!s_aUnits)
+			s_aUnits = new array<SCR_ChimeraCharacter>();
+		if (!s_aPendingIds)
+			s_aPendingIds = new array<UUID>();
+		if (!s_aPendingUnits)
+			s_aPendingUnits = new array<bool>();
+		if (!s_aPendingValues)
+			s_aPendingValues = new array<int>();
+	}
 }
 
 // Squad overrides. The effective values (override, else module setting) are cached per

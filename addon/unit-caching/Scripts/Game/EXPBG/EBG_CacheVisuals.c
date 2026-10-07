@@ -106,7 +106,7 @@ class EBG_CacheVisuals
  static ref array<ref EBG_CacheVisualGroup> Groups = {};
  static ref array<ref EBG_CacheVisualGroup> Orphans = {};
  static ref array<ref EBG_CacheVisualCircle> Circles = {};
- static ref array<ref EBG_CacheVisualMesh> Meshes = {};
+ static ref array<ref EBG_CacheVisualMesh> Meshes;
  static float Elapsed = 1;
  static bool DisplayTruncated;
  // ponytail: cap display cost; management itself is not capped by these display limits.
@@ -192,6 +192,7 @@ class EBG_CacheVisuals
 
  static void ClearMeshes()
  {
+		EXPBG_LazyStatics_EBG_CacheVisuals();
   foreach (EBG_CacheVisualMesh mesh : Meshes) mesh.Clear();
   Meshes.Clear();
  }
@@ -345,6 +346,7 @@ class EBG_CacheVisuals
 
  static void Update(EBG_CacheZone caller, float timeSlice)
  {
+		EXPBG_LazyStatics_EBG_CacheVisuals();
   if (EBG_CacheZone.Zones.IsEmpty() || caller != EBG_CacheZone.Zones[0]) return;
   UpdateAuthorization();
   if (OverlaysDisabled()) return;
@@ -400,6 +402,15 @@ class EBG_CacheVisuals
    Meshes.Remove(Meshes.Count() - 1);
   }
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EBG_CacheVisuals()
+	{
+		if (!Meshes)
+			Meshes = new array<ref EBG_CacheVisualMesh>();
+	}
 }
 
 // Native 1.8 clears these maps on editor close while owner RPCs may still be

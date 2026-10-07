@@ -3,7 +3,7 @@
 // the native seat never needed a prop between them. No world scan or timer.
 class EAC_ActivityStation
 {
- protected static ref array<ref EAC_ActivityStation> s_Stations = {};
+ protected static ref array<ref EAC_ActivityStation> s_Stations;
  protected static const int MAX_STATIONS = 32;
  // How long a spot with a free position keeps drawing someone over. The invitation
  // is also retired when the second position fills and when the spot is released, so
@@ -25,7 +25,7 @@ class EAC_ActivityStation
  // A retired home neither offers its live station to joiners nor gets a new one
  // this mission. Bounded and reset per world like s_Stations.
  protected static const int MAX_FAILED_HOMES = 32;
- protected static ref array<int> s_FailedHomes = {};
+ protected static ref array<int> s_FailedHomes;
  protected BaseWorld m_World;
  protected EAC_HouseholdRecord m_Home;
  protected EAC_ResidentClaim m_First, m_Second;
@@ -36,6 +36,7 @@ class EAC_ActivityStation
 
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_ActivityStation();
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
   // Drop previous mission records only; never delete entities belonging to it.
@@ -168,6 +169,7 @@ class EAC_ActivityStation
  // purpose after three ticks.
  static EAC_ActivityStation Acquire(EAC_ResidentClaim claim, out int slot, out bool deferred)
  {
+		EXPBG_LazyStatics_EAC_ActivityStation();
   slot = -1;
   deferred = false;
   CheckWorld();
@@ -315,6 +317,7 @@ class EAC_ActivityStation
  // destroyed, protected from a player or retried on a later pass.
  bool Release(EAC_ResidentClaim claim)
  {
+		EXPBG_LazyStatics_EAC_ActivityStation();
   if (!Replication.IsServer()) return false;
   if (m_World && m_World != GetGame().GetWorld()) return true;
   if (m_First != claim && m_Second != claim) return true;
@@ -331,6 +334,7 @@ class EAC_ActivityStation
 
  static bool HomeRetired(int homeId)
  {
+		EXPBG_LazyStatics_EAC_ActivityStation();
   CheckWorld();
   return s_FailedHomes.Contains(homeId);
  }
@@ -339,6 +343,7 @@ class EAC_ActivityStation
  // posed there, and Release retires the record when the last one leaves.
  static void RetireHome(EAC_HouseholdRecord home)
  {
+		EXPBG_LazyStatics_EAC_ActivityStation();
   if (!Replication.IsServer() || !home) return;
   CheckWorld();
   if (s_FailedHomes.Contains(home.Id)) return;
@@ -346,5 +351,17 @@ class EAC_ActivityStation
   s_FailedHomes.Insert(home.Id);
  }
 
- static int Count() { CheckWorld(); return s_Stations.Count(); }
+ static int Count() {
+		EXPBG_LazyStatics_EAC_ActivityStation(); CheckWorld(); return s_Stations.Count(); }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_ActivityStation()
+	{
+		if (!s_Stations)
+			s_Stations = new array<ref EAC_ActivityStation>();
+		if (!s_FailedHomes)
+			s_FailedHomes = new array<int>();
+	}
 }

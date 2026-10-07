@@ -49,8 +49,8 @@ class EGS_Settings
 
 	protected static BaseWorld s_World;
 	protected static bool s_bFactionsBuilt;
-	protected static ref array<string> s_aFactionKeys = {};
-	protected static ref map<string, ref array<int>> s_mValues = new map<string, ref array<int>>();
+	protected static ref array<string> s_aFactionKeys;
+	protected static ref map<string, ref array<int>> s_mValues;
 	protected static int s_iRoe;
 	protected static int s_iAmmo;
 	protected static int s_iRefills = REFILLS_DEFAULT;
@@ -60,6 +60,7 @@ class EGS_Settings
 	//! Reset to vanilla whenever a new world starts (statics survive Workbench play sessions).
 	static void Ensure()
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		if (!GetGame())
 			return;
 
@@ -81,6 +82,7 @@ class EGS_Settings
 	//! Detect military factions of the running mission (vanilla, RHS or any other mod).
 	static void EnsureFactions()
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		Ensure();
 		if (s_bFactionsBuilt || !GetGame())
 			return;
@@ -121,6 +123,7 @@ class EGS_Settings
 	//------------------------------------------------------------------------------------------------
 	static int GetFactionCount()
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		EnsureFactions();
 		return s_aFactionKeys.Count();
 	}
@@ -128,6 +131,7 @@ class EGS_Settings
 	//------------------------------------------------------------------------------------------------
 	static string GetFactionKey(int index)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		EnsureFactions();
 		if (!s_aFactionKeys.IsIndexValid(index))
 			return string.Empty;
@@ -139,6 +143,7 @@ class EGS_Settings
 	//! \return the ten slot values of a faction, or null when the faction is untouched.
 	static array<int> GetFactionValues(string factionKey)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		Ensure();
 		if (factionKey.IsEmpty())
 			return null;
@@ -163,6 +168,7 @@ class EGS_Settings
 	//------------------------------------------------------------------------------------------------
 	static bool SetValue(string factionKey, int slot, int value)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		Ensure();
 		if (factionKey.IsEmpty() || slot < 0 || slot >= SLOT_COUNT)
 			return false;
@@ -223,6 +229,7 @@ class EGS_Settings
 	//------------------------------------------------------------------------------------------------
 	static int GetEditFaction()
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		EnsureFactions();
 		return Math.ClampInt(s_iEditFaction, 0, Math.MaxInt(0, s_aFactionKeys.Count() - 1));
 	}
@@ -258,6 +265,7 @@ class EGS_Settings
 	//! on the faction that was shown when the Game Master pressed Save.
 	static void WriteSetting(int key, vector setting)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		if (!Replication.IsServer())
 			return;
 
@@ -325,6 +333,7 @@ class EGS_Settings
 	//! Flatten the detected factions for replication to the module entities.
 	static void ExportReplicated(notnull array<string> outKeys, notnull array<int> outValues)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		EnsureFactions();
 		outKeys.Clear();
 		outValues.Clear();
@@ -342,6 +351,7 @@ class EGS_Settings
 	//! Only touched factions are saved, keyed by faction key.
 	static void ExportPersistent(notnull array<string> outKeys, notnull array<int> outValues)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		Ensure();
 		outKeys.Clear();
 		outValues.Clear();
@@ -368,6 +378,7 @@ class EGS_Settings
 	//------------------------------------------------------------------------------------------------
 	static bool IsVanilla()
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		Ensure();
 		if (s_iRoe != ROE_VANILLA || s_iAmmo != AMMO_VANILLA || s_iRefills != REFILLS_DEFAULT)
 			return false;
@@ -389,6 +400,7 @@ class EGS_Settings
 	//! made with a faction mod still restores once that mod is loaded again.
 	static void ImportPersistent(notnull array<string> keys, notnull array<int> values, int roe, int ammo, int refills)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		Ensure();
 		s_mValues.Clear();
 		int count = Math.MinInt(keys.Count(), MAX_FACTIONS);
@@ -420,6 +432,7 @@ class EGS_Settings
 	//! stay below 2^24, so they survive float storage exactly.
 	static bool ExportSavedFaction(int savedSlot, out vector saved)
 	{
+		EXPBG_LazyStatics_EGS_Settings();
 		EnsureFactions();
 		int found;
 		foreach (int factionIndex, string key : s_aFactionKeys)
@@ -639,5 +652,16 @@ class EGS_Settings
 			return factionKey;
 
 		return name + " [" + factionKey + "]";
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EGS_Settings()
+	{
+		if (!s_aFactionKeys)
+			s_aFactionKeys = new array<string>();
+		if (!s_mValues)
+			s_mValues = new map<string, ref array<int>>();
 	}
 }

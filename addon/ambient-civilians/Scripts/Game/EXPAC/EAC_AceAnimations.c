@@ -74,7 +74,7 @@ class EAC_AceAnimations
  protected static BaseWorld s_World;
  protected static bool s_Resolved;
  protected static bool s_AceLoaded;
- protected static ref array<ref EAC_CustomAnim> s_Valid = {};
+ protected static ref array<ref EAC_CustomAnim> s_Valid;
  protected static ref array<ref EAC_AceCandidate> s_Candidates;
 
  protected static void Candidate(string name, string addonGuid, ResourceName graph, ResourceName instance, string command, string binding, float minSeconds, float maxSeconds)
@@ -116,6 +116,7 @@ class EAC_AceAnimations
  // is probed again rather than inheriting the previous mission's answer.
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_AceAnimations();
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
   s_World = world;
@@ -142,12 +143,14 @@ class EAC_AceAnimations
 
  static int ValidCount()
  {
+		EXPBG_LazyStatics_EAC_AceAnimations();
   CheckWorld();
   return s_Valid.Count();
  }
 
  static EAC_CustomAnim Valid(int index)
  {
+		EXPBG_LazyStatics_EAC_AceAnimations();
   CheckWorld();
   if (index < 0) return null;
   if (index >= s_Valid.Count()) return null;
@@ -179,6 +182,7 @@ class EAC_AceAnimations
  // and every test is a positive braced guard.
  static array<ref EAC_CustomAnim> Detect(IEntity sampleCharacter)
  {
+		EXPBG_LazyStatics_EAC_AceAnimations();
   CheckWorld();
   if (s_Resolved) return s_Valid;
   if (!sampleCharacter)
@@ -275,6 +279,7 @@ class EAC_AceAnimations
  // Short status fragment for the GM debug HUD.
  static string Status()
  {
+		EXPBG_LazyStatics_EAC_AceAnimations();
   CheckWorld();
   int poses = s_Valid.Count();
   if (poses > 0)
@@ -286,4 +291,13 @@ class EAC_AceAnimations
   }
   return "vanilla";
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_AceAnimations()
+	{
+		if (!s_Valid)
+			s_Valid = new array<ref EAC_CustomAnim>();
+	}
 }

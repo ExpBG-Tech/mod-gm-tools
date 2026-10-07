@@ -1,5 +1,15 @@
 # EXPBG GM Tools changelog
 
+## 0.1.13
+
+- Fix for Windows clients failing to join with "Can't compile 'Game' script
+  module ... Too many instructions per function" in large modsets (seen with
+  GM Tools + EXPBG CDF Compat + about 130 other mods; Linux servers were not
+  affected). Every static initializer of every loaded mod runs in one engine
+  function with an instruction limit; GM Tools' 122 collection statics
+  (arrays, maps, helpers) are now created on first use instead, which frees
+  most of GM Tools' share of that limit. No behaviour change.
+
 ## 0.1.12
 
 - Time and Weather: "Weather Transition" and "Time Skip" show EXPBG preview

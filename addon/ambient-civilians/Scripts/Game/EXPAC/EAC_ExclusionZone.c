@@ -3,7 +3,7 @@ class EAC_ExclusionZoneClass : GenericEntityClass {}
 
 class EAC_ExclusionZone : GenericEntity
 {
- protected static ref array<EAC_ExclusionZone> s_Zones = {};
+ protected static ref array<EAC_ExclusionZone> s_Zones;
  protected static BaseWorld s_CapWarningWorld;
  protected bool m_Registered;
  // A Game Master may place zones freely, so registration is capped exactly like
@@ -33,6 +33,7 @@ class EAC_ExclusionZone : GenericEntity
 
  override void EOnInit(IEntity owner)
  {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
   super.EOnInit(owner);
   if (!GetGame() || !GetGame().InPlayMode() || !Replication.IsServer()) return;
   NormalizeSettings();
@@ -56,6 +57,7 @@ class EAC_ExclusionZone : GenericEntity
 
  void ~EAC_ExclusionZone()
  {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
   LogConfiguration("removed");
   s_Zones.RemoveItem(this);
  }
@@ -84,6 +86,7 @@ class EAC_ExclusionZone : GenericEntity
  // automatic geography and manual transit-blocking zones can stop it.
  static bool AnyJourneyTransitBlocked()
  {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
   if (EAC_AutoExclusions.AnyTransitBlocked()) return true;
   if (s_Zones.IsEmpty()) return false;
   bool blocked = false;
@@ -160,6 +163,7 @@ class EAC_ExclusionZone : GenericEntity
  // Automatic geography and manual zones still apply in full.
  static bool IsJourneyPointAllowed(vector position)
  {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
   if (!EAC_AutoExclusions.IsPopulationAllowed(position)) return false;
   // After automatic geography, an empty manual-zone list needs no extra work.
   if (s_Zones.IsEmpty()) return true;
@@ -172,6 +176,7 @@ class EAC_ExclusionZone : GenericEntity
  // Automatic terrain metadata remains an admission policy, never a delete order.
  static bool IsManualPopulationExcluded(vector position, bool transitOnly = false)
  {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
   if (s_Zones.IsEmpty() || !GetGame() || !Replication.IsServer()) return false;
   BaseWorld world = GetGame().GetWorld();
   if (!world) return false;
@@ -191,6 +196,7 @@ class EAC_ExclusionZone : GenericEntity
  // Bounded boundary samples share the same 64-point diagnostic packet as homes.
  static void AppendDebugDrawData(array<vector> positions, array<int> kinds)
  {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
   if (!positions || !kinds || !GetGame() || !Replication.IsServer()) return;
   BaseWorld world = GetGame().GetWorld();
   int zones;
@@ -218,6 +224,7 @@ class EAC_ExclusionZone : GenericEntity
  // Segment test for a departing car: see IsJourneyPointAllowed.
  static bool IsJourneyTransitAllowed(vector from, vector to)
  {
+		EXPBG_LazyStatics_EAC_ExclusionZone();
   if (!EAC_AutoExclusions.IsTransitAllowed(from, to)) return false;
   // Same fast path as IsPopulationAllowed. The population-only case is handled by
   // the BlockTransit != 1 skip in the loop below rather than by a second cached
@@ -251,4 +258,13 @@ class EAC_ExclusionZone : GenericEntity
   float deltaZ = closestZ - origin[2];
   return deltaX * deltaX + deltaZ * deltaZ <= radius * radius;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_ExclusionZone()
+	{
+		if (!s_Zones)
+			s_Zones = new array<EAC_ExclusionZone>();
+	}
 }

@@ -6,7 +6,7 @@ class EIR_DownloadAction : ScriptedUserAction
  // REPEAT_MS of the previous one from that player is ignored, so a hold never cancels.
  static const int REPEAT_MS = 1000;
  static const int DRIVE_CACHE_MS = 500;
- protected static ref map<int, int> s_mLastPerform = new map<int, int>();
+ protected static ref map<int, int> s_mLastPerform;
 
  protected EIR_RackComponent m_Rack;
  protected IEntity m_CachedUser;
@@ -42,6 +42,7 @@ class EIR_DownloadAction : ScriptedUserAction
  }
  protected static bool Repeated(int player)
  {
+		EXPBG_LazyStatics_EIR_DownloadAction();
   int now = System.GetTickCount();
   int last;
   bool repeated = s_mLastPerform.Find(player, last) && now - last >= 0 && now - last < REPEAT_MS;
@@ -95,4 +96,13 @@ class EIR_DownloadAction : ScriptedUserAction
   if (player <= 0 || Repeated(player)) return;
   rack.ToggleDownload(pUserEntity, player);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EIR_DownloadAction()
+	{
+		if (!s_mLastPerform)
+			s_mLastPerform = new map<int, int>();
+	}
 }

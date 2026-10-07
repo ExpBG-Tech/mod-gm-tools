@@ -197,15 +197,17 @@ class EBG_EnrollmentTally
  // Soldiers who left their squad for good (EBG_MarkLeftSquad: AI Surrender's
  // prisoners). AI Surrender switches their AI off, so the AI world's agent list
  // no longer holds them; this server list does. Weak entity handles, pruned here.
- protected static ref array<SCR_ChimeraCharacter> s_LeftSquad = {};
+ protected static ref array<SCR_ChimeraCharacter> s_LeftSquad;
  static void TrackLeftSquad(SCR_ChimeraCharacter character)
  {
+		EXPBG_LazyStatics_EBG_EnrollmentTally();
   if (character && Replication.IsServer() && !s_LeftSquad.Contains(character)) s_LeftSquad.Insert(character);
  }
  // Living soldiers outside any group who left their squad, inside the radius. They
  // are never enrolled; the GM is told so.
  void CountLeftSquad(vector origin, float radiusSq)
  {
+		EXPBG_LazyStatics_EBG_EnrollmentTally();
   for (int i = s_LeftSquad.Count() - 1; i >= 0; i--)
   {
    SCR_ChimeraCharacter character = s_LeftSquad[i];
@@ -261,6 +263,15 @@ class EBG_EnrollmentTally
   }
   return text;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EBG_EnrollmentTally()
+	{
+		if (!s_LeftSquad)
+			s_LeftSquad = new array<SCR_ChimeraCharacter>();
+	}
 }
 class EBG_CacheManager
 {

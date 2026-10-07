@@ -23,13 +23,13 @@ class EXPG_RandomGarrisonDirector
  static const int MAX_SPAWNING = 2;
  static const int MAX_ANALYSES = 3;
  static const int DELETES_PER_TICK = 8;
- protected static ref array<EXPG_RandomGarrisonModule> s_Zones = {};
- protected static ref array<int> s_ZoneIds = {};
+ protected static ref array<EXPG_RandomGarrisonModule> s_Zones;
+ protected static ref array<int> s_ZoneIds;
  // Entities of deleted zones and dismissed garrisons, kept out of saves until deleted.
- protected static ref EXPG_RetireList s_Janitor = new EXPG_RetireList();
- protected static ref array<ref EXPG_GarrisonRecord> s_Dismiss = {};
- protected static ref map<IEntity, int> s_Claims = new map<IEntity, int>();
- protected static ref EXPG_RGBudget s_Budget = new EXPG_RGBudget();
+ protected static ref EXPG_RetireList s_Janitor;
+ protected static ref array<ref EXPG_GarrisonRecord> s_Dismiss;
+ protected static ref map<IEntity, int> s_Claims;
+ protected static ref EXPG_RGBudget s_Budget;
  protected static BaseWorld s_World;
  protected static bool s_Scheduled;
  protected static bool s_SaveHooked;
@@ -41,6 +41,7 @@ class EXPG_RandomGarrisonDirector
  // Static records never outlive their world; the entities went with it.
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   if (!GetGame())
   {
    return;
@@ -67,6 +68,7 @@ class EXPG_RandomGarrisonDirector
  // The zone's id (0: refused, the cap of 64 zones is reached).
  static int Register(EXPG_RandomGarrisonModule zone)
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   if (!zone || !GetGame() || !Replication.IsServer())
   {
    return 0;
@@ -101,6 +103,7 @@ class EXPG_RandomGarrisonDirector
  // records, never a token lookup).
  static void Unregister(EXPG_RandomGarrisonModule zone, int zoneId, EXPG_RetireList leftovers, array<ref EXPG_GarrisonRecord> records)
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   int index = s_Zones.Find(zone);
   if (index >= 0)
   {
@@ -142,6 +145,7 @@ class EXPG_RandomGarrisonDirector
 
  protected static void Compact()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   for (int i = s_Zones.Count() - 1; i >= 0; i--)
   {
    if (s_Zones[i]) { continue; }
@@ -153,6 +157,7 @@ class EXPG_RandomGarrisonDirector
 
  protected static void Tick()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   if (!GetGame())
   {
    return;
@@ -191,6 +196,7 @@ class EXPG_RandomGarrisonDirector
 
  protected static bool ServiceJanitor()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   bool busy;
   if (!s_Dismiss.IsEmpty())
   {
@@ -209,6 +215,7 @@ class EXPG_RandomGarrisonDirector
 
  static int JanitorCount()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   return s_Janitor.Count() + s_Dismiss.Count();
  }
 
@@ -231,6 +238,7 @@ class EXPG_RandomGarrisonDirector
 
  static int SpawningSquads()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   int spawning;
   foreach (EXPG_RandomGarrisonModule zone : s_Zones)
   {
@@ -241,6 +249,7 @@ class EXPG_RandomGarrisonDirector
 
  static int AnalysesRunning()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   int running;
   foreach (EXPG_RandomGarrisonModule zone : s_Zones)
   {
@@ -254,6 +263,7 @@ class EXPG_RandomGarrisonDirector
  //------------------------------------------------------------------------------------------------
  static bool Claim(IEntity structure, int zoneId)
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   if (!structure || zoneId < 1)
   {
    return false;
@@ -269,6 +279,7 @@ class EXPG_RandomGarrisonDirector
 
  static void ReleaseClaim(IEntity structure, int zoneId)
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   if (!structure)
   {
    return;
@@ -279,6 +290,7 @@ class EXPG_RandomGarrisonDirector
 
  static bool ClaimedByOther(IEntity structure, int zoneId)
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   int owner;
   if (!structure || !s_Claims.Find(structure, owner))
   {
@@ -289,6 +301,7 @@ class EXPG_RandomGarrisonDirector
 
  protected static void ReleaseClaims(int zoneId)
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   array<IEntity> released = {};
   foreach (IEntity structure, int owner : s_Claims)
   {
@@ -339,6 +352,7 @@ class EXPG_RandomGarrisonDirector
  // CDF legacy Prepare for Save releases every garrison: nothing pending is left behind.
  static void AbortForSave()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   Compact();
   foreach (EXPG_RandomGarrisonModule zone : s_Zones)
   {
@@ -365,6 +379,7 @@ class EXPG_RandomGarrisonDirector
  // and whatever waits to be deleted, stay out of it, even when tracking began again.
  protected static void OnBeforeSave(ESaveGameType saveType)
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   if (!GetGame() || !s_World || GetGame().GetWorld() != s_World || !Replication.IsServer())
   {
    return;
@@ -379,9 +394,29 @@ class EXPG_RandomGarrisonDirector
 
  static int ZoneCount()
  {
+		EXPBG_LazyStatics_EXPG_RandomGarrisonDirector();
   Compact();
   return s_Zones.Count();
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EXPG_RandomGarrisonDirector()
+	{
+		if (!s_Zones)
+			s_Zones = new array<EXPG_RandomGarrisonModule>();
+		if (!s_ZoneIds)
+			s_ZoneIds = new array<int>();
+		if (!s_Janitor)
+			s_Janitor = new EXPG_RetireList();
+		if (!s_Dismiss)
+			s_Dismiss = new array<ref EXPG_GarrisonRecord>();
+		if (!s_Claims)
+			s_Claims = new map<IEntity, int>();
+		if (!s_Budget)
+			s_Budget = new EXPG_RGBudget();
+	}
 }
 
 // CDF without the EXPBG CDF Compat bridge: Prepare for Save releases every garrison,

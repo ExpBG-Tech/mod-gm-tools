@@ -6,7 +6,7 @@ modded class SCR_BudgetEditorComponent
 	protected static const int ENB_RAISED_FACTOR = 500;
 
 	// Non-owning: entries become null when their editor component is deleted.
-	protected static ref array<SCR_BudgetEditorComponent> s_aENB_Components = {};
+	protected static ref array<SCR_BudgetEditorComponent> s_aENB_Components;
 
 	protected ref map<EEditableEntityBudget, int> m_mENB_AuthoredMax;
 	protected bool m_bENB_Raised;
@@ -15,6 +15,7 @@ modded class SCR_BudgetEditorComponent
 	//! Apply the switch to every live Game Master budget component on this machine.
 	static void ENB_ApplyToAll(bool budgetsEnabled)
 	{
+		EXPBG_LazyStatics_SCR_BudgetEditorComponent();
 		for (int i = s_aENB_Components.Count() - 1; i >= 0; i--)
 		{
 			SCR_BudgetEditorComponent component = s_aENB_Components[i];
@@ -37,6 +38,7 @@ modded class SCR_BudgetEditorComponent
 	//------------------------------------------------------------------------------------------------
 	protected void ENB_Register()
 	{
+		EXPBG_LazyStatics_SCR_BudgetEditorComponent();
 		if (!ENB_IsGameMasterBudget())
 			return;
 
@@ -112,5 +114,14 @@ modded class SCR_BudgetEditorComponent
 	{
 		super.EOnEditorInitServer();
 		ENB_Register();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_SCR_BudgetEditorComponent()
+	{
+		if (!s_aENB_Components)
+			s_aENB_Components = new array<SCR_BudgetEditorComponent>();
 	}
 }

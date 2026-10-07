@@ -18,8 +18,8 @@ class EAC_SettlementIndex
  static const int MAX_ATTEMPTS = 4;
  static const float DEDUPE_METRES = 100;
 
- protected static ref array<vector> s_Centres = {};
- protected static ref array<int> s_Types = {};
+ protected static ref array<vector> s_Centres;
+ protected static ref array<int> s_Types;
  protected static BaseWorld s_World;
  protected static int s_Attempts;
 
@@ -27,6 +27,7 @@ class EAC_SettlementIndex
  // change holding another mission's geography.
  static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_SettlementIndex();
   // GetGame() is null while the game instance is being torn down, and this is
   // reached from static entry points that do not own a world (audit item 12).
   if (!GetGame()) return;
@@ -44,6 +45,7 @@ class EAC_SettlementIndex
  // expected to call this every tick and pay nothing after it succeeds or gives up.
  static void Prepare()
  {
+		EXPBG_LazyStatics_EAC_SettlementIndex();
   CheckWorld();
   if (!s_Centres.IsEmpty() || s_Attempts >= MAX_ATTEMPTS) return;
   s_Attempts++;
@@ -68,12 +70,15 @@ class EAC_SettlementIndex
   }
  }
 
- static bool HasData() { CheckWorld(); return !s_Centres.IsEmpty(); }
- static int GetCount() { CheckWorld(); return s_Centres.Count(); }
+ static bool HasData() {
+		EXPBG_LazyStatics_EAC_SettlementIndex(); CheckWorld(); return !s_Centres.IsEmpty(); }
+ static int GetCount() {
+		EXPBG_LazyStatics_EAC_SettlementIndex(); CheckWorld(); return s_Centres.Count(); }
  static int GetAttemptCount() { CheckWorld(); return s_Attempts; }
 
  static vector GetCentreAt(int index)
  {
+		EXPBG_LazyStatics_EAC_SettlementIndex();
   CheckWorld();
   if (index < 0 || index >= s_Centres.Count()) return vector.Zero;
   return s_Centres[index];
@@ -84,6 +89,7 @@ class EAC_SettlementIndex
  // have to name the enum to store it.
  static int GetTypeAt(int index)
  {
+		EXPBG_LazyStatics_EAC_SettlementIndex();
   CheckWorld();
   if (index < 0 || index >= s_Types.Count()) return -1;
   return s_Types[index];
@@ -91,6 +97,7 @@ class EAC_SettlementIndex
 
  static void CopyTo(array<vector> centres)
  {
+		EXPBG_LazyStatics_EAC_SettlementIndex();
   CheckWorld();
   if (!centres) return;
   centres.Clear();
@@ -103,6 +110,7 @@ class EAC_SettlementIndex
  // completely.
  static bool Within(vector position, float radius)
  {
+		EXPBG_LazyStatics_EAC_SettlementIndex();
   CheckWorld();
   if (s_Centres.IsEmpty()) return true;
   return Within(position, radius, s_Centres);
@@ -123,4 +131,15 @@ class EAC_SettlementIndex
   }
   return false;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_SettlementIndex()
+	{
+		if (!s_Centres)
+			s_Centres = new array<vector>();
+		if (!s_Types)
+			s_Types = new array<int>();
+	}
 }

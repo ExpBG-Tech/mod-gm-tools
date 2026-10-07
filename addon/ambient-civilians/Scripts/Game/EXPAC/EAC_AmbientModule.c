@@ -4,7 +4,7 @@ class EAC_AmbientModuleClass : GenericEntityClass {}
 class EAC_AmbientModule : GenericEntity
 {
  // One active module schedules bounded indexing and pedestrian admission.
- protected static ref array<EAC_AmbientModule> s_Modules = {};
+ protected static ref array<EAC_AmbientModule> s_Modules;
  protected static ref EAC_HomeIndex s_HomeIndex;
  protected static BaseWorld s_IndexWorld;
  protected static ref EAC_PopulationBudget s_Budget;
@@ -449,6 +449,7 @@ class EAC_AmbientModule : GenericEntity
 
  override void EOnInit(IEntity owner)
  {
+		EXPBG_LazyStatics_EAC_AmbientModule();
   super.EOnInit(owner);
   if (!GetGame().InPlayMode() || !Replication.IsServer()) return;
   NormalizeSettings();
@@ -495,6 +496,7 @@ class EAC_AmbientModule : GenericEntity
 
  void ~EAC_AmbientModule()
  {
+		EXPBG_LazyStatics_EAC_AmbientModule();
   s_Modules.RemoveItem(this);
   if (Replication.IsServer() && s_IndexWorld == GetWorld())
   {
@@ -865,6 +867,7 @@ class EAC_AmbientModule : GenericEntity
 
  static EAC_AmbientModule GetActive()
  {
+		EXPBG_LazyStatics_EAC_AmbientModule();
   if (!Replication.IsServer() || !GetGame()) return null;
   foreach (EAC_AmbientModule module : s_Modules)
    if (module && module.GetWorld() == GetGame().GetWorld()) return module;
@@ -1513,4 +1516,13 @@ class EAC_AmbientModule : GenericEntity
   if (!Replication.IsServer() || !GetGame() || s_IndexWorld != GetGame().GetWorld()) return null;
   return s_Spawner;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_AmbientModule()
+	{
+		if (!s_Modules)
+			s_Modules = new array<EAC_AmbientModule>();
+	}
 }

@@ -43,9 +43,9 @@ class EAC_SchedulerStats
 
  protected static BaseWorld s_World;
  protected static ref array<int> s_Samples = {};
- protected static ref array<int> s_Total = {};
- protected static ref array<int> s_Max = {};
- protected static ref array<int> s_Hist = {};
+ protected static ref array<int> s_Total;
+ protected static ref array<int> s_Max;
+ protected static ref array<int> s_Hist;
  // Actual actor/group births and removals per tick. One native full-cache
  // transaction removes its actor and empty group together (two entities).
  protected static int s_Spawns, s_Despawns, s_TickSpawns, s_TickDespawns, s_PeakTickSpawns, s_PeakTickDespawns;
@@ -70,13 +70,14 @@ class EAC_SchedulerStats
  static const int GATE_START = 2;          // the routine began and the start refused
  static const int GATE_WALK = 3;           // the wander leg produced no waypoint
  static const int GATES = 4;
- protected static ref array<int> s_ForceGates = {};
+ protected static ref array<int> s_ForceGates;
  // Navmesh-projected positions accepted by the wider height tolerance that the
  // old 0.75 m terrain rule would have refused outright.
  protected static int s_SurfaceRecovered;
 
  static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   BaseWorld world;
   if (GetGame()) world = GetGame().GetWorld();
   if (world == s_World && s_Samples.Count() == STEPS && s_ForceGates.Count() == GATES) return;
@@ -86,6 +87,7 @@ class EAC_SchedulerStats
 
  static void Reset()
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   s_ForceGates.Clear(); s_ForceGates.Resize(GATES);
   s_SurfaceRecovered = 0;
   s_Samples.Clear(); s_Samples.Resize(STEPS);
@@ -107,6 +109,7 @@ class EAC_SchedulerStats
  // whose subtraction order this project has never exercised.
  static void Record(int step, int startTick)
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   if (step < 0 || step >= STEPS || s_Samples.Count() != STEPS) return;
   int spent = System.GetTickCount() - startTick;
   if (spent < 0) spent = 0;
@@ -131,6 +134,7 @@ class EAC_SchedulerStats
  // to exactly the sample count and Percentile's target stays reachable.
  protected static void Halve(int step)
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   if (step < 0 || step >= STEPS || s_Hist.Count() != STEPS * BUCKETS) return;
   int origin = step * BUCKETS;
   int samples;
@@ -213,6 +217,7 @@ class EAC_SchedulerStats
  // The refusal AND the gate that caused it, so the two always agree.
  static void RecordForceRefusedAt(int gate)
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   RecordForceRefused();
   if (gate < 0 || gate >= GATES || s_ForceGates.Count() != GATES) return;
   if (s_ForceGates[gate] < LIMIT) s_ForceGates[gate] = s_ForceGates[gate] + 1;
@@ -220,6 +225,7 @@ class EAC_SchedulerStats
 
  static int GetForceGate(int gate)
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   if (gate < 0 || gate >= s_ForceGates.Count()) return 0;
   return s_ForceGates[gate];
  }
@@ -238,12 +244,14 @@ class EAC_SchedulerStats
 
  static int GetMax(int step)
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   if (step < 0 || step >= s_Max.Count()) return 0;
   return s_Max[step];
  }
 
  static int GetAverage(int step)
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   if (step < 0 || step >= s_Samples.Count()) return 0;
   int samples = s_Samples[step];
   if (samples <= 0) return 0;
@@ -254,6 +262,7 @@ class EAC_SchedulerStats
  // `percent` of the samples fall. LIMIT keeps samples * percent inside int range.
  static int Percentile(int step, int percent)
  {
+		EXPBG_LazyStatics_EAC_SchedulerStats();
   if (step < 0 || step >= s_Samples.Count() || percent < 0 || percent > 100) return 0;
   int samples = s_Samples[step];
   if (samples <= 0) return 0;
@@ -396,4 +405,19 @@ class EAC_SchedulerStats
   line += " refused_walk=" + walkGate.ToString();
   return line;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_SchedulerStats()
+	{
+		if (!s_Total)
+			s_Total = new array<int>();
+		if (!s_Max)
+			s_Max = new array<int>();
+		if (!s_Hist)
+			s_Hist = new array<int>();
+		if (!s_ForceGates)
+			s_ForceGates = new array<int>();
+	}
 }

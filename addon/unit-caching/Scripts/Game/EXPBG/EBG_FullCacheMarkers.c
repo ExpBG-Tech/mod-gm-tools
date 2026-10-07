@@ -31,8 +31,8 @@ class EBG_FullCacheMarkers
 {
  // ponytail: bounded display, not a management limit; report overflow explicitly.
  static const int MAX_MARKERS = 256;
- protected static ref array<ref EBG_FullCacheMarker> s_Markers = {};
- protected static ref array<ref CanvasWidgetCommand> s_Commands = {};
+ protected static ref array<ref EBG_FullCacheMarker> s_Markers;
+ protected static ref array<ref CanvasWidgetCommand> s_Commands;
  protected static CanvasWidget s_Canvas;
  protected static Widget s_Parent;
  protected static bool s_Truncated;
@@ -58,16 +58,19 @@ class EBG_FullCacheMarkers
  }
  protected static void ClearCanvas()
  {
+		EXPBG_LazyStatics_EBG_FullCacheMarkers();
   if (s_Canvas) s_Canvas.RemoveFromHierarchy();
   s_Canvas = null; s_Parent = null; s_Commands.Clear();
  }
  static void Reset()
  {
+		EXPBG_LazyStatics_EBG_FullCacheMarkers();
   ClearCanvas(); s_Markers.Clear(); s_Truncated = false;
   s_Received = -1; s_RequestElapsed = 1; s_DrawElapsed = 0;
  }
  static void Receive(array<vector> positions, array<int> survivors, bool truncated)
  {
+		EXPBG_LazyStatics_EBG_FullCacheMarkers();
   if (!EBG_CacheVisuals.Authorized() || !positions || !survivors || positions.Count() != survivors.Count() || positions.Count() > MAX_MARKERS)
   {
    Reset(); return;
@@ -87,6 +90,7 @@ class EBG_FullCacheMarkers
  }
  static void Update(SCR_EditorManagerEntity editor, float timeSlice)
  {
+		EXPBG_LazyStatics_EBG_FullCacheMarkers();
   if (!editor || editor != SCR_EditorManagerEntity.GetInstance()) return;
   if (!EBG_CacheVisuals.Authorized() || EBG_CacheVisuals.OverlaysDisabled()) { Reset(); return; }
   s_RequestElapsed += timeSlice;
@@ -119,6 +123,7 @@ class EBG_FullCacheMarkers
  }
  protected static void Draw()
  {
+		EXPBG_LazyStatics_EBG_FullCacheMarkers();
   s_Commands.Clear();
   float width, height;
   s_Canvas.GetScreenSize(width, height);
@@ -163,6 +168,17 @@ class EBG_FullCacheMarkers
   }
   s_Canvas.SetDrawCommands(s_Commands);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EBG_FullCacheMarkers()
+	{
+		if (!s_Markers)
+			s_Markers = new array<ref EBG_FullCacheMarker>();
+		if (!s_Commands)
+			s_Commands = new array<ref CanvasWidgetCommand>();
+	}
 }
 
 modded class SCR_EditorManagerEntity

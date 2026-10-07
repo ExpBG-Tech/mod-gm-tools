@@ -161,7 +161,7 @@ class EAC_DebugView
  // Workspace widgets outlive the world that created them. Every live view is
  // listed here (weak entries, removed by the destructor) so world cleanup can
  // remove its widgets even when the owning editor entity is torn down late.
- protected static ref array<EAC_DebugView> s_Live = {};
+ protected static ref array<EAC_DebugView> s_Live;
  protected float m_NextRequest;
  protected float m_Expires;
  protected TextWidget m_Summary;
@@ -252,13 +252,16 @@ class EAC_DebugView
   m_Expires = 0;
  }
 
- void EAC_DebugView() { s_Live.Insert(this); }
- void ~EAC_DebugView() { Clear(); s_Live.RemoveItem(this); }
+ void EAC_DebugView() {
+		EXPBG_LazyStatics_EAC_DebugView(); s_Live.Insert(this); }
+ void ~EAC_DebugView() {
+		EXPBG_LazyStatics_EAC_DebugView(); Clear(); s_Live.RemoveItem(this); }
 
  // Disconnect, mission end or world change: no widget of this view may survive
  // into the next world (the Ambient Sounds legend was seen doing exactly that).
  static void ShutdownForWorldCleanup()
  {
+		EXPBG_LazyStatics_EAC_DebugView();
   foreach (EAC_DebugView view : s_Live) if (view) view.Clear();
  }
 
@@ -368,6 +371,15 @@ class EAC_DebugView
    if (visible) { FrameSlot.SetPos(m_Markers[i], screen[0], screen[1]); m_ScreenPoints.Insert(screen); }
   }
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_DebugView()
+	{
+		if (!s_Live)
+			s_Live = new array<EAC_DebugView>();
+	}
 }
 
 // The editor entity's own teardown normally clears its view first; this covers a

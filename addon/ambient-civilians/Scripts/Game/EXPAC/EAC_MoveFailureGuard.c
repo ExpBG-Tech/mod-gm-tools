@@ -76,8 +76,8 @@ class EAC_MoveFailureGuard
  // walking on any populated terrain produces move failures; none at all means the
  // subscription is not being raised.
  static const float SILENCE_WINDOW_SECONDS = 300;
- protected static ref array<ref EAC_MoveFailureGuard> s_Guards = {};
- protected static ref array<vector> s_Retired = {};
+ protected static ref array<ref EAC_MoveFailureGuard> s_Guards;
+ protected static ref array<vector> s_Retired;
  protected static BaseWorld s_World;
  protected static int s_Traces;
  // Mission-level evidence that the vanilla hook this whole class depends on is
@@ -105,6 +105,7 @@ class EAC_MoveFailureGuard
 
  protected static void CheckWorld()
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   BaseWorld world = GetGame().GetWorld();
   if (world == s_World) return;
   s_Guards.Clear(); s_Retired.Clear(); s_Traces = 0; s_World = world;
@@ -117,6 +118,7 @@ class EAC_MoveFailureGuard
  // `kind` names the caller for the diagnostic trace and nothing else.
  static EAC_MoveFailureGuard Attach(SCR_AIGroup group, string kind = "")
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   if (!Replication.IsServer() || !group) return null;
   CheckWorld();
   int dead = -1;
@@ -166,6 +168,7 @@ class EAC_MoveFailureGuard
  // guard object alive, but release the empty retained group's subscription.
  static void ReleaseCachedGroup(SCR_AIGroup group)
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   if (!Replication.IsServer() || !group || group.GetAgentsCount() != 0) return;
   CheckWorld();
   foreach (EAC_MoveFailureGuard guard : s_Guards)
@@ -320,6 +323,7 @@ class EAC_MoveFailureGuard
  // never ordered again. Oldest entry drops first past the cap.
  static void Retire(vector position)
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   if (!Replication.IsServer()) return;
   CheckWorld();
   if (IsRetired(position)) return;
@@ -330,6 +334,7 @@ class EAC_MoveFailureGuard
 
  static bool IsRetired(vector position)
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   CheckWorld();
   foreach (vector retired : s_Retired)
   {
@@ -344,6 +349,7 @@ class EAC_MoveFailureGuard
  // line of a crew that left a moving car (EAC_TrafficDirector, DRIVE phase).
  static int PeekResult(SCR_AIGroup group, out vector location)
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   location = vector.Zero;
   if (!Replication.IsServer() || !group) return -1;
   CheckWorld();
@@ -357,8 +363,10 @@ class EAC_MoveFailureGuard
   return -1;
  }
 
- static int GuardCount() { CheckWorld(); return s_Guards.Count(); }
- static int RetiredCount() { CheckWorld(); return s_Retired.Count(); }
+ static int GuardCount() {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard(); CheckWorld(); return s_Guards.Count(); }
+ static int RetiredCount() {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard(); CheckWorld(); return s_Retired.Count(); }
  static int FiredCount() { CheckWorld(); return s_Fired; }
 
  // True when guards have been attached, SILENCE_WINDOW_SECONDS have passed since
@@ -369,6 +377,7 @@ class EAC_MoveFailureGuard
  // fixture and reported on the Describe line below.
  static bool GuardNeverFired()
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   CheckWorld();
   if (s_Guards.IsEmpty() || s_FirstAttachAt <= 0) return false;
   if (s_Fired > 0) return false;
@@ -380,6 +389,7 @@ class EAC_MoveFailureGuard
  // One '+=' per term: a long '+' chain fails Enforce compilation.
  static string Describe()
  {
+		EXPBG_LazyStatics_EAC_MoveFailureGuard();
   CheckWorld();
   string result = EAC_RoutineStats.DescribeMoveFailures();
   result += " guards=" + s_Guards.Count().ToString();
@@ -391,4 +401,15 @@ class EAC_MoveFailureGuard
   if (GuardNeverFired()) result += " guard_never_fired=1";
   return result;
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EAC_MoveFailureGuard()
+	{
+		if (!s_Guards)
+			s_Guards = new array<ref EAC_MoveFailureGuard>();
+		if (!s_Retired)
+			s_Retired = new array<vector>();
+	}
 }

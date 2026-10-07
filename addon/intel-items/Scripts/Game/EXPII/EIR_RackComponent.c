@@ -33,7 +33,7 @@ class EIR_RackComponent : ScriptComponent
  static const int LOG_LIMIT = 64;
  // Server only: player id -> rack entity running that player's download. Entities are
  // weak references, so a rack deleted without cleanup can never block its player.
- protected static ref map<int, IEntity> s_mSessions = new map<int, IEntity>();
+ protected static ref map<int, IEntity> s_mSessions;
 
  [Attribute("", UIWidgets.EditBox, "Rack intel title (up to 128 UTF-8 bytes); kept on the server")]
  protected string m_sTitle;
@@ -157,6 +157,7 @@ class EIR_RackComponent : ScriptComponent
  // Server: the same action starts a download, or cancels the caller's own one.
  void ToggleDownload(IEntity user, int player)
  {
+		EXPBG_LazyStatics_EIR_RackComponent();
   if (!IsAuthority() || !user || player <= 0) return;
   if (m_iDownloader == player)
   {
@@ -262,6 +263,7 @@ class EIR_RackComponent : ScriptComponent
  }
  protected void ReleaseSession(int player)
  {
+		EXPBG_LazyStatics_EIR_RackComponent();
   if (player <= 0) return;
   IEntity active;
   if (!s_mSessions.Find(player, active)) return;
@@ -302,4 +304,13 @@ class EIR_RackComponent : ScriptComponent
   EIR_ProgressHud.Detach(this);
   super.OnDelete(owner);
  }
+
+	//------------------------------------------------------------------------------------------------
+	//! Creates the collections on first use (not in the global static initializer, which has a
+	//! per-function instruction limit that large modsets exceed on Windows).
+	protected static void EXPBG_LazyStatics_EIR_RackComponent()
+	{
+		if (!s_mSessions)
+			s_mSessions = new map<int, IEntity>();
+	}
 }
