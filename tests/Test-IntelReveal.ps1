@@ -113,7 +113,8 @@ Assert ($holder -match 'while \(parent && depth < MAX_DEPTH\)' -and $holder -mat
 Assert (![regex]::IsMatch($queryClass, '(?m)^[ \t]*(static[ \t]+)?(int|vector|bool|float|string|IEntity)[ \t]+\w+[ \t]*\([^)\n]*\)[ \t]*\{[ \t]*return')) 'non-void returns of the query stay on separate lines'
 
 # Intel Items: read-only registry of items in play (server).
-Assert ($intel -match 'protected static ref array<IEntity> s_aRegistered = \{\};') 'Intel Items registry'
+# Created on first use (0.1.13): no static initializer, every reader/writer ensures it first.
+Assert ($intel -match 'protected static ref array<IEntity> s_aRegistered;' -and $intel -match 'if \(!s_aRegistered\)\s+s_aRegistered = new array<IEntity>\(\);' -and $intel -match 'static int GetRegistered\(notnull array<IEntity> outItems\)\s*\{\s*EXPBG_LazyStatics_EII_IntelComponent\(\);') 'Intel Items registry'
 $postInit = Get-Body $intel 'override\s+void\s+OnPostInit\s*\('
 Assert ($postInit -match '(?s)if \(!IsAuthority\(\)\) return;\s*s_aRegistered\.Insert\(owner\);') 'items register on the server once in play'
 Assert ((Get-Body $intel 'override\s+void\s+OnDelete\s*\(') -match 's_aRegistered\.RemoveItem\(owner\);') 'deleted items leave the registry'

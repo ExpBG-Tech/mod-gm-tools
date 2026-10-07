@@ -1,5 +1,21 @@
 # EXPBG GM Tools changelog
 
+## 0.1.14
+
+- Garrison: the "EXPBG Garrison" tab in a garrison squad's Edit properties
+  (cache mode, wake and sleep distance, status, Release Garrison) was there but
+  invisible: the dialog shows tabs as icons only and the category had no icon.
+  It now shows the EXPBG badge. The same fix makes the Ambient Civilians
+  (Ambient, Traffic, Diagnostics, Exclusion) and Ambient Destruction tabs
+  visible.
+- Time and Weather: the vanilla weather setting of Scenario Properties was
+  missing ("Unknown class 'SCR_WeatherInstantEditorAttribute'": the modded class
+  lacked its container decorator), so smooth Scenario Properties weather
+  changes never ran. Restored.
+- Workshop description without the version number.
+- Portable guard: every attribute category has a pack icon and every modded
+  editor attribute keeps [BaseContainerProps()].
+
 ## 0.1.13
 
 - Fix for Windows clients failing to join with "Can't compile 'Game' script

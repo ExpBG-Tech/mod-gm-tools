@@ -63,6 +63,9 @@ modded class TimeAndWeatherManagerEntity
 // Properties weather changes" ON: a Game Master's weather change blends over that module's
 // duration instead of switching at once. Previews, restores (no manager, player -1) and
 // sessions without such a module keep the vanilla instant change.
+// A modded config class repeats the vanilla decorator; without it Edit.conf reports "Unknown
+// class" and the vanilla weather attribute disappears from Scenario Properties.
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 modded class SCR_WeatherInstantEditorAttribute
 {
  //------------------------------------------------------------------------------------------------
