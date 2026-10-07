@@ -249,6 +249,9 @@ try {
  # Never unlink under a running engine; an unverified timeout leaves the links for inspection.
  if ($process.HasExited) { Remove-RhsLinks }
  $receipt | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$run/result.json"
+ # The addon copies (about 0.8 GB per run) are inventoried with hashes in inputs.json; once
+ # the engine is gone only the logs and receipts are kept.
+ if ($process.HasExited -and (Test-Path -LiteralPath $addons)) { Remove-Item -LiteralPath $addons -Recurse -Force -ErrorAction SilentlyContinue }
 }
 if (!$receipt.passed) { throw "Gameplay fixture not passed; inspect $run" }
 if ($UnitCleanup -and $Rhs) { "PASS: bounded native Unit Caching cleanup fixture with RHS: Status Quo units (rhs-mg-team, rhs-usmc-recon; injected presence, no connected player, no GM UI, no save/load). Evidence: $run"; return }

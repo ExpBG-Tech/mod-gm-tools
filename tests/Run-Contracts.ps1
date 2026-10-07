@@ -28,5 +28,7 @@ $text = (Get-ChildItem -LiteralPath $logs -Recurse -Filter '*.log' -File | Get-C
 $passed = $native.ExitCode -eq 0 -and $text -match '\[EXPG CONTRACT RESULT\] graph=1 editor=1 attributes=1 corridor=1 missingActor=1' -and $text -match '\[EXPG RANDOM CONTRACT RESULT\] rules=1 shuffle=1 packing=1' -and $text -match 'Game destroyed' -and $text -notmatch 'Can.t compile|SCRIPT\s+\(E\)|Virtual Machine Exception|Assertion failed'
 @{source=$source;run=$run;passed=$passed;nativeExitCode=$native.ExitCode;worldLoaded=$false;gameplay=$false} | ConvertTo-Json | Set-Content -LiteralPath "$run/result.json"
 $text -split "`n" | Where-Object { $_ -match '\[EXPG|SCRIPT\s+\(E\)|Can.t compile' } | Write-Output
+# The addon copy is only an input; keep the logs and the receipt.
+if (Test-Path -LiteralPath $addon) { Remove-Item -LiteralPath $addon -Recurse -Force -ErrorAction SilentlyContinue }
 if (!$passed) { throw "Native contracts failed; inspect $run" }
 "PASS: native scalar/graph contracts only; no gameplay proof. Evidence $run"
