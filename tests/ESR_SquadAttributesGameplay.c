@@ -16,8 +16,18 @@
 // whole and unhurt until R's last phase (while case S runs, one E casualty would make the
 // rest of E surrender), so no squad near it ever fires at will: S100 and S0 hold fire from
 // spawn, V starts in vanilla return fire, B never leaves S0 in fire at will past one frame,
-// and Fire on Sight squad F fights at its own site about 800 m away and holds fire once its
-// case ends.
+// and Fire on Sight squad F fights at its own site at least SITE_SEPARATION away and holds
+// fire once its case ends.
+// Fight sites (R/E, W/stand-in, F/E2): the driver point is a town centre (houses between R
+// and E), and the first native run's fixed sites gave no fight anywhere (R never targeted E
+// in 30 s, E at fire at will never hit R in 60 s, F never fired at E2, W's warning burst
+// and lethal fire put no round out, and the stand-in stayed unhurt). The three sites are
+// now searched at run time on rings 0.7-4.2 km around the driver point (FindSites): dry,
+// level ground with nothing standing where the formations spawn, and every sight and fire
+// line from the watcher's wedge to the enemy's 60 m north clear of terrain, buildings,
+// trees and rocks at kneeling and standing eye height; the sites are SITE_SEPARATION apart.
+// The fights run at noon without fog or rain (Daylight; the world's own hour is printed).
+// Shot counters count rounds and thrown grenades alike.
 // Cases (run side by side, at separate sites of GM_Eden):
 //  S  AI Surrender squad chance: module chance 100%, threshold 10%, random 0. Squad S100 has
 //     "Surrender chance (%)" 100%, squad S0 0%. Nobody surrenders before a casualty. One
@@ -31,10 +41,10 @@
 //     Exempt restores the squad's own mode. The vanilla attribute comes before the EXPBG one
 //     in the list. The first failed step ends B and puts S0 on Exempt and hold fire.
 //  R  Return Fire Only (squad R) facing a visible HOLD_FIRE US fire team E at 60 m: no round
-//     for 30 s; an E burst whose path passes about 9 m beside R does not set R off (vanilla
-//     flags shots within 13 m of the leader); R stays quiet until E opens fire, is provoked
-//     only after E's first round from then on (fresh counters: the far burst does not count)
-//     and answers fire.
+//     for 30 s; an E burst (a member without a grenade or rocket launcher) whose path passes
+//     about 9 m beside R does not set R off (vanilla flags shots within 13 m of the leader);
+//     R stays quiet until E opens fire, is provoked only after E's first round from then on
+//     (fresh counters: the far burst does not count) and answers fire.
 //  W  Warning Shots First (squad W) facing the stand-in player at 60 m: 1-3 warning rounds,
 //     the stand-in unhurt, lethal 5 s later, squad never provoked; once the stand-in is gone,
 //     the squad re-arms (RETURN_FIRE, armed) after the contact.
@@ -52,6 +62,7 @@ class ESRAttrShots : Managed
  int Count;
  float First = -1;
 
+ // OnProjectileShot and OnGrenadeThrown (same signature).
  void OnShot(int playerID, BaseWeaponComponent weapon, IEntity entity)
  {
   Count++;
@@ -77,6 +88,19 @@ class EXPG_GarrisonGameplay : GenericEntity
  static const int ENTRY_HOLD = 0;
  static const int ENTRY_RETURN = 1;
  static const int ENTRY_FIRE = 2;
+ // Fight site search (FindSites): rings around the driver point, nearest first, one
+ // candidate about every SITE_ARC metres of a ring.
+ static const float SITE_RING_FIRST = 700;
+ static const float SITE_RING_STEP = 150;
+ static const int SITE_RINGS = 24;
+ static const float SITE_ARC = 150;
+ // No fire-at-will squad of one case ever sees another case's enemy (rifles, daylight).
+ static const float SITE_SEPARATION = 1500;
+ // Ground within this height of the site centre over the whole fight box.
+ static const float SITE_LEVEL = 5;
+ static const float SITE_EDGE = 500;
+ static const float SITE_FAR_EDGE = 12300;
+ static const float SITE_MIN_HEIGHT = 5;
  static ref array<vector> s_Presence;
  static IEntity s_StandIn;
 
@@ -85,9 +109,13 @@ class EXPG_GarrisonGameplay : GenericEntity
  vector SiteS = "150 0 0";
  vector SiteS0 = "150 0 50";
  vector SiteV = "150 0 -90";
- vector SiteW = "-600 0 -600";
- // About 800 m from E, E2 north of F: F fires away from E (squad site of the wake fixture).
- vector SiteF = "-600 0 600";
+ // World positions of the fight sites (FindSites): the watcher squad here, its enemy 60 m
+ // north (EnemyOffset).
+ vector SiteR;
+ vector SiteW;
+ vector SiteF;
+ int SitesFound;
+ int SitesTried;
  vector ModuleOffset = "0 0 20";
  vector SkillsOffset = "0 0 25";
 
@@ -155,6 +183,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  int CachedOk;
 
  bool SawEnemy;
+ bool BurstRan;
  float EOpenedAt;
  float RProvokedAt = -1;
  bool RQuietBroken;
@@ -415,7 +444,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   return character.GetDamageManager().GetHealthScaled();
  }
 
- // Shot counters on every current member (OnProjectileShot, as the warning burst counts).
+ // Shot counters on every current member (OnProjectileShot, as the warning burst counts,
+ // and OnGrenadeThrown: a thrown grenade is fire too, and its blast can provoke).
  void Watch(SCR_AIGroup group, notnull array<ref ESRAttrShots> list, IEntity excluded)
  {
   if (!group) return;
@@ -439,6 +469,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   ESRAttrShots counter = new ESRAttrShots();
   counter.Owner = member;
   events.RegisterScriptHandler("OnProjectileShot", counter, counter.OnShot);
+  events.RegisterScriptHandler("OnGrenadeThrown", counter, counter.OnShot);
   return counter;
  }
 
@@ -484,6 +515,189 @@ class EXPG_GarrisonGameplay : GenericEntity
   return false;
  }
 
+ // AI LOD of the group's first member (diagnostics; 0 is full simulation).
+ int Lod(SCR_AIGroup group)
+ {
+  if (!group) return -1;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  if (agents.IsEmpty() || !agents[0]) return -1;
+  int lod = agents[0].GetLOD();
+  return lod;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Fight environment: daylight and open ground.
+ // Noon without fog or rain: AI spotting depends on light. The world's own hour is printed.
+ bool Daylight()
+ {
+  ChimeraWorld world = GetGame().GetWorld();
+  if (!world) return false;
+  TimeAndWeatherManagerEntity weather = world.GetTimeAndWeatherManager();
+  if (!weather) return false;
+  float hourBefore = weather.GetTimeOfTheDay();
+  bool timeSet = weather.SetTimeOfTheDay(12, true);
+  weather.SetFogAmountOverride(true, 0);
+  weather.SetRainIntensityOverride(true, 0);
+  PrintFormat("[ESR SQUAD ATTR WORLD] hourBefore=%1 hour=%2 timeSet=%3", hourBefore, weather.GetTimeOfTheDay(), timeSet);
+  return timeSet;
+ }
+
+ // R/E, W/stand-in and F/E2 sites in that order: the nearest open sites (OpenSite) on rings
+ // around the driver point, each SITE_SEPARATION from the others. A missing site falls back to
+ // the first run's position (the site check in Setup then fails).
+ void FindSites()
+ {
+  array<vector> found = {};
+  for (int ring = 0; ring < SITE_RINGS && found.Count() < 3; ring++)
+  {
+   float radius = SITE_RING_FIRST + ring * SITE_RING_STEP;
+   int steps = Math.Round(Math.PI2 * radius / SITE_ARC);
+   for (int step = 0; step < steps && found.Count() < 3; step++)
+   {
+    float angle = Math.PI2 * step / steps;
+    vector centre = Vector(Origin[0] + radius * Math.Sin(angle), 0, Origin[2] + radius * Math.Cos(angle));
+    if (!Separated(centre, found)) continue;
+    SitesTried++;
+    if (OpenSite(centre)) found.Insert(Ground(centre, 0));
+   }
+  }
+  SitesFound = found.Count();
+  SiteR = Origin;
+  SiteW = Origin + Vector(-600, 0, -600);
+  SiteF = Origin + Vector(-600, 0, 600);
+  if (SitesFound > 0) SiteR = found[0];
+  if (SitesFound > 1) SiteW = found[1];
+  if (SitesFound > 2) SiteF = found[2];
+  PrintFormat("[ESR SQUAD ATTR SITES] R=%1 W=%2 F=%3 found=%4 tried=%5 separation=%6", SiteR, SiteW, SiteF, SitesFound, SitesTried, SITE_SEPARATION);
+ }
+
+ bool Separated(vector centre, array<vector> sites)
+ {
+  foreach (vector site : sites)
+  {
+   if (vector.DistanceXZ(centre, site) < SITE_SEPARATION) return false;
+  }
+  return true;
+ }
+
+ // Open ground for a fight (watcher at centre, enemy 60 m north): on the map and above the
+ // sea, dry and level over the fight box (20 m either side, 10 m behind the watcher to 10 m
+ // beyond the enemy), nothing standing where the two wedges spawn, and every sight and fire
+ // line from the watcher's wedge to the enemy's clear at 1.0 m and 1.7 m.
+ bool OpenSite(vector centre)
+ {
+  if (centre[0] < SITE_EDGE || centre[2] < SITE_EDGE || centre[0] > SITE_FAR_EDGE || centre[2] > SITE_FAR_EDGE) return false;
+  BaseWorld world = GetGame().GetWorld();
+  float groundY = world.GetSurfaceY(centre[0], centre[2]);
+  if (groundY < SITE_MIN_HEIGHT) return false;
+  for (int across = -2; across <= 2; across++)
+  {
+   for (int along = -1; along <= 7; along++)
+   {
+    vector probe = Vector(centre[0] + across * 10, 0, centre[2] + along * 10);
+    probe[1] = world.GetSurfaceY(probe[0], probe[2]);
+    if (Math.AbsFloat(probe[1] - groundY) > SITE_LEVEL) return false;
+    if (ChimeraWorldUtils.TryGetWaterSurfaceSimple(world, probe + Vector(0, 0.2, 0))) return false;
+   }
+  }
+  for (int watcher = -2; watcher <= 2; watcher++)
+  {
+   for (int enemy = -1; enemy <= 1; enemy++)
+   {
+    vector watcherFoot = Vector(centre[0] + watcher * 8, 0, centre[2] - 4);
+    vector enemyFoot = Vector(centre[0] + enemy * 8, 0, centre[2] + 57);
+    if (!ClearLine(world, watcherFoot, enemyFoot, 1.0) || !ClearLine(world, watcherFoot, enemyFoot, 1.7)) return false;
+   }
+  }
+  for (int column = -2; column <= 2; column++)
+  {
+   for (int row = 0; row < 3; row++)
+   {
+    if (!ClearStand(world, centre[0] + column * 5, centre[2] - row * 5)) return false;
+    if (!ClearStand(world, centre[0] + column * 5, centre[2] + 60 - row * 5)) return false;
+   }
+  }
+  return true;
+ }
+
+ // A line between two eye points: above the terrain everywhere (sampled every 5 m) and no
+ // fire or view geometry (buildings, trees, rocks, walls) on it.
+ bool ClearLine(BaseWorld world, vector watcherEye, vector enemyEye, float eye)
+ {
+  watcherEye[1] = world.GetSurfaceY(watcherEye[0], watcherEye[2]) + eye;
+  enemyEye[1] = world.GetSurfaceY(enemyEye[0], enemyEye[2]) + eye;
+  int samples = Math.Round(vector.Distance(watcherEye, enemyEye) / 5);
+  for (int i = 1; i < samples; i++)
+  {
+   float share = i * 1.0 / samples;
+   vector point = vector.Lerp(watcherEye, enemyEye, share);
+   if (point[1] < world.GetSurfaceY(point[0], point[2]) + 0.3) return false;
+  }
+  TraceParam sight = new TraceParam();
+  sight.Start = watcherEye;
+  sight.End = enemyEye;
+  sight.Flags = TraceFlags.WORLD | TraceFlags.ENTS | TraceFlags.OCEAN | TraceFlags.ANY_CONTACT;
+  sight.TargetLayers = EPhysicsLayerDefs.FireGeometry | EPhysicsLayerDefs.ViewGeometry;
+  float fraction = world.TraceMove(sight, null);
+  return fraction >= 1;
+ }
+
+ // Nothing standing on the ground at this point (a 25 m drop probe meets only the terrain).
+ bool ClearStand(BaseWorld world, float x, float z)
+ {
+  float y = world.GetSurfaceY(x, z);
+  float top = y + 25;
+  float bottom = y - 1;
+  TraceParam drop = new TraceParam();
+  drop.Start = Vector(x, top, z);
+  drop.End = Vector(x, bottom, z);
+  drop.Flags = TraceFlags.WORLD | TraceFlags.ENTS;
+  drop.TargetLayers = EPhysicsLayerDefs.FireGeometry | EPhysicsLayerDefs.ViewGeometry;
+  float fraction = world.TraceMove(drop, null);
+  float hitY = top + (bottom - top) * fraction;
+  return hitY <= y + 0.5;
+ }
+
+ // An E member for the far burst: a non-leader without a grenade or rocket launcher (the
+ // burst must be rounds, not a blast beside R); any non-leader otherwise.
+ SCR_ChimeraCharacter BurstMember(SCR_AIGroup group)
+ {
+  if (!group) return null;
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  IEntity leader = group.GetLeaderEntity();
+  foreach (AIAgent agent : agents)
+  {
+   if (!agent) continue;
+   SCR_ChimeraCharacter member = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!member || member == leader || !Alive(member) || HasLauncher(member)) continue;
+   return member;
+  }
+  return Member(group, null);
+ }
+
+ bool HasLauncher(IEntity character)
+ {
+  BaseWeaponManagerComponent weapons = BaseWeaponManagerComponent.Cast(character.FindComponent(BaseWeaponManagerComponent));
+  if (!weapons) return false;
+  array<IEntity> carried = {};
+  weapons.GetWeaponsList(carried);
+  foreach (IEntity weaponEntity : carried)
+  {
+   if (!weaponEntity) continue;
+   BaseWeaponComponent weapon = BaseWeaponComponent.Cast(weaponEntity.FindComponent(BaseWeaponComponent));
+   if (!weapon) continue;
+   array<BaseMuzzleComponent> muzzles = {};
+   weapon.GetMuzzlesList(muzzles);
+   foreach (BaseMuzzleComponent muzzle : muzzles)
+   {
+    if (muzzle && (muzzle.GetMuzzleType() == EMuzzleType.MT_UGLMuzzle || muzzle.GetMuzzleType() == EMuzzleType.MT_RPGMuzzle)) return true;
+   }
+  }
+  return false;
+ }
+
  static bool IsStandIn(IEntity entity)
  {
   return entity && s_StandIn && entity == s_StandIn;
@@ -523,6 +737,9 @@ class EXPG_GarrisonGameplay : GenericEntity
   PrintFormat("[ESR SQUAD ATTR LIST] vanillaCombatMode=%1 squadRoe=%2 count=%3", VanillaIndex, SquadRoeIndex, Attributes.GetAttributesCount());
   Check(VanillaIndex >= 0 && SquadRoeIndex > VanillaIndex, "one Game Master save writes vanilla Set combat mode before the EXPBG squad ROE");
   PureChecks();
+  Check(Daylight(), "clear daylight for the fights: noon, no fog, no rain");
+  FindSites();
+  Check(SitesFound == 3, string.Format("open fight sites for R, W and F: dry, level, clear sight and fire lines over 60 m, %1 m apart (found %2 of 3, %3 candidates)", SITE_SEPARATION, SitesFound, SitesTried));
   Surrender = ESR_SurrenderModule.Cast(Spawn(SURRENDER_MODULE, Origin + SiteS + ModuleOffset));
   Skills = EGS_Module.Cast(Spawn(SKILLS_MODULE, Origin + SiteS + SkillsOffset));
   if (!Check(Surrender != null && Skills != null && EGS_Module.HasAny(), "AI Surrender and AI Global Skills module prefabs spawned")) { Finish("setup"); return; }
@@ -535,7 +752,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   EGS_Settings.WriteSetting(EGS_Settings.KEY_ROE, Vector(EGS_Settings.ROE_VANILLA, 0, 0));
   Check(EGS_Settings.GetRoe() == EGS_Settings.ROE_VANILLA, "module default ROE vanilla: only the squad attributes steer");
   // Modes are set the moment the groups exist, before any member can see an enemy. S100,
-  // S0 and V are 150-210 m from E and never fire at will.
+  // S0 and V stay by the driver point (at least 450 m from E) and never fire at will.
   S100 = SpawnGroup(USSR_SQUAD, Origin + SiteS);
   Check(SessionRead(VanillaMode, S100) == ENTRY_FIRE, "vanilla Set combat mode reads fire at will on a fresh squad (entry mapping)");
   SetVanillaMode(S100, EAIGroupCombatMode.HOLD_FIRE);
@@ -544,13 +761,13 @@ class EXPG_GarrisonGameplay : GenericEntity
   SetVanillaMode(S0, EAIGroupCombatMode.HOLD_FIRE);
   V = SpawnGroup(USSR_SQUAD, Origin + SiteV);
   SetVanillaMode(V, EAIGroupCombatMode.RETURN_FIRE);
-  R = SpawnGroup(USSR_SQUAD, Origin);
+  R = SpawnGroup(USSR_SQUAD, SiteR);
   GmWrite(SquadRoe, R, EGS_Settings.ROE_RETURN_FIRE);
-  E = SpawnGroup(US_TEAM, Origin + EnemyOffset);
+  E = SpawnGroup(US_TEAM, SiteR + EnemyOffset);
   SetVanillaMode(E, EAIGroupCombatMode.HOLD_FIRE);
-  W = SpawnGroup(USSR_SQUAD, Origin + SiteW);
+  W = SpawnGroup(USSR_SQUAD, SiteW);
   GmWrite(SquadRoe, W, EGS_Settings.ROE_WARNING_SHOTS);
-  F = SpawnGroup(USSR_SQUAD, Origin + SiteF);
+  F = SpawnGroup(USSR_SQUAD, SiteF);
   GmWrite(SquadRoe, F, EGS_Settings.ROE_FIRE_ON_SIGHT);
   if (!Check(S100 && S0 && V && R && E && W && F, "squads spawned: S100, S0, V, R, W, F (USSR) and fire team E (US)")) { Finish("setup"); return; }
   Check(R.EGS_GetRoeOverride() == EGS_Settings.ROE_RETURN_FIRE && R.EGS_GetAppliedRoe() == EGS_Settings.ROE_RETURN_FIRE && External(R) == EAIGroupCombatMode.RETURN_FIRE && R.EGS_UsesStrictReturnFire(), "Game Master save: R Return Fire Only, RETURN_FIRE with the strict rule; " + Describe(R));
@@ -718,7 +935,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (Sum(RShots) > 0 || R.EGS_IsProvoked()) { HoldShots = Sum(RShots); Check(false, "R: no round and no provocation while E holds fire; " + Describe(R)); RDone = true; return; }
    if (Now() - RAt < 30) return;
    HoldShots = Sum(RShots);
-   PrintFormat("[ESR SQUAD ATTR R HOLD] shots=%1 sawEnemy=%2 %3", HoldShots, SawEnemy, Describe(R));
+   PrintFormat("[ESR SQUAD ATTR R HOLD] shots=%1 sawEnemy=%2 rLod=%3 eLod=%4 eLiving=%5 %6", HoldShots, SawEnemy, Lod(R), Lod(E), Living(E), Describe(R));
    Check(SawEnemy, "R: a member of R had a member of E as his target (visible enemy)");
    Check(HoldShots == 0 && Actual(R) == EAIGroupCombatMode.HOLD_FIRE, "R: 30 s at a visible enemy, no round fired, actual hold fire");
    if (!StartFarBurst()) { RDone = true; return; }
@@ -728,6 +945,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    int burstSoFar = 0;
    if (BurstShots) burstSoFar = BurstShots.Count;
+   SCR_AIUtilityComponent burstUtility = SoldierUtility(BurstShooter);
+   if (Burst && burstUtility && burstUtility.GetExecutedAction() == Burst) BurstRan = true;
    if (burstSoFar < 3 && Now() - RAt < 12) return;
    if (Burst) Burst.Complete();
    RPhase = 3; RAt = Now(); return;
@@ -737,7 +956,9 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (Now() - RAt < 5) return;
    int burstRounds = 0;
    if (BurstShots) burstRounds = BurstShots.Count;
-   PrintFormat("[ESR SQUAD ATTR R FAR BURST] rounds=%1 rShots=%2 %3", burstRounds, Sum(RShots), Describe(R));
+   bool launcher;
+   if (BurstShooter) launcher = HasLauncher(BurstShooter);
+   PrintFormat("[ESR SQUAD ATTR R FAR BURST] rounds=%1 rShots=%2 ran=%3 shooter=%4 launcher=%5 %6", burstRounds, Sum(RShots), BurstRan, BurstShooter, launcher, Describe(R));
    bool burstFired = Check(burstRounds >= 1, "R: E fired the far burst");
    bool held = Check(!R.EGS_IsProvoked() && Sum(RShots) == 0 && Actual(R) == EAIGroupCombatMode.HOLD_FIRE, "R: rounds passing about 9 m beside R do not set it off");
    if (burstFired && held) FarBurst = 1;
@@ -758,7 +979,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    if (RProvokedAt < 0 && R.EGS_IsProvoked()) RProvokedAt = Now();
    bool answered = RProvokedAt >= 0 && Sum(RShots) > 0;
-   if (!answered) { if (CaseTimeout(RAt, 60, "R: provoked by E's fire and answered it; " + Describe(R))) RDone = true; return; }
+   if (!answered) { if (CaseTimeout(RAt, 60, string.Format("R: provoked by E's fire and answered it; eOpenShots=%1 rShots=%2 rLiving=%3 ", Sum(EOpenShots), Sum(RShots), Living(R)) + Describe(R))) RDone = true; return; }
    float eFirst = FirstShot(EOpenShots);
    float rFirst = FirstShot(RShots);
    PrintFormat("[ESR SQUAD ATTR R PROVOKED] eOpened=%1 eFirst=%2 provoked=%3 rFirst=%4 eOpenShots=%5 rShots=%6 quietBroken=%7 eCounters=%8 %9", EOpenedAt, eFirst, RProvokedAt, rFirst, Sum(EOpenShots), Sum(RShots), RQuietBroken, EOpenShots.Count(), Describe(R));
@@ -779,7 +1000,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  // An E member suppresses a point beside R: the path passes about 9 m beside R's nearest member.
  bool StartFarBurst()
  {
-  BurstShooter = Member(E, null);
+  BurstShooter = BurstMember(E);
   if (!Check(BurstShooter != null, "R: an E member to fire the far burst")) return false;
   array<AIAgent> agents = {};
   R.GetAgents(agents);
@@ -840,7 +1061,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!Spawned(W, SQUAD_SIZE)) { if (CaseTimeout(WAt, 60, "W: W finished its initial spawn")) WDone = true; return; }
    Watch(W, WShots, null);
    // The stand-in player: a standalone rifleman without AI (he cannot shoot back).
-   s_StandIn = Spawn(US_RIFLEMAN, Origin + SiteW + EnemyOffset);
+   s_StandIn = Spawn(US_RIFLEMAN, SiteW + EnemyOffset);
    SCR_ChimeraCharacter standIn = SCR_ChimeraCharacter.Cast(s_StandIn);
    if (!Check(standIn != null && EGS_Manager.IsPlayerTarget(standIn), "W: the stand-in counts as a player target")) { WDone = true; return; }
    AIControlComponent control = standIn.GetAIControlComponent();
@@ -882,6 +1103,7 @@ class EXPG_GarrisonGameplay : GenericEntity
     Check(true, "W: lethal fire after the pause");
    }
    if (Alive(s_StandIn) && Now() - WAt < 25) return;
+   PrintFormat("[ESR SQUAD ATTR W LETHAL] rounds=%1 standInAlive=%2 standInHealth=%3 wLiving=%4 wLod=%5 %6", Sum(WShots) - WShotsAtLethal, Alive(s_StandIn), Health(s_StandIn), Living(W), Lod(W), Describe(W));
    if (Lethal == 0) Check(false, "W: lethal fire after the pause");
    // End the contact for good: the stand-in is gone.
    if (Alive(s_StandIn)) Kill(s_StandIn);
@@ -914,7 +1136,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    HoldShotsCounter = WatchOne(Holdout);
    Watch(F, FShots, Holdout);
    // The target appears only now, after the holdout's ROE is in place.
-   E2 = SpawnGroup(US_TEAM, Origin + SiteF + EnemyOffset);
+   E2 = SpawnGroup(US_TEAM, SiteF + EnemyOffset);
    SetVanillaMode(E2, EAIGroupCombatMode.HOLD_FIRE);
    if (!Check(E2 != null, "F: HOLD_FIRE fire team E2 spawned in front of F")) { EndF(); return; }
    FPhase = 1; FAt = Now(); return;
@@ -932,7 +1154,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    }
    if (MatesFiredAt < 0 && Sum(FShots) > 0) MatesFiredAt = Now();
    bool settled = MatesFiredAt >= 0 && (Now() - MatesFiredAt >= 15 || Living(E2) == 0);
-   if (!settled) { if (CaseTimeout(FAt, 60, "F: F's other soldiers engaged E2")) EndF(); return; }
+   if (!settled) { if (CaseTimeout(FAt, 60, string.Format("F: F's other soldiers engaged E2 (mateRounds=%1 e2Living=%2 fLod=%3)", Sum(FShots), Living(E2), Lod(F)))) EndF(); return; }
    int holdoutRounds = -1;
    if (HoldShotsCounter) holdoutRounds = HoldShotsCounter.Count;
    SCR_AICombatComponent holdoutCombat = Combat(Holdout);
