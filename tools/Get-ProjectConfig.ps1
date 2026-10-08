@@ -34,7 +34,9 @@ foreach ($entry in $entries) {
  if ($entry.installedDependencies) {
   if ($entry.installedDependencies -isnot [System.Collections.IDictionary]) { throw 'Installed dependencies must map GUIDs to installed directory names.' }
   foreach ($id in $entry.installedDependencies.Keys) {
-   if ($id -cnotin $entry.dependencies -or $entry.installedDependencies[$id] -notmatch '^[A-Za-z0-9_-]+$') { throw 'Installed dependencies require a declared GUID and a directory name.' }
+   # One directory name, or several candidates in search order (local build, Workshop download).
+   $directoryNames = @($entry.installedDependencies[$id])
+   if ($id -cnotin $entry.dependencies -or !$directoryNames.Count -or @($directoryNames | Where-Object { $_ -isnot [string] -or $_ -notmatch '^[A-Za-z0-9_-]+$' }).Count) { throw 'Installed dependencies require a declared GUID and one or more directory names.' }
   }
  }
 }

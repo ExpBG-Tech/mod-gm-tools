@@ -1,0 +1,1049 @@
+{
+  "note": "The samples of the GM Tools audio projects (.acp). They ship in the dependency EXPBG Audio Data (198987BE7BAC4C84), a pure data mod in its own folder outside Git (mod-audio-data beside this repository, inventory gm-samples.json; built and released with the tooling of ExpBG-Tech/mod-ambient-radio, ./build.ps1 -Audio), at these resource paths with these GUIDs; GM Tools itself ships no audio. frames/rate give each WAV length for the Duration() tables. tests/Test-AudioData.ps1 checks the references, and the samples themselves when mod-audio-data sits beside this repository.",
+  "dependency": {
+    "id": "198987BE7BAC4C84",
+    "name": "EXPBG Audio Data",
+    "project": "EXPBG_Ambient_Radio_Audio",
+    "minimumVersion": "0.1.2",
+    "folder": "mod-audio-data",
+    "inventory": "gm-samples.json",
+    "tooling": "mod-ambient-radio"
+  },
+  "samples": [
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Drones/EAS_Drone_Overhead.wav",
+      "guid": "5DC17FDC2CBD471E",
+      "bytes": 4310412,
+      "sha256": "DFBE07E3C5AD1CD5FE45838D7EEE42CE0C2045244C049EFA60D207B5AF2BA354",
+      "frames": 1077592,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_Explosion_LogDrum.wav",
+      "guid": "55C620453F8A4E7C",
+      "bytes": 493760,
+      "sha256": "C785C04767A436E6114D272CA6370F33E75F86396AE8563BE8BCCF95EDD133AA",
+      "frames": 246858,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_Explosion_Noise.wav",
+      "guid": "0C08B69337894741",
+      "bytes": 749028,
+      "sha256": "3ADF91CAA56BC59501FD843B0995036B14676D86ED932486C524F255E3ABDAA5",
+      "frames": 374492,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_Explosion_Wood.wav",
+      "guid": "7221F510E63F4108",
+      "bytes": 518748,
+      "sha256": "10C6228C45D85AFAB1D2C1EDDC013DAA12E14192B0B26F32DAF78058C1FB2323",
+      "frames": 259352,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_JSRS_Grenade_Distant.wav",
+      "guid": "8238C109409B4B8C",
+      "bytes": 544064,
+      "sha256": "39FE61B7304EB7BFB2145172EDC69513DD5E0C2F48C96695115719E3581FEAAD",
+      "frames": 136005,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_JSRS_Grenade_Far.wav",
+      "guid": "D1E6BAB8BD1E4C92",
+      "bytes": 544064,
+      "sha256": "D0E3D47B600B150A891585F57484A2BED86F5B3BAFCCC088F4C588C53A755007",
+      "frames": 136005,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_JSRS_Grenade_Near.wav",
+      "guid": "3FB15B9E1C934160",
+      "bytes": 743320,
+      "sha256": "74B440A6FE648A67B0E1ADA833AD2EB8AA0E8159E67B42AB9E31FE3B04EEF2D7",
+      "frames": 185819,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_JSRS_Rocket_Distant.wav",
+      "guid": "0C51333661894ECE",
+      "bytes": 875448,
+      "sha256": "DBA5BF7C1AD16CCFB8D5A88AB6915410F432C4490B95F9D7350A8A24B8B4C580",
+      "frames": 218851,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_JSRS_Rocket_Far.wav",
+      "guid": "D2EAFDD2A2444A85",
+      "bytes": 919044,
+      "sha256": "7E3C7A156417E5CCCAB2183AB1044AD4B69B24A1C1FD0420CB3A2AE3C7101C37",
+      "frames": 229750,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_JSRS_Rocket_Near.wav",
+      "guid": "F824DD462FB74270",
+      "bytes": 561140,
+      "sha256": "B22134133E0005D78A243F5C6E3859131DDD74D4F0A465174A25CDC6953CFD25",
+      "frames": 140274,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Explosions/EAS_Shelling_Distant.wav",
+      "guid": "43402A4727654833",
+      "bytes": 6296544,
+      "sha256": "901662DE66F412A858C90928563A5E25E6AD799BE45A99612B4F43C488F03AB5",
+      "frames": 3148250,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_CZ_Dense.wav",
+      "guid": "BD1B902EEE0B4EE3",
+      "bytes": 230444,
+      "sha256": "2C6E01E722901155DF5D73BFB2265BEE0C18E5942C793A1A0A4403D618DF0710",
+      "frames": 115200,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_CZ_Short.wav",
+      "guid": "EDE769699E4D45DE",
+      "bytes": 159404,
+      "sha256": "45E14E6126ED369393ABACF81620AF5FFABC145E1B379A432BFD20EE5E176CBB",
+      "frames": 79680,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_Firefight_Distant.wav",
+      "guid": "3AC5A5E93E254957",
+      "bytes": 9360428,
+      "sha256": "3A64769119C634C6D7501358EE2CBF7AE1EE8EAB6BF8E43D5D439C27DD80A41F",
+      "frames": 4680192,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_Firefight_Near.wav",
+      "guid": "8212D5C326454DFE",
+      "bytes": 9024956,
+      "sha256": "BDA7EB847CF7F443565BE7C45769025D0F1408DAC134F46932BCAB13A84AB612",
+      "frames": 4512456,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_AK762_Distant.wav",
+      "guid": "C4260E2BF5A146CA",
+      "bytes": 255468,
+      "sha256": "5DC15D1464714E41C6CE7B4C47FBC6A0CA81EA88574077F4188427388B0794E1",
+      "frames": 63856,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_AK762_Far.wav",
+      "guid": "508FC873061244B4",
+      "bytes": 277352,
+      "sha256": "4F8A7E201B348E4C9B131D2EE2E17098FC5999C01A9E037782F7418DAF1A510A",
+      "frames": 69327,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_AR556_Distant.wav",
+      "guid": "8BABD52453F743B7",
+      "bytes": 265260,
+      "sha256": "1BA683008D265FD6B11348F3913B56BFE57FD1D203891C8F9AA4279BA3E4AA95",
+      "frames": 66304,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_AR556_Far.wav",
+      "guid": "FD9DD656138B4E35",
+      "bytes": 254332,
+      "sha256": "E398AA22ADDB9501A05D8E27C955731F6C45F9A31C6FFB1E8C2E86E973AEB057",
+      "frames": 63572,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_DSHK_Distant.wav",
+      "guid": "01CC79D42A704D1D",
+      "bytes": 387732,
+      "sha256": "DD4779081326908854654716541A9C6181A299AE144DE9D7058EE08DAF3961DD",
+      "frames": 96922,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_DSHK_Far.wav",
+      "guid": "83DE18F0C1C54E6B",
+      "bytes": 690880,
+      "sha256": "E6CFD431F07274CFFBB5C874284EDBF951F45E4615C881BC3D15A0CC0C5851F0",
+      "frames": 172709,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_LMG762_Distant.wav",
+      "guid": "A794C79BC4314F5D",
+      "bytes": 279528,
+      "sha256": "91FFF1426830123BE9D77B0D1D0D88BC13DF02D5C11ECEF1E8A74BF17A9BB7DD",
+      "frames": 69871,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Firefight/EAS_JSRS_LMG762_Far.wav",
+      "guid": "97E9D1B6B530412B",
+      "bytes": 280616,
+      "sha256": "81278E58F837E2B0E40A0C836FC482CFF521F9157A0BD01E1E52A8928394A578",
+      "frames": 70143,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Jets/EAS_Jet_Flyby1.wav",
+      "guid": "A1001A022BD84651",
+      "bytes": 2332132,
+      "sha256": "369AA15C340B46586930511F0CB00504467FD531C9F619D79A96D04AB0C8E872",
+      "frames": 1166044,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarEffects/Jets/EAS_Jet_Flyby2.wav",
+      "guid": "BE7CC43B889F471F",
+      "bytes": 6096846,
+      "sha256": "8F44648316F4B80A52BBA74F9188AB39894C73AB956BF4469434DE156452DA95",
+      "frames": 3048401,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarMix/EAS_WarMix_Gunfire1.wav",
+      "guid": "17E76276FFBB4448",
+      "bytes": 28800218,
+      "sha256": "F7D3B607D59210E86B09CE769D1028BB597CBFD9BC145D984B7B9E225FAD96A4",
+      "frames": 14400087,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarMix/EAS_WarMix_Gunfire2.wav",
+      "guid": "7AB1F278C8914362",
+      "bytes": 28800162,
+      "sha256": "68CB208BF1493DC8497D53D30AB570A3AE62900115C738F16EF84345D3312A88",
+      "frames": 14400059,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarMix/EAS_WarMix_Kent.wav",
+      "guid": "1DDDE1F83E924F4C",
+      "bytes": 3303400,
+      "sha256": "8950B2F561AB8283A2FC6BBB33BDE90923F9D1329533383B77C07D4794A70ADE",
+      "frames": 1651678,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/AmbientWarMix/EAS_WarMix_Outpost.wav",
+      "guid": "EB310CFD748B4B23",
+      "bytes": 88368876,
+      "sha256": "34F21E4520C0947189406B9AEEF97500EE248A497477FBE277ADF5D227BF8499",
+      "frames": 44184416,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_Angry.wav",
+      "guid": "F125C23915B74073",
+      "bytes": 1522988,
+      "sha256": "61BC9FE456864EBD3E260F2A775F24C2A36A58230BA5A1E4378F330BFF2FB113",
+      "frames": 761472,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_Downtown.wav",
+      "guid": "CE1167AE3FCB488F",
+      "bytes": 5764508,
+      "sha256": "3BA750679690BB13B8922A5217803C5965A3EC6ACC4E1058C837C2D523456CEF",
+      "frames": 2882232,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_Large.wav",
+      "guid": "C2C25C6419D94975",
+      "bytes": 8640044,
+      "sha256": "E745F4C5D8892FF968C85DABEFC944C89298839A358F9930CC1A49C141FFA288",
+      "frames": 4320000,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_Market.wav",
+      "guid": "5B8228A2A237BC1F",
+      "bytes": 16728142,
+      "sha256": "344BE669C4875EB387A470E83DF29C3EF5BCA0F51A89871577860B88AC166D92",
+      "frames": 4182016,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_MarketSeller.wav",
+      "guid": "A55654F64F0F4A7C",
+      "bytes": 17899598,
+      "sha256": "7C1448B92D5598D83128F93A8E3654916BE262E2C12C24F37F13DE3322C12B6A",
+      "frames": 4474880,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_MuslimPrayer.wav",
+      "guid": "E60E56801E602B25",
+      "bytes": 29237292,
+      "sha256": "4FF38ED62DC3C5D10A68318A1D62E61D2FD363FC105BD1E0E1640B41F25E4848",
+      "frames": 7309312,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_Rioting.wav",
+      "guid": "73886D83A1A7DA79",
+      "bytes": 3622032,
+      "sha256": "1777B1E1C6A5CEDDA6CFF798871A67963D4E1013530906355B78DB064BD7B436",
+      "frames": 1810994,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_StreetSinging.wav",
+      "guid": "00F5A178028DF1DD",
+      "bytes": 23003180,
+      "sha256": "F05568D5A0293A7222A24BED9ACB2D4B95025822DCB6DD4BB18DA4BFEC01B369",
+      "frames": 5750784,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/Crowd/EAS_Crowd_Talking.wav",
+      "guid": "3292A3C183774A49",
+      "bytes": 2867722,
+      "sha256": "C91B2422C857E4C4512107B2CAAE98DDDE447BB5E54CC5F95667D493532CBEB8",
+      "frames": 1433839,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Apache1.wav",
+      "guid": "758AF2C6F60B4647",
+      "bytes": 22103954,
+      "sha256": "C36FFF0070BD5713C111EB64CD0C1D924D50080F1FEAD2D76824809F58D01518",
+      "frames": 11051955,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Apache2.wav",
+      "guid": "1770595F34EC4055",
+      "bytes": 17059884,
+      "sha256": "54379821C5812474B7C48806C38C6FB7F96422C9ABD4E3BD3920D090FB391F6E",
+      "frames": 8529920,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Arab1.wav",
+      "guid": "ABE391744A0649CC",
+      "bytes": 7246898,
+      "sha256": "3C7472A7DD4ADC54874EBFFCD749EB3D996A0EE54C9D0F1C1A54FB0BE496054A",
+      "frames": 3623427,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_ArabChatter.wav",
+      "guid": "6235BB2C52734563",
+      "bytes": 6743118,
+      "sha256": "EAEE15C2A7DCC63D02D467F360BD4ED0A3A7F7DEE8AADAAEBE8A1132D35C6A5A",
+      "frames": 3371537,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Battlefield3.wav",
+      "guid": "E7AF8CD0C7E1407A",
+      "bytes": 24144712,
+      "sha256": "83EB4BBF5BC62C1E10EDAE481D34F240A8C679AEED7CBE135903826F7B9B1584",
+      "frames": 12072334,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Chinese1.wav",
+      "guid": "D09AD9571372488E",
+      "bytes": 31789462,
+      "sha256": "EE4515B87E9F1C0BA4F0651AB86C8CDFC3739AECEE256D563220361318104253",
+      "frames": 15894709,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_HanoiHannah.wav",
+      "guid": "D068B1B8A04135E3",
+      "bytes": 18935484,
+      "sha256": "455C5386C42C44A14ECE8EA82FF214B04EEF42F9F9DA79FA5641F4AC268C796E",
+      "frames": 4733860,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_MysteryRussian.wav",
+      "guid": "052F0C24A3314D25",
+      "bytes": 8544244,
+      "sha256": "149AFC8583E25429BD9D8AD3F99A3FE7899E5BD17F7B443F3F318F3288329C5A",
+      "frames": 4272100,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Russian1.wav",
+      "guid": "1F116C15DD4B4407",
+      "bytes": 23211826,
+      "sha256": "CDBA9185D521E0AFFCF7760940DA93E8FA8034843F4545DA5E0E0CDD6B441B54",
+      "frames": 11605891,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Russian2.wav",
+      "guid": "601334C6EA03459B",
+      "bytes": 13421550,
+      "sha256": "2F0522F430E19C78BF70A2A76A8924A742066F58EE9AE8500DA69DAFF66E71F4",
+      "frames": 6710753,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Russian3.wav",
+      "guid": "ACD36DAF7C0844E8",
+      "bytes": 25287132,
+      "sha256": "CCAB621C51749D473DDB6631022DE3A6BD850F7EC75355835090F39E11798ED6",
+      "frames": 12643544,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Russian4.wav",
+      "guid": "3B4E8130F81F4440",
+      "bytes": 23095912,
+      "sha256": "DF7866168F64647847AF3C550FF639ADA668A0333179297907A111C92AD4B33A",
+      "frames": 11547934,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_RussianChatter.wav",
+      "guid": "22587FC3C8674B2E",
+      "bytes": 29136816,
+      "sha256": "42D5C506EF496F9AF87A31CB5B909D0C2AFC1E1D4771A4191F236D13DD405671",
+      "frames": 14568386,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/RadioTransmissions/EAS_Radio_Static.wav",
+      "guid": "2B134FE236C14D06",
+      "bytes": 1796982,
+      "sha256": "BB32CF0772362AEEDF6B8A527C167B8CAD569E9645BEBDCFF0675BF5991B02DE",
+      "frames": 898469,
+      "rate": 48000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_CarAlarm.wav",
+      "guid": "A5F8A80F6FE55A93",
+      "bytes": 2895916,
+      "sha256": "56D691DEF48B4433A81028231FE53F2AD797818384297E8E00612D19669E40F2",
+      "frames": 723968,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_ChurchBell.wav",
+      "guid": "ADC1AC696E170A8E",
+      "bytes": 5742670,
+      "sha256": "57B66C070B1121BF436D71026703C55790F347872C01BAF82A4431A2F6AED89A",
+      "frames": 1435648,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_DistantBarking.wav",
+      "guid": "42E0F3AE6AB4D1E4",
+      "bytes": 22237262,
+      "sha256": "33E6F4C0DFCB5AA830F2F3A9CEA29418B160E504CC61EB188BF7BC5189B5713B",
+      "frames": 5559296,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_DistantSheep.wav",
+      "guid": "82F75A6A948E4248",
+      "bytes": 2064428,
+      "sha256": "4EAB7568DD7FD2DB82D16B0241335BA7EFA4F9C889473E6A86D49C123B587A27",
+      "frames": 516096,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_EmergencyAlert.wav",
+      "guid": "63717952C9214F3A",
+      "bytes": 1035468,
+      "sha256": "6E2816920A8463A823D0E10BDACE0923C4C69C8AC9B58EFBADBE86554A7CFCD5",
+      "frames": 517712,
+      "rate": 24000,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_NokiaRingtone.wav",
+      "guid": "03CB733A77468732",
+      "bytes": 2117676,
+      "sha256": "5851BEA634055140FCAB3A1FEE547E8B1FA2BCE9C1CD942101163F8F07F95218",
+      "frames": 529408,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_PoliceCar.wav",
+      "guid": "5778AF084F9DFAB7",
+      "bytes": 4042796,
+      "sha256": "F096C100FA09452D64D000E12E821BEC27F0C264A945D8335183658043E10F2F",
+      "frames": 1010688,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPBG/AmbientSounds/Samples/SoundEffects/EAS_TrafficMedium.wav",
+      "guid": "29410D46622CE6A8",
+      "bytes": 15480460,
+      "sha256": "C7D7B8D79807BB0FD19BD18A1834C01C0933463DEC99C3B7B388683C67AFBFBA",
+      "frames": 3870104,
+      "rate": 44100,
+      "module": "ambient-sounds"
+    },
+    {
+      "path": "Audio/EXPII/EII_Startup.wav",
+      "guid": "2CA89FDC0700F13D",
+      "bytes": 474880,
+      "sha256": "8CD3928DFD2365E8FC55B6A67B4BC23DEC2F66E7E5EFB4B714EA731D5B151FB0",
+      "frames": 237401,
+      "rate": 48000,
+      "module": "intel-items"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Burp_01.wav",
+      "guid": "CA1A00000A000019",
+      "bytes": 70514,
+      "sha256": "B83F5D66BE552B39D3B236A7627F21A1978CDFE6B8A386CC0569E0B1449AD335",
+      "frames": 35235,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Burp_02.wav",
+      "guid": "CA1A00000A00001A",
+      "bytes": 254060,
+      "sha256": "A6A418307DA083F1B8456586C8BF173211BC8AFA823610A518AD9360DAC04261",
+      "frames": 127008,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_01.wav",
+      "guid": "CA1A00000A000001",
+      "bytes": 80306,
+      "sha256": "492BCDE49FFCA8DE8EB6D933F9F99082081CAC4FFD1516C4E38F682E5A7AE5F3",
+      "frames": 40131,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_02.wav",
+      "guid": "CA1A00000A000002",
+      "bytes": 108530,
+      "sha256": "A5814B39F4DDF7234622CA706869523D6DB1DA4A49E82EF9346752BEE8D741E8",
+      "frames": 54243,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_03.wav",
+      "guid": "CA1A00000A000003",
+      "bytes": 73250,
+      "sha256": "736A28BD582E2EBCBE72936D60167402FF74285F9B620ACB53D1E26A3CBC0FBF",
+      "frames": 36603,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_04.wav",
+      "guid": "CA1A00000A000004",
+      "bytes": 66194,
+      "sha256": "25161B8892B6C5BE96DAEF9076B3F020FDDD6D6E3D1FB78D116A368E1FB75B04",
+      "frames": 33075,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_05.wav",
+      "guid": "CA1A00000A000005",
+      "bytes": 138518,
+      "sha256": "5172ECDCE229AACDDEAABF4BB39FA679EED4B151B3A32B34DA45C8DBB3F5E180",
+      "frames": 69237,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_06.wav",
+      "guid": "CA1A00000A000006",
+      "bytes": 102040,
+      "sha256": "80BDBA05630B2B796A310B6576417B4870AE177D24DE10F9A2F537CAD1CD9810",
+      "frames": 50998,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_07.wav",
+      "guid": "CA1A00000A000007",
+      "bytes": 112940,
+      "sha256": "C0DA88406DD545784A6BD9A9478D51899FD05287F965FC612A6E020B2F4B254D",
+      "frames": 56448,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Cough_08.wav",
+      "guid": "CA1A00000A000008",
+      "bytes": 298160,
+      "sha256": "3839B1E356C05EB416A87C75D61FD96C4ECFE7DE733C70E726C7D8368BBCD9BA",
+      "frames": 149058,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Hiccup_01.wav",
+      "guid": "CA1A00000A000015",
+      "bytes": 33562,
+      "sha256": "EEB742BFA3F8146B98DAB5A712B26289CD61D6DAAEBE597D45A249BD70FCCBE5",
+      "frames": 16759,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Hiccup_02.wav",
+      "guid": "CA1A00000A000016",
+      "bytes": 33558,
+      "sha256": "D46D95AB726E6DCE0D38342FB3D28A55C324681959A57A400EE38473F91C1C4B",
+      "frames": 16757,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Hiccup_03.wav",
+      "guid": "CA1A00000A000017",
+      "bytes": 33560,
+      "sha256": "AF88BE0CB93817BF6D23460B942C6CDAA336849C8D34698D08A8E4AE6E59688F",
+      "frames": 16758,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Hiccup_04.wav",
+      "guid": "CA1A00000A000018",
+      "bytes": 42380,
+      "sha256": "797CF1F2A1D3D4D4AEC6760800A02F34471AF0EDB94529104009093E53F7CE50",
+      "frames": 21168,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Hum_01.wav",
+      "guid": "CA1A00000A00001B",
+      "bytes": 417404,
+      "sha256": "67739D5DC202C55F5C08B5F3A54B43C7EEC27249BDC0112512A5422665AAB452",
+      "frames": 208680,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Hum_02.wav",
+      "guid": "CA1A00000A00001C",
+      "bytes": 389100,
+      "sha256": "2A9D75B6C521EE2024E9293A692B8EAA54295B64EF76B5ABE2FCD0215C5F2B95",
+      "frames": 194528,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Laugh_01.wav",
+      "guid": "CA1A00000A000025",
+      "bytes": 148222,
+      "sha256": "5486EBB459CE538ADFF3C32BD7A3DC91608E8F8B4B655D1891554CAF2BF74292",
+      "frames": 74089,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Laugh_02.wav",
+      "guid": "CA1A00000A000026",
+      "bytes": 139400,
+      "sha256": "0BD8EB002AA69D4D0C79F55F5371448A40DE352EC5EC0F9DA5088C6CC73397C3",
+      "frames": 69678,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Laugh_03.wav",
+      "guid": "CA1A00000A000027",
+      "bytes": 157040,
+      "sha256": "A8FD5885DE0787737F9CB02BABD1A6AE3213497001C94F01888404EC7B92D63F",
+      "frames": 78498,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Laugh_04.wav",
+      "guid": "CA1A00000A000028",
+      "bytes": 227600,
+      "sha256": "246A56CA654F375F29982FC8F1145717916F8D4310E2343DFE5A8BD54715DA8F",
+      "frames": 113778,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Laugh_05.wav",
+      "guid": "CA1A00000A000029",
+      "bytes": 86478,
+      "sha256": "0C7C3B9597005A569C6505E29E7C16B90E3342D3AEF24655235EE0F0C3319E43",
+      "frames": 43217,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_01.wav",
+      "guid": "CA1A00000A000031",
+      "bytes": 73772,
+      "sha256": "1209E5106081491FE2ED147204D0C616E8333C8CFB5FC5BF1DFA1566AE45400F",
+      "frames": 36864,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_02.wav",
+      "guid": "CA1A00000A000032",
+      "bytes": 124460,
+      "sha256": "C2D771D93F8B14D1A8B36BB9DE0F55E510AFCC7C225000E7B6CE3884A3109109",
+      "frames": 62208,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_03.wav",
+      "guid": "CA1A00000A000033",
+      "bytes": 110636,
+      "sha256": "AAB48C7E2DE1ADA1125AD3EEF7766695E032DA70CABB3B8D280F3DC92912F257",
+      "frames": 55296,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_ClearThroat_04.wav",
+      "guid": "CA1A00000A000034",
+      "bytes": 69164,
+      "sha256": "B3C28198EE0191472F5248830C366431E24641FFDA0C70A5FF53ADC001AE922B",
+      "frames": 34560,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Hum_01.wav",
+      "guid": "CA1A00000A000035",
+      "bytes": 253484,
+      "sha256": "D135CE2D5386C2FC6572609792BF459766448F884569A7D3411CAAC22EBDAD8E",
+      "frames": 126720,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Hum_02.wav",
+      "guid": "CA1A00000A000036",
+      "bytes": 216620,
+      "sha256": "819624A92B659D04094928EEC7BD856761B60D287DBCC632598DD57C9F86CC5A",
+      "frames": 108288,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Sniff_01.wav",
+      "guid": "CA1A00000A000037",
+      "bytes": 324908,
+      "sha256": "2B94809F398C1A9B0C80E1AA104EE1301F9A21386849053A066C3AD7C8C2EF53",
+      "frames": 162432,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Sniff_02.wav",
+      "guid": "CA1A00000A000038",
+      "bytes": 103724,
+      "sha256": "A7436CFE4C61AB2EA26F15862EB46DA6EC1CF7AEC0CA0CBB63B6B5B1493B5221",
+      "frames": 51840,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Sniff_03.wav",
+      "guid": "CA1A00000A000039",
+      "bytes": 82988,
+      "sha256": "5B4AAF5ECE635DA7C4F1530E66E535BBC0B99DCD452C9375005D6687767F240F",
+      "frames": 41472,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Whistle_01.wav",
+      "guid": "CA1A00000A00003A",
+      "bytes": 313388,
+      "sha256": "12AB5AEEE479658DFEDCF4A8E7A1112CA2CFAE0C8168159A8443D0B3E3C39020",
+      "frames": 156672,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Whistle_02.wav",
+      "guid": "CA1A00000A00003B",
+      "bytes": 345644,
+      "sha256": "DEF0A12B913CFB4A358733E1FCC53A529F62DCBA7B65696EB47EE5884F905CBA",
+      "frames": 172800,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Whistle_03.wav",
+      "guid": "CA1A00000A00003C",
+      "bytes": 271916,
+      "sha256": "947311BB0E53B87BCC74131D13E3F5C6A4F6029BC329251683AE27A78F0664BE",
+      "frames": 135936,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Yawn_01.wav",
+      "guid": "CA1A00000A00003D",
+      "bytes": 202796,
+      "sha256": "63F2A89F004C8BC4A43D78BF680BE89442DD2EF9B87156AC838A528A37813B9B",
+      "frames": 101376,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Northcom_Yawn_02.wav",
+      "guid": "CA1A00000A00003E",
+      "bytes": 278828,
+      "sha256": "983EE6E2281EF9EC54E8153E68330A846BD1517A0644F6964283A2947C65C2ED",
+      "frames": 139392,
+      "rate": 48000,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Nose_01.wav",
+      "guid": "CA1A00000A00000E",
+      "bytes": 77308,
+      "sha256": "B526A6BF0DC48D604806C6B761ED815F576BDDE53DE4FEE0ED49E52963E1C59E",
+      "frames": 38632,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Nose_02.wav",
+      "guid": "CA1A00000A00000F",
+      "bytes": 29854,
+      "sha256": "5FFD9271EDA766C5E1A780FEFB342189322D272DC719036CA19926B012A5779E",
+      "frames": 14905,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Sigh_01.wav",
+      "guid": "CA1A00000A000012",
+      "bytes": 112940,
+      "sha256": "AD9A4A594C858BF21BBBA6751D9CC7362B4FB618460575ED146D5B51D904A6B2",
+      "frames": 56448,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Sigh_02.wav",
+      "guid": "CA1A00000A000013",
+      "bytes": 183500,
+      "sha256": "8FA8FA27F5A3CB16C44CD7054DA6A2D179033564AB547DE98D5E8C3B701220FE",
+      "frames": 91728,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Sneeze_01.wav",
+      "guid": "CA1A00000A00000C",
+      "bytes": 74132,
+      "sha256": "34E693CC0EB341B6D17307EEAF3CB48D77882D06C5CE951FB60711BF280B2390",
+      "frames": 37044,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Sneeze_02.wav",
+      "guid": "CA1A00000A00000D",
+      "bytes": 68046,
+      "sha256": "ABC1DE47516D520C66DBCB31801E4B2B900D27964DBAB2390141613F114F0F1E",
+      "frames": 34001,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Throat_01.wav",
+      "guid": "CA1A00000A000009",
+      "bytes": 101472,
+      "sha256": "0AB66C3228EFAE8CB3D65DF7B0828948E3B19A3F57028A46F47F8B8C5F80729B",
+      "frames": 50714,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Throat_02.wav",
+      "guid": "CA1A00000A00000A",
+      "bytes": 60020,
+      "sha256": "FFB62B5056E6A15D43B85FD078B7B70CE6614542B344F4A3D73267716930568F",
+      "frames": 29988,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Throat_03.wav",
+      "guid": "CA1A00000A00000B",
+      "bytes": 77658,
+      "sha256": "2E3FED990F4C232B4196FE9B22E6277E1FE8A707DE460EEAF5EEE7703A0B81B6",
+      "frames": 38807,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_01.wav",
+      "guid": "CA1A00000A00001D",
+      "bytes": 121760,
+      "sha256": "817F7DD16C6B165697C8DCB355590CCF43E7FD930F17DD908D7158A812001419",
+      "frames": 60858,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_02.wav",
+      "guid": "CA1A00000A00001E",
+      "bytes": 315800,
+      "sha256": "FA0A1EED723C0EDBAE63F85BD8AFBD1CF8EAF02319D7D8DF5EF1F5E8B02044CE",
+      "frames": 157878,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_03.wav",
+      "guid": "CA1A00000A00001F",
+      "bytes": 182792,
+      "sha256": "E3672FFEBA6CE97D8F915B38F541A9BE8F26488D88DBC1B1E41A2B64D15AB51A",
+      "frames": 91374,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_04.wav",
+      "guid": "CA1A00000A000020",
+      "bytes": 351080,
+      "sha256": "9411245EABC3BF8E6562F6B6CF9B089E76EF0F537BF967D7CD4878369103E649",
+      "frames": 175518,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_05.wav",
+      "guid": "CA1A00000A000021",
+      "bytes": 315800,
+      "sha256": "90A50110EA4EBDBFD103DC3585367469C2019875BA85DB205447F9D1F3C921EC",
+      "frames": 157878,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_06.wav",
+      "guid": "CA1A00000A000022",
+      "bytes": 306982,
+      "sha256": "D0489621AEFCEB0FA1DD6483509AB87CE9B0CDDD88934FD7CEE77908FF3A90A8",
+      "frames": 153469,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_07.wav",
+      "guid": "CA1A00000A000023",
+      "bytes": 227600,
+      "sha256": "F4FD940D651F2EE1794937653DCFC5F6E96D93DF58981E101D445D1EDA9E4F59",
+      "frames": 113778,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Whistle_08.wav",
+      "guid": "CA1A00000A000024",
+      "bytes": 86480,
+      "sha256": "7BA0ACD922EECA92A6958F7CC60438A438FB047298DC724CE5CF159516D20095",
+      "frames": 43218,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Yawn_01.wav",
+      "guid": "CA1A00000A000010",
+      "bytes": 268172,
+      "sha256": "60C0BA9ED34CDCA2E1BA2F034F844D5B633E6B61B56169BEBFAABF421982A5B5",
+      "frames": 134064,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    },
+    {
+      "path": "Sounds/EXPAC/Samples/EAC_Yawn_02.wav",
+      "guid": "CA1A00000A000011",
+      "bytes": 209958,
+      "sha256": "AE8409A6BAAD9123428D2A2A4360B2C930A0CAA16D5B724B4C102D65F3A6100F",
+      "frames": 104957,
+      "rate": 44100,
+      "module": "ambient-civilians"
+    }
+  ]
+}

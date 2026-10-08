@@ -2,7 +2,10 @@
   "addon": {
     "name": "EXPBG_GM_Tools",
     "source": "addon",
-    "dependencies": ["58D0FB3206B6F859"],
+    "dependencies": ["58D0FB3206B6F859", "198987BE7BAC4C84"],
+    "installedDependencies": {
+      "198987BE7BAC4C84": ["EXPBG_Ambient_Radio_Audio", "EXPBGAudioData_198987BE7BAC4C84", "EXPBGAmbientRadioAudio_198987BE7BAC4C84"]
+    },
     "runtimePaths": ["Assets", "Audio", "Configs", "Credits", "EBMArt", "EIIArt", "Language", "Licenses", "Prefabs", "PrefabsEditable", "Scripts/Game", "Sounds", "UI"],
     "preview": "UI/Textures/EXPBG_Garrison/EXPG_Workshop.png"
   },

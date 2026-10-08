@@ -2,9 +2,9 @@
 # Portable guard for the Ambient Sounds crowd bank and the Civil Protest Zone crowd sound.
 # Every EAS_CrowdBank recording must exist in EXPBG_Radio.acp at every range of the bank's
 # range guard (sound, shader, matching amplitude range, mixer output, sample bank), its
-# sample .wav must carry a matching .meta GUID/path, and Duration() must equal the WAV's
-# data length. Random groups, the GM recording selector and the protest zone's Crowd sound
-# choices may only name what the bank defines; every crowd sample is credited, and
+# sample must be the EXPBG Audio Data sample of tools/audio-data.json with that GUID/path,
+# and Duration() must equal the WAV's data length recorded there. Random groups, the GM
+# recording selector and the protest zone's Crowd sound choices may only name what the bank defines; every crowd sample is credited, and
 # EAS_DistributionNotices.c mirrors AUDIO_CREDITS.txt. No engine is launched.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -33,27 +33,17 @@ function Assert-Meta([string]$Guid, [string]$Relative) {
  Assert ($meta.Success -and $meta.Groups[1].Value -ceq $Guid -and $meta.Groups[2].Value -ceq $Relative) "meta GUID/path differs for {$Guid}$Relative"
  $path
 }
-function Read-WavSeconds([string]$Path) {
- $stream = [IO.File]::OpenRead($Path)
- try {
-  $reader = [IO.BinaryReader]::new($stream)
-  Assert ([Text.Encoding]::ASCII.GetString($reader.ReadBytes(4)) -eq 'RIFF') "not RIFF: $Path"
-  $null = $reader.ReadUInt32()
-  Assert ([Text.Encoding]::ASCII.GetString($reader.ReadBytes(4)) -eq 'WAVE') "not WAVE: $Path"
-  $blockAlign = 0; $rate = 0
-  while ($stream.Position + 8 -le $stream.Length) {
-   $id = [Text.Encoding]::ASCII.GetString($reader.ReadBytes(4)); $size = [long]$reader.ReadUInt32(); $next = $stream.Position + $size + ($size % 2)
-   if ($id -eq 'fmt ') {
-    Assert ($reader.ReadUInt16() -eq 1) "not PCM: $Path"
-    $null = $reader.ReadUInt16(); $rate = $reader.ReadUInt32(); $null = $reader.ReadUInt32(); $blockAlign = $reader.ReadUInt16()
-   } elseif ($id -eq 'data') {
-    Assert ($rate -gt 0 -and $blockAlign -gt 0) "data before fmt: $Path"
-    return ($size / $blockAlign) / $rate
-   }
-   $stream.Position = $next
-  }
-  throw "FAIL: no data chunk: $Path"
- } finally { $stream.Dispose() }
+# The samples ship in the dependency EXPBG Audio Data; tools/audio-data.json records each one's GUID, path
+# and length (frames / rate of its WAV data), checked against the samples by tests/Test-AudioData.ps1.
+$audioData = Get-Content -LiteralPath (Join-Path $repo 'tools/audio-data.json') -Raw | ConvertFrom-Json
+$inventory = @{}
+foreach ($entry in @($audioData.samples)) { $inventory[$entry.path] = $entry }
+function Get-SampleSeconds([string]$Guid, [string]$Relative) {
+ Assert ($inventory.ContainsKey($Relative)) "sample {$Guid}$Relative is not in tools/audio-data.json (EXPBG Audio Data)"
+ $entry = $inventory[$Relative]
+ Assert ($entry.guid -ceq $Guid) "tools/audio-data.json names {$($entry.guid)}$Relative; the audio project plays {$Guid}"
+ Assert (!@(Get-ChildItem -LiteralPath $addon -Directory | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName $Relative) }).Count) "$Relative must not ship in GM Tools (it is EXPBG Audio Data's)"
+ [double]$entry.frames / [double]$entry.rate
 }
 
 # Bank source.
@@ -110,8 +100,7 @@ foreach ($id in @($recordings.Keys | Sort-Object)) {
   $events++
  }
  Assert ($samples.Count -eq 1) "recording $id must play exactly one sample"
- $wav = Assert-Meta $samples[0].Guid $samples[0].Path
- $seconds = Read-WavSeconds $wav
+ $seconds = Get-SampleSeconds $samples[0].Guid $samples[0].Path
  Assert ($durations.ContainsKey($id) -and [math]::Abs($durations[$id] - $seconds) -lt 0.001) ([string]::Format($culture, "Duration({0}) {1} differs from the WAV length {2:F7} s", $id, $durations[$id], $seconds))
  $stem = [IO.Path]::GetFileNameWithoutExtension($samples[0].Path)
  Assert ($credits -cmatch [regex]::Escape($stem)) "$stem is not credited in AUDIO_CREDITS.txt"

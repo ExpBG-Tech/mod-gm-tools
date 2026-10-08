@@ -95,6 +95,36 @@ New-Item -ItemType Directory -Path $dependency -Force | Out-Null
 if (!(Test-Path "$root/dependencies/B123456789ABCDEF/addon.gproj")) { throw 'Declared build dependency was not frozen.' }
 'GameProject { GUID B000000000000000 }' | Set-Content "$dependency/addon.gproj"
 Rejects { & "$fixture/tools/Copy-AddonDependencies.ps1" -Destination "$root/wrong-dependency" -InstalledAddonsRoot "$root/installed" }
+'GameProject { GUID B123456789ABCDEF }' | Set-Content "$dependency/addon.gproj"
+# Several candidate folders (local build, Workshop download) searched root by root: the first existing one wins.
+$copier = "$fixture/tools/Copy-AddonDependencies.ps1"
+$identity.addon.installedDependencies = @{ B123456789ABCDEF = @('Local_Build', 'External_Dependency') }
+$identity | ConvertTo-Json -Depth 6 | Set-Content "$fixture/tools/project.json"
+$localBuilds = Join-Path $root 'local builds'
+$localBuild = Join-Path $localBuilds 'Local_Build'
+New-Item -ItemType Directory -Path $localBuild -Force | Out-Null
+'GameProject { GUID B123456789ABCDEF }' | Set-Content "$localBuild/addon.gproj"
+if ((& $copier -ResolveOnly -SearchRoots @($localBuilds, "$root/installed")).B123456789ABCDEF -ne $localBuild) { throw 'The first search root must win.' }
+if ((& $copier -ResolveOnly -SearchRoots @("$root/installed", $localBuilds)).B123456789ABCDEF -ne $dependency) { throw 'The search roots were not taken in order.' }
+Rejects { & $copier -ResolveOnly -SearchRoots @("$root/no such root") }
+# EXPBG Audio Data (tools/audio-data.json): a local build must hold every listed sample with its .meta,
+# a Workshop download (data.pak) must be the minimum version or later; the samples are hard-linked.
+@{ dependency = @{ id = 'B123456789ABCDEF'; name = 'EXPBG Audio Data'; minimumVersion = '0.1.2' }; samples = @(@{ path = 'Sounds/X/S.wav'; guid = 'D000000000000001'; bytes = 4 }) } | ConvertTo-Json -Depth 5 | Set-Content "$fixture/tools/audio-data.json"
+Rejects { & $copier -ResolveOnly -SearchRoots @($localBuilds) }
+New-Item -ItemType Directory -Path "$localBuild/Sounds/X" -Force | Out-Null
+[IO.File]::WriteAllBytes("$localBuild/Sounds/X/S.wav", [byte[]](1..4))
+'MetaFileClass { Name "{D000000000000002}Sounds/X/S.wav" }' | Set-Content "$localBuild/Sounds/X/S.wav.meta"
+Rejects { & $copier -ResolveOnly -SearchRoots @($localBuilds) }
+'MetaFileClass { Name "{D000000000000001}Sounds/X/S.wav" }' | Set-Content "$localBuild/Sounds/X/S.wav.meta"
+& $copier -Destination "$root/audio-dependencies" -SearchRoots @($localBuilds)
+$audioRecord = @(Get-Content -LiteralPath "$root/audio-dependencies.json" -Raw | ConvertFrom-Json)
+if (!(Test-Path -LiteralPath "$root/audio-dependencies/B123456789ABCDEF/Sounds/X/S.wav") -or [IO.Path]::GetFullPath($audioRecord[0].source) -ne [IO.Path]::GetFullPath($localBuild) -or ($IsWindows -and $audioRecord[0].samplesLinked -ne 1)) { throw 'The current audio data build was not frozen with its sample hard-linked.' }
+'packed' | Set-Content "$dependency/data.pak"
+@{ revision = @{ version = '0.1.1' } } | ConvertTo-Json | Set-Content "$dependency/ServerData.json"
+Rejects { & $copier -ResolveOnly -SearchRoots @("$root/installed") }
+@{ revision = @{ version = '0.1.2' } } | ConvertTo-Json | Set-Content "$dependency/ServerData.json"
+if ((& $copier -ResolveOnly -SearchRoots @("$root/installed")).B123456789ABCDEF -ne $dependency) { throw 'A current Workshop download of the audio data was refused.' }
+Remove-Item -LiteralPath "$fixture/tools/audio-data.json", "$dependency/data.pak", "$dependency/ServerData.json"
 . "$fixture/tools/Workshop-Common.ps1"
 $settings = & "$fixture/tools/Get-ProjectConfig.ps1"
 $packed = Join-Path $root 'alternate-packed'
@@ -131,5 +161,5 @@ if ($LASTEXITCODE -eq 0 -or (Test-Path "$runner/unexpected.txt")) { throw 'Porta
 "Add-Content -LiteralPath '$runner/order.txt' -Value second" | Set-Content "$runner/tests/Test-ZLater.ps1"
 & $pwsh -NoProfile -File "$runner/tests/Test-Tools.ps1" *> "$root/runner-order.log"
 if ($LASTEXITCODE -ne 0 -or ((Get-Content "$runner/order.txt") -join ',') -cne 'first,second') { throw 'Portable test discovery was incomplete or not deterministic.' }
-'PASS: alternate source/name/GUID, private visibility, source archive, installation/dependency identity, payload/metadata/link guards, config rejection and test-runner failfast.'
+'PASS: alternate source/name/GUID, private visibility, source archive, installation/dependency identity, dependency search roots and candidate order, EXPBG Audio Data sample and version checks with hard-linked samples, payload/metadata/link guards, config rejection and test-runner failfast.'
 exit 0

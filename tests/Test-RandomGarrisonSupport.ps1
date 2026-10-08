@@ -259,9 +259,9 @@ Assert ($exclude -match 'Name "Exclude support squads"' -and $exclude -match 'De
 $readme = Read-Text (Join-Path $repo 'README.md')
 Assert ($readme -match 'Support squads \(medical, logistics,\s+ammo and crew squads') 'README names the support squad kinds'
 $changelog = Read-Text (Join-Path $repo 'CHANGELOG.md')
-# The newest section (Unreleased, or the release that ships the filter) describes it.
-$top = [regex]::Match($changelog, '(?s)\n## ([^\n]+)\n(.*?)(\n## |\z)')
-Assert ($top.Success -and $top.Groups[2].Value -match 'Random Garrison' -and $top.Groups[2].Value -match 'Exclude support squads') "the newest CHANGELOG section ($($top.Groups[1].Value)) describes the support squad filter\"
+# The section of the release that shipped the filter (0.1.15) describes it.
+$shipped = [regex]::Match($changelog, '(?s)\n## 0\.1\.15\n(.*?)(\n## |\z)')
+Assert ($shipped.Success -and $shipped.Groups[1].Value -match 'Random Garrison' -and $shipped.Groups[1].Value -match 'Exclude support squads') 'the CHANGELOG section 0.1.15 (the release that shipped it) describes the support squad filter'
 $contract = Read-Text (Join-Path $repo 'tests/EXPG_RandomGarrisonTest.c')
 Assert ($contract -match 'static\s+bool\s+SupportNames\s*\(\s*\)' -and (Get-Body $contract 'static\s+bool\s+Rules\s*\(\s*\)') -match 'if \(!SupportNames\(\)\)\s*\{\s*return false;\s*\}\s*return Usable\(\);') 'the native Rules contract runs SupportNames'
 foreach ($path in $PSCommandPath, (Join-Path $repo 'tests/EXPG_RandomGarrisonTest.c')) {

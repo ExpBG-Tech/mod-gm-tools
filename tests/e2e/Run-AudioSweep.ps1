@@ -13,7 +13,9 @@
     one in the three .acp audio projects: SoundClass present exactly once, shader, amplitude branch whose
     outerRange equals the _R<range> suffix, mixer output, EAS_Gain signal (.sig resolves, GUID matches,
     exposes the EAS_Gain input the runtimes pass), sample bank, and every sample .wav present with a
-    matching .meta GUID/path and a valid RIFF/WAVE header. Bank durations are compared with the WAV data
+    matching .meta GUID/path and a valid RIFF/WAVE header. Since 0.1.16 the samples ship in the dependency
+    EXPBG Audio Data: they are read from -SampleDir (default: the mod-audio-data folder beside this
+    repository, tools/audio-data.json). Bank durations are compared with the WAV data
     length (warning). Random groups (radio 100-103, crowd 100) may only name existing recordings.
 
  2. Native playback (needs -OrchestratorSlotGranted and a free native slot).
@@ -58,6 +60,9 @@
 .PARAMETER LaunchMode
  world (default): -world <World>, offline. server: -server <World>, a listen-server host session (fallback
  if a world does not start its game mode offline).
+.PARAMETER SampleDir
+ EXPBG Audio Data folder holding the samples (its project folder or a local build). Default: the
+ mod-audio-data folder beside this repository (tools/audio-data.json).
 .PARAMETER GmToolsDir
  Use this EXPBG GM Tools addon directory (e.g. a local build) instead of the installed Workshop copy.
 .PARAMETER ModsetPath
@@ -116,6 +121,7 @@ param(
  [switch]$OrchestratorSlotGranted,
  [switch]$SkipStaticGate,
  [string]$SourceDir = '',
+ [string]$SampleDir = '',
  [switch]$StaticOnly,
  [switch]$SelfTest,
  [string]$ParseLog = '',
@@ -133,6 +139,13 @@ $builtinGuids = @('58D0FB3206B6F859', '5614BBCCBB55ED1C') # Arma Reforger data, 
 $diagExeName = 'ArmaReforgerSteamDiag.exe'
 if (!$SourceDir) { $SourceDir = Join-Path $repo 'addon/ambient-sounds' }
 $SourceDir = (Resolve-Path -LiteralPath $SourceDir).Path
+# The samples ship in EXPBG Audio Data since 0.1.16 (tools/audio-data.json); the .acp and .sig stay in SourceDir.
+if (!$SampleDir) {
+ $audioData = Get-Content -LiteralPath (Join-Path $repo 'tools/audio-data.json') -Raw | ConvertFrom-Json
+ $SampleDir = Join-Path (Split-Path -Parent $repo) $audioData.dependency.folder
+}
+$SampleDir = [IO.Path]::GetFullPath($SampleDir)
+if (!(Test-Path -LiteralPath $SampleDir -PathType Container)) { Write-Warning "Sample folder $SampleDir not found: every sample fails static resolution. Put mod-audio-data beside this repository or pass -SampleDir." }
 
 #region Common helpers ------------------------------------------------------------------------------
 function Write-Utf8File([string]$Path, [string]$Text) {
@@ -590,7 +603,7 @@ function Resolve-SignalRef($Res, [string]$ModuleDir, $Cache) {
  $result
 }
 
-function Test-StaticAudio($Model, $Graph, $Harness, [string]$ModuleDir) {
+function Test-StaticAudio($Model, $Graph, $Harness, [string]$ModuleDir, [string]$SampleDir) {
  $failures = [Collections.Generic.List[string]]::new()
  $warnings = [Collections.Generic.List[string]]::new()
  $rows = [Collections.Generic.List[object]]::new()
@@ -630,7 +643,7 @@ function Test-StaticAudio($Model, $Graph, $Harness, [string]$ModuleDir) {
      $refs = @($sampleBanks | ForEach-Object { $_.SampleRefs })
      if ($sampleBanks.Count -and !$refs.Count) { $reasons.Add('sample-list-empty') }
      foreach ($ref in $refs) {
-      $sample = Resolve-SampleRef $ref $ModuleDir $wavCache
+      $sample = Resolve-SampleRef $ref $SampleDir $wavCache
       if (!$sample.Ok) { $reasons.Add($sample.Reason) } else { $samplesFound++; $wavSeconds = [Math]::Max($wavSeconds, $sample.Seconds) }
      }
      $amplitude = @($nodeObjects | Where-Object Class -EQ 'AmplitudeClass')
@@ -684,10 +697,10 @@ function Test-StaticAudio($Model, $Graph, $Harness, [string]$ModuleDir) {
  $referenced = @{}
  foreach ($project in $Graph.Values) { foreach ($node in $project.Nodes.Values) { foreach ($ref in $node.SampleRefs) { $referenced[$ref.Path.ToLowerInvariant()] = $true } } }
  $unreferenced = @()
- $samplesRoot = Join-Path $ModuleDir 'Audio/EXPBG/AmbientSounds/Samples'
+ $samplesRoot = Join-Path $SampleDir 'Audio/EXPBG/AmbientSounds/Samples'
  if (Test-Path -LiteralPath $samplesRoot) {
   $unreferenced = @(Get-ChildItem -LiteralPath $samplesRoot -Recurse -File -Filter '*.wav' | ForEach-Object {
-   $relative = $_.FullName.Substring($ModuleDir.Length).TrimStart('\', '/').Replace('\', '/')
+   $relative = $_.FullName.Substring($SampleDir.Length).TrimStart('\', '/').Replace('\', '/')
    if (!$referenced.ContainsKey($relative.ToLowerInvariant())) { $relative }
   })
   if ($unreferenced.Count) { $warnings.Add("$($unreferenced.Count) sample file(s) are not referenced by any audio project and cannot be played by the pack: $($unreferenced -join ', ')") }
@@ -1214,7 +1227,7 @@ $audioRoot = Join-Path $SourceDir 'Audio/EXPBG/AmbientSounds'
 $graph = Get-AudioGraph $audioRoot
 $model = Get-BankModel $SourceDir
 $harness = Get-HarnessSettings $harnessScript
-$static = Test-StaticAudio $model $graph $harness $SourceDir
+$static = Test-StaticAudio $model $graph $harness $SourceDir $SampleDir
 $staticByEvent = @{}
 foreach ($staticEvent in $static.events) { $staticByEvent["$($staticEvent.projectGuid)|$($staticEvent.event)"] = $staticEvent }
 $context = [pscustomobject]@{ Model = $model; Graph = $graph; Harness = $harness; Static = $static; StaticByEvent = $staticByEvent; HarnessGuid = $harnessProject.Guid; GmToolsGuid = $gmToolsGuid }
@@ -1390,6 +1403,7 @@ $inputs = [ordered]@{
  harness = [ordered]@{ guid = $harnessProject.Guid; stage = (Join-Path $stageParent $harnessName)
   files = @(Get-ChildItem -LiteralPath $harnessSource -Recurse -File | ForEach-Object { [ordered]@{ path = $_.FullName.Substring($harnessSource.Length + 1).Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } }) }
  audioSource = $audioRoot
+ sampleSource = $SampleDir
  audioProjects = @($graph.Values | ForEach-Object { [ordered]@{ file = $_.File; guid = $_.Guid; events = $_.Events.Count } })
  staticPassed = $static.passed; staticGateSkipped = [bool]($SkipStaticGate -and !$static.passed)
  warnings = @($warnings)

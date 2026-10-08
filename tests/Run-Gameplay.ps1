@@ -149,7 +149,7 @@ function Remove-RhsLinks {
 $run = Join-Path $repo ('build/gameplay-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss-fff'))
 $addons = Join-Path $run 'addons'
 New-Item -ItemType Directory -Path $run | Out-Null
-& "$repo/tools/Copy-AddonDependencies.ps1" -Destination $addons -InstalledAddonsRoot $config.InstalledAddonsRoot
+& "$repo/tools/Copy-AddonDependencies.ps1" -Destination $addons -InstalledAddonsRoot $config.InstalledAddonsRoot -SearchRoots ($config.DependencyAddonsRoots -split ';')
 Copy-Item -LiteralPath $source -Destination (Join-Path $addons $project.addon.name) -Recurse
 $fixture = Join-Path $addons 'EXPG_GameplayFixture'
 $logs = Join-Path $run 'logs'

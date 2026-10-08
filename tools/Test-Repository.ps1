@@ -13,7 +13,8 @@ if ($entry.assembled -and $entry -eq $settings.addon) {
  & (Join-Path $PSScriptRoot 'Assemble-Pack.ps1') -Destination $addon | Out-Null
  $assembledRoots += Split-Path -Parent $addon
 }
-$allowed = '.acp','.c','.conf','.edds','.emat','.et','.gproj','.layout','.md','.meta','.png','.sig','.st','.txt','.wav','.xob'
+# No audio file type: the samples ship in EXPBG Audio Data (tools/audio-data.json); a WAV here fails.
+$allowed = '.acp','.c','.conf','.edds','.emat','.et','.gproj','.layout','.md','.meta','.png','.sig','.st','.txt','.xob'
 $runtime = @(Get-ChildItem -LiteralPath $addon -Recurse -File | Where-Object Name -ne 'resourceDatabase.rdb')
 $runtimeCount += $runtime.Count
 if ((Get-Item -LiteralPath $addon).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Addon source cannot be linked.' }

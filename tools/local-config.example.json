@@ -5,5 +5,6 @@
   "InstalledAddonsRoot": "C:/replace-with-your-game-profile/addons",
   "IncidentLog": "C:/replace-with-your-private-input/console.log",
   "BuildAddonsDirectory": "",
+  "DependencyAddonsRoots": "",
   "ArchiveRoot": "D:/replace-with-your-archive-drive/EXPBG-archive"
 }

@@ -36,7 +36,7 @@ $count = 0
 $runtimePattern = '^(' + [regex]::Escape($entry.project) + '|resourceDatabase\.rdb|(?:' + (@($entry.runtimePaths | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')/.+)$'
 foreach ($file in Get-ChildItem -LiteralPath $sourcePath -Recurse -File) {
  $relative = $file.FullName.Substring($sourcePath.Length+1).Replace('\','/')
- if ($relative -cnotmatch $runtimePattern -or $file.Extension -notin '.gproj','.rdb','.acp','.c','.conf','.edds','.emat','.et','.layout','.md','.meta','.png','.sig','.st','.txt','.wav','.xob' -or $relative -match '(?i)(^|/)(Docs|tests?|tools|logs?|profile|evidence)(/|$)') { continue }
+ if ($relative -cnotmatch $runtimePattern -or $file.Extension -notin '.gproj','.rdb','.acp','.c','.conf','.edds','.emat','.et','.layout','.md','.meta','.png','.sig','.st','.txt','.xob' -or $relative -match '(?i)(^|/)(Docs|tests?|tools|logs?|profile|evidence)(/|$)') { continue }
  if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked source file is not deployable.' }
  $copy = Join-Path $incoming $relative
  New-Item -ItemType Directory -Path (Split-Path -Parent $copy) -Force | Out-Null

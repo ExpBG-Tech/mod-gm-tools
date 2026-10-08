@@ -52,7 +52,15 @@ contains them (EXPBG CDF Compat replaces the old CDF companions). If the
 duplicate scripts stop the game from compiling, the engine's script error
 appears instead and this warning cannot run.
 
-The only dependency is the base game (`58D0FB3206B6F859`).
+Dependencies: the base game (`58D0FB3206B6F859`) and **EXPBG Audio Data**
+(`198987BE7BAC4C84`). Since 0.1.16 the sounds of Ambient Sounds, Ambient
+Civilians and Intel Items (115 samples, 594 MB) ship in that pure data mod,
+shared with EXPBG Ambient Radio, kept in its own folder `mod-audio-data` (outside
+Git) and built with the tooling of `mod-ambient-radio`, at the same resource
+paths and IDs; this repository keeps
+the audio projects (`.acp`) that play them and no audio file. Servers and
+clients must load EXPBG Audio Data 0.1.2 or later. The sample list is
+[`tools/audio-data.json`](tools/audio-data.json).
 
 ## Modules
 
@@ -305,7 +313,11 @@ assembly. Build, tests and release all use it.
 With PowerShell 7:
 
 - Portable checks: `./tests/Test-Tools.ps1`
-- Native build and local install: `./build.ps1 -NonInteractive`
+- Native build and local install: `./build.ps1 -NonInteractive`. Builds,
+  fixtures and releases freeze EXPBG Audio Data as a dependency: the local build
+  `EXPBG_Ambient_Radio_Audio` (mod-ambient-radio `./build.ps1 -NonInteractive
+  -Audio`), else its Workshop download (`DependencyAddonsRoots` in
+  `.local/config.json`); one without the GM Tools samples stops the build.
 - Workbench editing: `./tools/Assemble-Pack.ps1 -Destination <empty folder>`,
   then copy intended changes back into the module folder.
 
@@ -321,5 +333,13 @@ audio and assets keep their notices in the module `Credits`, `Licenses` and
 Workshop item uses a Custom license: `INTERNAL USE ONLY - DO NOT RE-DISTRIBUTE OR RE-UPLOAD`.
 
 Vinny - Sounds by Vinuesa (Workshop 61D358A07E15C5FE, APL-SA)
+
+The sounds themselves now ship in EXPBG Audio Data (`198987BE7BAC4C84`) with
+copies of their notices in its `Licenses` folder; the credits here
+(`addon/ambient-sounds/Credits/AUDIO_CREDITS.txt`, the Ambient Civilians
+`license.txt`, [module licenses](docs/licenses)) remain the reference:
+Vinny - Sounds by Vinuesa (APL-SA), JSRS SOUNDMOD by LordJarhead / Dennis Kahl
+(APL-ND), Northcom Ambient Voices by Your401kPlan (APL), CC0 and CC BY
+recordings, Mixkit and owner-supplied recordings.
 
 Projector Screen model from Structures For GM byHeine by Heine.CRV (Workshop 628EDA2ABC937159, APL-SA)

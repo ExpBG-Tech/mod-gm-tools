@@ -15,6 +15,31 @@ Every attempted upload leaves `artifacts/<run>/workshop-receipt.json`. Never
 delete it: `Assert-NoWorkshopUploadAttempt` reads every receipt and refuses to
 upload a version that was already attempted.
 
+## Dependency: EXPBG Audio Data
+
+Since 0.1.16 the pack depends on EXPBG Audio Data (`198987BE7BAC4C84`), the
+pure data mod that holds the GM Tools sounds (and the EXPBG Ambient Radio
+music). Its project is its own folder outside Git, `mod-audio-data`, built and
+released with the tooling of `mod-ambient-radio` (`./build.ps1 -NonInteractive -Audio`,
+`./release.ps1 -Publish -Interactive -Audio`); its sample list for GM Tools is
+[`tools/audio-data.json`](../tools/audio-data.json).
+
+- Order: publish EXPBG Audio Data 0.1.2 (or later) first, then GM Tools. A GM
+  Tools release builds against it and refuses an older one.
+- Resolution (`tools/Copy-AddonDependencies.ps1`, used by `build.ps1`,
+  `release.ps1`, `tests/Run-Gameplay.ps1` and `tests/Run-Contracts.ps1`): the
+  `DependencyAddonsRoots` of `.local/config.json` in order (default:
+  `BuildAddonsDirectory`, the Workbench addons directory, then
+  `InstalledAddonsRoot`), and in each root the folders `EXPBG_Ambient_Radio_Audio`
+  (local build), `EXPBGAudioData_198987BE7BAC4C84` and
+  `EXPBGAmbientRadioAudio_198987BE7BAC4C84` (Workshop downloads). The first one
+  found is frozen into the run's `dependencies/` (samples hard-linked on the same
+  volume). A local build must hold every sample of `tools/audio-data.json` with
+  its `.meta`; a Workshop download must be `minimumVersion` or later. Otherwise
+  the build stops before Workbench starts: the GM Tools sounds would be silent.
+- EXPBG CDF Compat builds against GM Tools and therefore also needs EXPBG Audio
+  Data in its dependency roots (its tooling resolves GM Tools' dependencies).
+
 ## What each run leaves behind
 
 All of this lives in ignored folders (`build/`, `artifacts/`, `.local/`).

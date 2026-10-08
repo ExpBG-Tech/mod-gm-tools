@@ -46,7 +46,7 @@ if (!$notes) { throw 'The release changelog section must not be empty.' }
 $addonDirectories = "$game/addons"
 if ($Companion -or $settings.addon.installedDependencies) {
     $dependencies = Join-Path $private 'dependencies'
-    & "$PSScriptRoot/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $config.InstalledAddonsRoot -Companion:$Companion
+    & "$PSScriptRoot/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $config.InstalledAddonsRoot -SearchRoots ($config.DependencyAddonsRoots -split ';') -Companion:$Companion
     $addonDirectories += ',' + $dependencies
 }
 $common = @('-disableCrashReporter','-noThrow','-gproj',$project,'-profile',$profile,'-addonsDir',$addonDirectories,'-wbModule=ResourceManager')

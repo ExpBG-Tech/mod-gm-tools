@@ -9,6 +9,8 @@ if ($Companion) {
  $entry = $settings.companion
 }
 & (Join-Path $PSScriptRoot 'Test-Repository.ps1') | Write-Host
+# A missing or stale dependency (EXPBG Audio Data without the GM Tools samples) stops here, before any snapshot.
+if ($entry.installedDependencies -and !$Companion) { & "$PSScriptRoot/Copy-AddonDependencies.ps1" -ResolveOnly -InstalledAddonsRoot $localConfig.InstalledAddonsRoot -SearchRoots ($localConfig.DependencyAddonsRoots -split ';') | Out-Null }
 $candidate = Split-Path -Parent $PSScriptRoot
 $build = Join-Path $candidate ('build/' + $Name)
 if (Test-Path -LiteralPath $build) { throw 'Use a new build name; prior evidence is immutable.' }
@@ -31,7 +33,7 @@ $engine = (Join-Path $localConfig.WorkbenchRoot 'ArmaReforgerWorkbenchSteamDiag.
 $arguments = '-disableCrashReporter -wbModule=ResourceManager -builddata PC "' + $output + '" ' + $addonName + ' -gproj "' + $project + '" -profile "' + $profile + '"'
 if ($Companion -or $entry.installedDependencies) {
  $dependencies = Join-Path $build 'dependencies'
- & "$PSScriptRoot/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $localConfig.InstalledAddonsRoot -Companion:$Companion
+ & "$PSScriptRoot/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $localConfig.InstalledAddonsRoot -SearchRoots ($localConfig.DependencyAddonsRoots -split ';') -Companion:$Companion
  $arguments += ' -addonsDir "' + $dependencies + '"'
 }
 if (!(Test-Path -LiteralPath $engine -PathType Leaf)) { throw 'Configure WorkbenchRoot in .local/config.json.' }

@@ -4,6 +4,7 @@ GameProject {
  TITLE "EXPBG GM Tools"
  Dependencies {
   "58D0FB3206B6F859"
+  "198987BE7BAC4C84"
  }
  Configurations {
   GameProjectConfig PC {

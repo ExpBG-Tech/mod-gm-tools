@@ -1,5 +1,33 @@
 # EXPBG GM Tools validation gates
 
+## Sounds moved to EXPBG Audio Data (0.1.16)
+
+The 115 samples of Ambient Sounds, Ambient Civilians and Intel Items (594 MB of
+PCM WAV with their `.meta`) moved byte for byte to the EXPBG Audio Data project
+(`198987BE7BAC4C84`), its own folder `mod-audio-data` outside Git,
+at the same resource paths and GUIDs; the audio projects (`.acp`) stay here.
+
+Portable: `tests/Test-AudioData.ps1` checks that no audio file is left in
+`addon/` or Git, that the dependency is declared (project file,
+`tools/project.json` with its `installedDependencies`, listing, README), and
+that every EXPBG `{GUID}path` sample reference of every `.acp` is a sample of
+`tools/audio-data.json` with that GUID (none unreferenced). With
+`mod-audio-data` beside this repository it also compares every
+sample there (size, sha256, frames, rate, `.meta` GUID and path), its
+`gm-samples.json` and the credit copies. `Test-CrowdAudio.ps1` and
+`Test-Radios.ps1` take each sample's GUID and length from `tools/audio-data.json`.
+
+Pending gates (native, maintainer):
+
+- build EXPBG Audio Data 0.1.2 (folder `mod-audio-data`) with `mod-ambient-radio`
+  (`./build.ps1 -NonInteractive -Audio`, which registers the moved `.wav.meta`
+  files in its resource database), then `./build.ps1 -NonInteractive` here: the
+  build must resolve `EXPBG_Ambient_Radio_Audio` and log no missing sample;
+- a GM session (or the radio and crowd fixtures in `tests/GAMEPLAY.md`): radios,
+  crowds, placed "Sound: ..." modules, civilian voices and the laptop startup
+  sound play as before;
+- `tests/e2e/Run-AudioSweep.ps1` reads its samples from EXPBG Audio Data.
+
 ## Unit Scripts: Freeze, Hold and the chair pose (Unreleased)
 
 Portable: `tests/Test-UnitScriptsHold.ps1` (run by `tests/Test-Tools.ps1`)

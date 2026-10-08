@@ -1,9 +1,0 @@
-MetaFileClass {
- Name "{CA1A00000A00003D}Sounds/EXPAC/Samples/EAC_Northcom_Yawn_01.wav"
- Configurations {
-  WAVResourceClass PC : "{F72B05D02F3F135E}Configs/System/ResourceTypes/PC/Sound.conf" {
-  }
-  WAVResourceClass HEADLESS : "{D63592CA950AF3A8}Configs/System/ResourceTypes/HEADLESS/Sound.conf" {
-  }
- }
-}

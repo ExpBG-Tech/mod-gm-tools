@@ -16,8 +16,11 @@ foreach ($entry in @($settings.addon) + @($settings.companion | Where-Object { $
  Set-Content "$source/$runtimePath/example.c" '// fixture'
  Set-Content "$source/resourceDatabase.rdb" 'test index'
  Set-Content "$source/Docs/private.md" 'must not deploy'
+ # GM Tools ships no audio (EXPBG Audio Data does): a stray sample never deploys.
+ Set-Content "$source/$runtimePath/stray.wav" 'not runtime'
  $first = & $install -Source $source -AddonsDirectory $addons -AddonName $entry.name
  if (!(Test-Path "$($first.installedAddon)/resourceDatabase.rdb") -or (Test-Path "$($first.installedAddon)/Docs") -or !(Test-Path "$($first.installedAddon)/$runtimePath/example.c")) { throw 'Runtime-only copy failed.' }
+ if (Test-Path "$($first.installedAddon)/$runtimePath/stray.wav") { throw 'An audio file was deployed; the samples belong to EXPBG Audio Data.' }
  Set-Content "$($first.installedAddon)/stale.txt" 'old content'
  $second = & $install -Source $source -AddonsDirectory $addons -AddonName $entry.name
  if ((Test-Path "$($second.installedAddon)/stale.txt") -or !(Test-Path "$($second.backup)/stale.txt")) { throw 'Replacement must remove stale files and retain backup.' }
@@ -34,4 +37,4 @@ foreach ($entry in @($settings.addon) + @($settings.companion | Where-Object { $
  if ($coreHash -and (Get-FileHash -LiteralPath $coreProject).Hash -ne $coreHash) { throw 'Companion replaced the core addon.' }
  $coreHash = (Get-FileHash -LiteralPath $coreProject).Hash
 }
-'PASS: configured addon runtime filtering, replacement/backup, sibling protection, source overlap and invalid-build protection.'
+'PASS: configured addon runtime filtering (no audio file), replacement/backup, sibling protection, source overlap and invalid-build protection.'

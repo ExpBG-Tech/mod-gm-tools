@@ -27,7 +27,9 @@ pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot '<indexed addon directory>' -T
 ```
 
 The runner refuses to launch if an Arma/Workbench process exists. It copies the
-candidate and configured Optimizer dependency into a private run directory, records
+candidate and its configured dependency, EXPBG Audio Data (the local
+`EXPBG_Ambient_Radio_Audio` build or a Workshop download, resolved through
+`DependencyAddonsRoots`; samples hard-linked), into a private run directory, records
 their hashes, runs the diagnostic server for at most 600 seconds with the command
 above (360 by default), and retains logs
 and a result receipt under `build/gameplay-*`. Timeout termination is limited to

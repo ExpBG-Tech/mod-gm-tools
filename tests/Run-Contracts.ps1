@@ -19,7 +19,7 @@ New-Item -ItemType Directory -Path $fixture,$plugin | Out-Null
 Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'EXPG_*Test.c' -File | Copy-Item -Destination $fixture
 Copy-Item -LiteralPath "$PSScriptRoot/EXPG_ContractPlugin.c" -Destination $plugin
 $dependencies = Join-Path $run 'dependencies'
-& "$repo/tools/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $config.InstalledAddonsRoot
+& "$repo/tools/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $config.InstalledAddonsRoot -SearchRoots ($config.DependencyAddonsRoots -split ';')
 $logs = Join-Path $run 'logs'
 New-Item -ItemType Directory -Path $logs | Out-Null
 $arguments = @('-disableCrashReporter','-noThrow','-wbModule=ResourceManager','-plugin=EXPG_ContractPlugin','-gproj',(Join-Path $addon $project.addon.project),'-profile',"$run/profile",'-logsDir',$logs,'-addonsDir',$dependencies)
