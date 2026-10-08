@@ -2,6 +2,7 @@
 
 ## 0.1.16
 
+- Workshop listing: a short feature list, licence Arma Public License Share Alike (APL-SA); credits stay in the addon's Credits and Licenses files.
 The sounds moved to the new dependency **EXPBG Audio Data** (`198987BE7BAC4C84`);
 no behaviour change. Servers must load EXPBG Audio Data (0.1.2 or later) with
 GM Tools; clients get it as a Workshop dependency.

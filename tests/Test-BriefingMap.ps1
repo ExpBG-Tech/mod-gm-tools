@@ -319,7 +319,7 @@ $readme = Read-Text (Join-Path $repo 'README.md')
 $credit = 'Projector Screen model from Structures For GM byHeine by Heine.CRV (Workshop 628EDA2ABC937159, APL-SA)'
 Assert ($readme.Contains($credit)) 'README must credit the projector model'
 $asset = Read-Text (Join-Path $repo 'tools/workshop-asset.json') | ConvertFrom-Json
-Assert ($asset.description.Contains($credit + '.')) 'the Workshop description must credit the projector model'
+Assert (!$asset.description.Contains('Heine')) 'the Workshop listing names nobody (user decision 2026-10-08); the projector credit lives in README and Credits/EBM_ASSET_CREDITS.txt'
 Assert ($asset.summary.Length -le 200) 'the Workshop summary must stay within 200 characters'
 Assert ((Read-Text (Join-Path $repo 'tools/project.json') | ConvertFrom-Json).addon.runtimePaths -ccontains 'EBMArt') 'EBMArt must be a runtime path'
 $notices = Read-Text (Join-Path $repo 'docs/licenses/advanced-briefing-map/THIRD_PARTY_NOTICES.md')
