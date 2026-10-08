@@ -6,8 +6,8 @@ EBG_CacheZone {
    m_UIInfo SCR_EditableEntityUIInfo "{6A4E988DBC2EC93E}" {
     Name "#EXPBG-CacheZone_Name"
     Description "#EXPBG-CacheZone_Description"
-    Icon "{E88BE3041B425E39}UI/Textures/EXPBG_GM_Optimizer/EBG_CacheBadge_UI.edds"
-    m_Image "{E6544F207CEDFD3A}UI/Textures/EXPBG/EXPBG_CacheZone_Preview_UI.edds"
+    Icon "{232B2364732218B4}UI/Textures/EXPBG/EBG_CacheZone_Icon.edds"
+    m_Image "{1CDB9488592D0943}UI/Textures/EXPBG/EBG_CacheZone_Card.edds"
     m_aAuthoredLabels {
      ENTITYTYPE_SYSTEM
      157026

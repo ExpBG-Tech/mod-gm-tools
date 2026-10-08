@@ -12,21 +12,26 @@ Workbench registration.
 pwsh -File tools/art/Import-PackArt.ps1 -SourceSnapshot build/local-.../EXPBG_GM_Tools -Module ambient-sounds `
   -Images @{ 'UI/Textures/EXPBG/EAS_Crowd_Card.png' = '.local/art/Ambient_Crowd_Sound_Card.png' } -OrchestratorSlotGranted
 
-One image per call. For a new card, first copy a sibling card's .edds.meta into the
-module with a fresh 16-hex GUID in its Name line; a sibling .edds is used as the stage
-placeholder (a meta without its resource hangs headless Workbench).
+Several images per call: Workbench queues them all and cooks them after the plugin
+returns, so the script waits until every texture is rewritten, then closes Workbench.
+For a new card or icon, first copy a sibling texture's .edds.meta into the module with
+a fresh 16-hex GUID in its Name line; a sibling .edds is used as the stage placeholder
+(a meta without its resource hangs headless Workbench).
+
+-TargetRoot copies the results into another addon folder with the same layout (e.g.
+the Ambient Radio addon): the cooked .edds depends only on the PNG and its .meta.
 #>
 #requires -Version 7.0
 param(
 	[Parameter(Mandatory)][string]$SourceSnapshot,
 	[Parameter(Mandatory)][string]$Module,
 	[Parameter(Mandatory)][hashtable]$Images,
+	[string]$TargetRoot = '',
+	[int]$TimeoutSeconds = 900,
 	[switch]$OrchestratorSlotGranted
 )
 $ErrorActionPreference = 'Stop'
 if (!$OrchestratorSlotGranted) { throw 'An explicit native-slot handoff is required before running Workbench.' }
-# RebuildResourceFiles returns at once; only the first texture is cooked before Workbench.Exit.
-if ($Images.Count -ne 1) { throw 'Pass one image per call: Workbench cooks only the first texture before it exits.' }
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . "$repo/tools/Workshop-Common.ps1"
 $config = & "$repo/tools/Get-LocalConfig.ps1"
@@ -34,7 +39,7 @@ $project = & "$repo/tools/Get-ProjectConfig.ps1"
 if (Get-Process -Name ArmaReforgerWorkbenchSteamDiag,ArmaReforgerSteam,ArmaReforgerSteamDiag,ArmaReforgerServer,ArmaReforgerServerDiag -ErrorAction SilentlyContinue) { throw 'Native slot is occupied.' }
 $source = (Resolve-Path -LiteralPath $SourceSnapshot).Path
 if (!(Test-Path -LiteralPath "$source/resourceDatabase.rdb")) { throw 'Build/index the source snapshot first.' }
-$moduleRoot = Join-Path $repo "addon/$Module"
+$moduleRoot = if ($TargetRoot) { (Resolve-Path -LiteralPath $TargetRoot).Path } else { Join-Path $repo "addon/$Module" }
 if (!(Test-Path -LiteralPath $moduleRoot)) { throw "Unknown module folder: $moduleRoot" }
 
 $run = Join-Path $repo ('build/art-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss-fff'))
@@ -47,7 +52,8 @@ $resources = @()
 $placeholders = @{}
 foreach ($relative in $Images.Keys) {
 	if ($relative -notmatch '(?i)^UI/.+\.png$') { throw "Images must be UI/... .png paths: $relative" }
-	$png = (Resolve-Path -LiteralPath (Join-Path $repo $Images[$relative])).Path
+	$png = if ([IO.Path]::IsPathRooted($Images[$relative])) { $Images[$relative] } else { Join-Path $repo $Images[$relative] }
+	$png = (Resolve-Path -LiteralPath $png).Path
 	$target = Join-Path $addon $relative
 	New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
 	Copy-Item -LiteralPath $png -Destination $target -Force
@@ -64,7 +70,8 @@ foreach ($relative in $Images.Keys) {
 		if (!(Test-Path -LiteralPath $stageEdds) -and (Test-Path -LiteralPath $moduleEdds)) { Copy-Item -LiteralPath $moduleEdds -Destination $stageEdds }
 		if (!(Test-Path -LiteralPath $stageEdds)) {
 			$sibling = Get-ChildItem -LiteralPath (Split-Path -Parent $stageEdds) -Filter '*.edds' -File | Select-Object -First 1
-			if (!$sibling) { throw "No placeholder texture beside $edds; let Workbench create the meta instead." }
+			if (!$sibling) { $sibling = Get-ChildItem -LiteralPath (Join-Path $addon 'UI') -Filter '*.edds' -File -Recurse | Select-Object -First 1 }
+			if (!$sibling) { throw "No placeholder texture for $edds; let Workbench create the meta instead." }
 			Copy-Item -LiteralPath $sibling.FullName -Destination $stageEdds
 		}
 	}
@@ -102,20 +109,51 @@ class EXPBG_ArtImportPlugin : WorkbenchPlugin
 		}
 		manager.RebuildResourceFiles(cooked, "PC");
 		Print("[EXPBG ART] rebuild returned for " + cooked.Count().ToString() + " texture(s)");
-		Workbench.Exit(0);
+		// The rebuild runs after this returns; Workbench.Exit here would cook only the first
+		// texture. The script closes Workbench once every texture is rewritten.
 	}
 }
 "@ | Set-Content -LiteralPath (Join-Path $pluginDir 'EXPBG_ArtImportPlugin.c') -Encoding utf8
 
 $dependencies = Join-Path $run 'dependencies'
-& "$repo/tools/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $config.InstalledAddonsRoot
+$searchRoots = @($config.DependencyAddonsRoots -split ';' | Where-Object { $_ })
+& "$repo/tools/Copy-AddonDependencies.ps1" -Destination $dependencies -InstalledAddonsRoot $config.InstalledAddonsRoot -SearchRoots $searchRoots
 $logs = Join-Path $run 'logs'
 New-Item -ItemType Directory -Path $logs | Out-Null
 $arguments = @('-disableCrashReporter','-noThrow','-wbModule=ResourceManager','-plugin=EXPBG_ArtImportPlugin','-gproj',(Join-Path $addon $project.addon.project),'-profile',"$run/profile",'-logsDir',$logs,'-addonsDir',$dependencies)
-$native = Invoke-PrivateProcess (Join-Path $config.WorkbenchRoot 'ArmaReforgerWorkbenchSteamDiag.exe') $arguments $config.GameRoot "$run/native-output.log" 180
+# A cooked texture is done when it differs from its placeholder (or exists) and has not changed for 10 s.
+function Get-CookState {
+	foreach ($relative in $resources) {
+		$edds = Join-Path $addon ($relative -replace '(?i)\.png$', '.edds')
+		if (!(Test-Path -LiteralPath $edds)) { return $null }
+		$key = $relative -replace '(?i)\.png$', '.edds'
+		$hash = (Get-FileHash -LiteralPath $edds -Algorithm SHA256).Hash
+		if ($placeholders.ContainsKey($key) -and $hash -eq $placeholders[$key]) { return $null }
+		$hash
+	}
+}
+$process = [Diagnostics.Process]::new()
+$process.StartInfo = [Diagnostics.ProcessStartInfo]@{ FileName=(Join-Path $config.WorkbenchRoot 'ArmaReforgerWorkbenchSteamDiag.exe'); WorkingDirectory=$config.GameRoot; UseShellExecute=$false; CreateNoWindow=$true }
+foreach ($argument in $arguments) { $process.StartInfo.ArgumentList.Add($argument) }
+$null = $process.Start()
+$deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+$last = $null; $stableSince = $null; $done = $false
+try {
+	while ([DateTime]::UtcNow -lt $deadline -and !$process.HasExited) {
+		Start-Sleep -Seconds 3
+		$state = @(Get-CookState)
+		if ($state.Count -ne $resources.Count -or $state -contains $null) { $last = $null; continue }
+		$joined = $state -join ','
+		if ($joined -ne $last) { $last = $joined; $stableSince = [DateTime]::UtcNow; continue }
+		if (([DateTime]::UtcNow - $stableSince).TotalSeconds -ge 10) { $done = $true; break }
+	}
+} finally {
+	if (!$process.HasExited) { $process.Kill($true); $process.WaitForExit() }
+	$process.Dispose()
+}
 $text = (Get-ChildItem -LiteralPath $logs -Recurse -Filter '*.log' -File | Get-Content -Raw) -join "`n"
 $text -split "`n" | Where-Object { $_ -match '\[EXPBG ART\]|SCRIPT\s+\(E\)|Can.t compile' } | Write-Output
-if ($native.ExitCode -ne 0 -or $text -notmatch '\[EXPBG ART\] rebuild returned') { throw "Art import failed (exit $($native.ExitCode)); inspect $run" }
+if (!$done -or $text -notmatch '\[EXPBG ART\] rebuild returned') { throw "Art import failed or timed out; inspect $run" }
 
 $copied = @()
 foreach ($relative in $resources) {

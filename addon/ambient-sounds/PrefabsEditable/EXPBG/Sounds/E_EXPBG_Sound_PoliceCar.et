@@ -6,9 +6,8 @@ EAS_SoundModule {
    m_UIInfo SCR_EditableEntityUIInfo "{B6D63CD32D91277A}" {
     Name "#EAS-SoundPoliceCar_Name"
     Description "Placed ambient sound. Plays once each time it is switched On; turn Loop on to repeat. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
-    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
-    IconSetName "Notification_Sound_Unmuted"
-    m_Image "{9FA40A6AFCC72D32}UI/Textures/EXPBG/EAS_SoundEffects_Card.edds"
+    Icon "{CE90D0B57CD1B5DE}UI/Textures/EXPBG/EAS_PoliceCar_Icon.edds"
+    m_Image "{B5A0ECE0A658972C}UI/Textures/EXPBG/EAS_PoliceCar_Card.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
    }
    m_bAutoRegister ALWAYS

@@ -62,7 +62,8 @@ GenericEntity : "{10C26F96EF7A8CF5}Prefabs/Props/Core/Props_Base.et" {
    m_UIInfo SCR_EditableEntityUIInfo "{77026DD42C9657AD}" {
     Name "#EXPBG-BriefingProjector_Name"
     Description "#EXPBG-BriefingProjector_Description"
-    m_Image "{298B6DAB4180CFCC}UI/Textures/EXPBM/EBM_Card.edds"
+    Icon "{BF816403E8DC4B2D}UI/Textures/EXPBM/EBM_BriefingProjector_Icon.edds"
+    m_Image "{997F7E833A810992}UI/Textures/EXPBM/EBM_BriefingProjector_Card.edds"
     m_aAuthoredLabels {
      1 122 157026
     }

@@ -6,9 +6,8 @@ EAS_SoundModule {
    m_UIInfo SCR_EditableEntityUIInfo "{2FB233006A9880FA}" {
     Name "#EAS-SoundDistantShelling_Name"
     Description "Placed ambient sound. Loops while On. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
-    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
-    IconSetName "Notification_Sound_Unmuted"
-    m_Image "{EEB3B9AECAEB416C}UI/Textures/EXPBG/EAS_War_Card.edds"
+    Icon "{4F4B574A170DA8D8}UI/Textures/EXPBG/EAS_DistantShelling_Icon.edds"
+    m_Image "{88CC896C58BBAF78}UI/Textures/EXPBG/EAS_DistantShelling_Card.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_WAR_EFFECTS }
    }
    m_bAutoRegister ALWAYS

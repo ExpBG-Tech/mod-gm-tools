@@ -1,5 +1,15 @@
 # EXPBG GM Tools changelog
 
+## 0.1.17
+
+- New entity browser art: every placed sound (28), both server racks, the USB
+  drive, the briefing board and projector, the AI Cache Zone and the Unit Caching
+  controller have their own card and their own gold icon instead of a shared
+  card and the generic speaker icon. No behaviour change; saves and missions
+  are unaffected.
+- tools/art/Import-PackArt.ps1 cooks any number of textures in one Workbench run
+  and can write the results into another addon folder (-TargetRoot).
+
 ## 0.1.16
 
 - The sounds of Ambient Sounds, Ambient Civilians and Intel Items moved to the

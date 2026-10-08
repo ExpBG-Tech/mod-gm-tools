@@ -6,9 +6,8 @@ EAS_SoundModule {
    m_UIInfo SCR_EditableEntityUIInfo "{17999D4E126C399F}" {
     Name "#EAS-SoundChurchBell_Name"
     Description "Placed ambient sound. Plays once each time it is switched On; turn Loop on to repeat. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
-    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
-    IconSetName "Notification_Sound_Unmuted"
-    m_Image "{9FA40A6AFCC72D32}UI/Textures/EXPBG/EAS_SoundEffects_Card.edds"
+    Icon "{992F8F02BD482C64}UI/Textures/EXPBG/EAS_ChurchBell_Icon.edds"
+    m_Image "{23F524C3B41E7F5A}UI/Textures/EXPBG/EAS_ChurchBell_Card.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
    }
    m_bAutoRegister ALWAYS

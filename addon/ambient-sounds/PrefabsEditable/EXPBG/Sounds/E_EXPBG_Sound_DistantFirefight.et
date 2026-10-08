@@ -6,9 +6,8 @@ EAS_SoundModule {
    m_UIInfo SCR_EditableEntityUIInfo "{F36CCF8F0AAF7711}" {
     Name "#EAS-SoundDistantFirefight_Name"
     Description "Placed ambient sound. Loops while On. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
-    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
-    IconSetName "Notification_Sound_Unmuted"
-    m_Image "{EEB3B9AECAEB416C}UI/Textures/EXPBG/EAS_War_Card.edds"
+    Icon "{3937B0E65FEEBBE6}UI/Textures/EXPBG/EAS_DistantFirefight_Icon.edds"
+    m_Image "{A5D070C342B22AC3}UI/Textures/EXPBG/EAS_DistantFirefight_Card.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_WAR_EFFECTS }
    }
    m_bAutoRegister ALWAYS

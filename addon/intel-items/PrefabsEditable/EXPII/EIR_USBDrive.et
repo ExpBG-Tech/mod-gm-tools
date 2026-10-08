@@ -33,7 +33,8 @@ GenericEntity : "{C95E11C60810F432}Prefabs/Items/Core/Item_Base.et" {
    m_UIInfo SCR_EditableEntityUIInfo "{53A0645334A46E3B}" {
     Name "#EII-USBDrive_Name"
     Description "#EII-USBDrive_Description"
-    m_Image "{6A56D6B7C2F806CD}UI/Textures/EXPII/EIR_Download_Card.edds"
+    Icon "{ED4317A83D218CDC}UI/Textures/EXPII/EIR_USBDrive_Icon.edds"
+    m_Image "{B82DC15B70E3ACBC}UI/Textures/EXPII/EIR_USBDrive_Card.edds"
     m_aAuthoredLabels { 1 120 157026 }
    }
    m_bAutoRegister ALWAYS

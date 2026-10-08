@@ -55,7 +55,8 @@ GenericEntity : "{DCBC472CDA3EA9B2}Prefabs/Props/Civilian/WallMap_01.et" {
    m_UIInfo SCR_EditableEntityUIInfo "{43A6B9EE500FE0A4}" {
     Name "#EXPBG-BriefingBoard_Name"
     Description "#EXPBG-BriefingBoard_Description"
-    m_Image "{298B6DAB4180CFCC}UI/Textures/EXPBM/EBM_Card.edds"
+    Icon "{E44EFDEB1CC19066}UI/Textures/EXPBM/EBM_BriefingBoard_Icon.edds"
+    m_Image "{9A692456A6183B13}UI/Textures/EXPBM/EBM_BriefingBoard_Card.edds"
     m_aAuthoredLabels {
      1 122 157026
     }

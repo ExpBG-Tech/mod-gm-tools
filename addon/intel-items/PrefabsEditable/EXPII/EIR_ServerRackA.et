@@ -4,7 +4,8 @@ GenericEntity : "{67558101DE7E37AA}Prefabs/EXPII/EIR_ServerRack_Base.et" {
   SCR_EditableEntityComponent "{B56CB5B6C83E80D2}" {
    m_UIInfo SCR_EditableEntityUIInfo "{305AC76ABC5D7F5F}" {
     Name "#EII-ServerRackA_Name"
-    m_Image "{6A56D6B7C2F806CD}UI/Textures/EXPII/EIR_Download_Card.edds"
+    Icon "{3605127C31BEAC0A}UI/Textures/EXPII/EIR_ServerRackA_Icon.edds"
+    m_Image "{A1D3D5322E925AEC}UI/Textures/EXPII/EIR_ServerRackA_Card.edds"
     m_aAuthoredLabels { 1 122 157026 }
    }
   }

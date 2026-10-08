@@ -6,9 +6,8 @@ EAS_SoundModule {
    m_UIInfo SCR_EditableEntityUIInfo "{6EB7AE61D2335644}" {
     Name "#EAS-SoundDistantBarking_Name"
     Description "Placed ambient sound. Plays once each time it is switched On; turn Loop on to repeat. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
-    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
-    IconSetName "Notification_Sound_Unmuted"
-    m_Image "{9FA40A6AFCC72D32}UI/Textures/EXPBG/EAS_SoundEffects_Card.edds"
+    Icon "{385D76910555D6AD}UI/Textures/EXPBG/EAS_DistantBarking_Icon.edds"
+    m_Image "{2BA10F30062FAF86}UI/Textures/EXPBG/EAS_DistantBarking_Card.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_SOUND_EFFECTS }
    }
    m_bAutoRegister ALWAYS

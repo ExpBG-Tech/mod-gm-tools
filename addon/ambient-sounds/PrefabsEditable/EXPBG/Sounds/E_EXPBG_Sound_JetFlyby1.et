@@ -6,9 +6,8 @@ EAS_SoundModule {
    m_UIInfo SCR_EditableEntityUIInfo "{F5745644586A3A03}" {
     Name "#EAS-SoundJetFlyby1_Name"
     Description "Placed ambient sound. Plays once each time it is switched On; turn Loop on to repeat. On/Off, Recording, Volume, Audible distance, Loop and Pause are controlled by Game Master."
-    Icon "{37204ADEBD67C8A6}UI/Imagesets/Notifications/NotificationIcons.imageset"
-    IconSetName "Notification_Sound_Unmuted"
-    m_Image "{EEB3B9AECAEB416C}UI/Textures/EXPBG/EAS_War_Card.edds"
+    Icon "{31725E159616F675}UI/Textures/EXPBG/EAS_JetFlyby1_Icon.edds"
+    m_Image "{E760C9386FC263E6}UI/Textures/EXPBG/EAS_JetFlyby1_Card.edds"
     m_aAuthoredLabels { ENTITYTYPE_SYSTEM EAS_BRAND 157026 EAS_WAR_EFFECTS }
    }
    m_bAutoRegister ALWAYS
