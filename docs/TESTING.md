@@ -356,7 +356,8 @@ the following:
 - the defaults (10 min; 6 h, fades 2/3/2 s, "{hours} hours later"), clamps and
   the attribute list (order, keys, choices, local read-only statuses, actions
   never saved);
-- clouds through the engine queue (direct start after the hold left over, else
+- clouds through the engine queue (pinned; the direct start is off since the
+  2026-10-08 probe reported direct=misdirected; with DIRECT_START on: direct start after the hold left over, else
   pin, at most one start request) with no `ForceWeatherTo` or
   `RemoveStateTransition`, no empty weather names, rain, fog and wind eased with
   the clouds, pins measured for rain and fog jumps, deferral that leaves another

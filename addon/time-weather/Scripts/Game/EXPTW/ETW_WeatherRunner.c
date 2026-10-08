@@ -65,6 +65,11 @@ class ETW_WeatherRunner
  // probe reports directEarly=<seconds>). Set false if it reports directEarly=never: a
  // direct start is then only tried when the hold is over, otherwise the clouds pin at once.
  static const bool DIRECT_WAITS_HOLD = true;
+ // Queue our node behind the weather in place at all (Direct). Off: the native cloud probe
+ // (2026-10-08, Reforger 1.8) reported direct=misdirected for every direct case: the engine
+ // moved to another weather instead of ours, which looked like a switch and a reset. Every
+ // transition with a cloud change pins (Pin), the path the cloud blend fixture proves.
+ static const bool DIRECT_START = false;
  // Asked-for node duration meaning "as short as possible": the engine raises it to its
  // minimum and the duration it kept is read back from the node.
  static const float SHORTEST_HOURS = 0.001;
@@ -569,7 +574,7 @@ class ETW_WeatherRunner
     s_bCloudChange = true;
     // A node of ours still queued for another target is dropped by the pin; so is
     // anything queued when there is no node in place to queue behind.
-    if (oursPending || transitions.GetStateTransitionsCount() < 1 || !Direct(transitions, now))
+    if (oursPending || !DIRECT_START || transitions.GetStateTransitionsCount() < 1 || !Direct(transitions, now))
      Pin(transitions, current, now);
    }
    else if (oursPending)

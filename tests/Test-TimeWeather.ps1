@@ -175,7 +175,8 @@ Assert ($update -match 'if \(moving && !s_bRepinned\)\s*\{[\s\S]*?s_bRepinned = 
 $kicked = [regex]::Match($update, 'if \(s_iCloudStage == CLOUD_KICKED\)\s*\{([\s\S]*?)\n  \}').Groups[1].Value
 Assert ($kicked -match 's_iCloudStage = CLOUD_PINNED;\s*SetBlend\(s_CloudNode, s_fPinBlend\);\s*PlanClouds\(s_fCloudStart, HoursToReal\(s_CloudNode\.GetTransitionDurationHours\(\)\)\);') 'a start request that started nothing gives the pin its own blend back (the end does not move a pin hold later)'
 $startBody = Get-Body $runner 'static\s+bool\s+Start\s*\('
-Assert ($startBody -match 'if \(oursPending \|\| transitions\.GetStateTransitionsCount\(\) < 1 \|\| !Direct\(transitions, now\)\)\s*Pin\(transitions, current, now\);') 'a clean start tries direct first; a node of ours still queued or an empty queue goes pinned'
+Assert ($startBody -match 'if \(oursPending \|\| !DIRECT_START \|\| transitions\.GetStateTransitionsCount\(\) < 1 \|\| !Direct\(transitions, now\)\)\s*Pin\(transitions, current, now\);') 'a clean start tries direct only when DIRECT_START is on; a node of ours still queued or an empty queue goes pinned'
+Assert ($runner -match 'static const bool DIRECT_START = false;') 'the direct start stays off (the 2026-10-08 native cloud probe reported direct=misdirected): every cloud change pins'
 Assert ($startBody -match 'bool adopt = oursPending && runningTarget == target;') 'a replacing transition with the same target keeps our cloud node'
 # Keeping the clouds (no target, Return to automatic weather) never jumps: our blend goes on,
 # another source's blend is left to run; resolved before the statics are replaced.

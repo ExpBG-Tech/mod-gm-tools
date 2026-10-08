@@ -370,8 +370,11 @@ only when the node in place stops looping and its hold is over. It cannot blend
 from the middle of a running blend. `RequestStateTransition()` on its own
 restarted the weather in place (0.1.14 fixtures).
 
-A clean start puts our node right behind the node in place, which stops looping
-and gets the shortest hold (direct). The hold left over comes from the engine
+Every cloud change pins (below): `DIRECT_START` is off because the native cloud
+probe (2026-10-08) reported `direct=misdirected` in every direct case, the engine
+moving to another weather instead of ours. With `DIRECT_START` on, a clean start
+puts our node right behind the node in place, which stops looping and gets the
+shortest hold (direct). The hold left over comes from the engine
 (time left until the next weather, minus our blend). It is capped by the hold
 read back from that node (at most 0.2 in-game hours), and the start waits it out
 (`DIRECT_WAITS_HOLD`; off, a hold left over of more than 2 s pins at once). A
