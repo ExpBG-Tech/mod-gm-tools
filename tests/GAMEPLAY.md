@@ -501,6 +501,62 @@ save/load. Source reviewed; native execution pending.
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ESR_OverrideGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ESR OVERRIDE RESULT\] checks=[1-9]\d* failures=0 surrendered=4 heldOut=1 control=0 interrogation=3 intel=1 roe=1 cached=1 reason=complete'
 ```
 
+## Squad attributes fixture
+
+`tests/ESR_SquadAttributesGameplay.c` (custom fixture, same driver name) checks
+the runtime effect of the AI Global Skills and AI Surrender squad attributes. It
+writes every EXPBG value through the production attribute class from the merged
+attribute list, on the server, as a Game Master save does. Two stand-ins only:
+the Game Master check passes for a fake Game Master id (no editor exists without
+a player), and one standalone US rifleman counts as a player for Warning Shots
+First. AI Surrender values are written the way a CDF load writes them; both
+paths end in the same setter. The six cases run side by side at separate sites
+of GM_Eden; no squad near fire team E ever fires at will, so E stays whole until
+case R needs it.
+
+- S, surrender: module chance 100%, threshold 10%, random 0. Squad S100 has
+  "Surrender chance (%)" 100%, squad S0 0%. Nobody surrenders before a casualty;
+  after one casualty each, the five able soldiers of S100 surrender and nobody
+  of S0 does.
+- B, combat-mode sync (S0 after case S, one save per step): EXPBG Return Fire
+  Only over S0's own hold fire; vanilla return fire switches the EXPBG setting to
+  Exempt and keeps return fire; one save with vanilla hold fire then Return Fire
+  Only; one save with Warning Shots First then vanilla fire at will; a mode
+  changed outside EXPBG is put back by a Game Master write of the EXPBG value;
+  Exempt restores the squad's own mode. The first failed step ends B and puts S0
+  on Exempt and hold fire.
+- R, Return Fire Only: squad R faces a visible hold-fire US fire team E at 60 m.
+  No round for 30 s; an E burst about 9 m beside R does not set it off (vanilla
+  reacts to shots within 13 m of the leader). R neither fires nor is provoked
+  while it waits; once E opens fire, R is provoked no earlier than 0.05 s before
+  E's first round, and answers fire.
+- W, Warning Shots First, facing the stand-in player at 60 m: 1-3 warning
+  rounds with the stand-in unhurt, lethal about 5 s later, the squad never
+  provoked; once the stand-in is gone the squad re-arms after the contact.
+- F, soldier leak: Fire on Sight squad F, at its own site about 800 m from E,
+  engages hold-fire fire team E2; its holdout with his own Return Fire Only fires
+  no round and never runs the squad's suppressive fire. Then F is put on Exempt
+  and hold fire.
+- V, Unit Caching Full cycle: squad V gets vanilla hold fire, then EXPBG Return
+  Fire Only; after Full caching and the wake the recreated squad has Return Fire
+  Only with hold fire as its own mode, and Exempt (vanilla) restores hold fire.
+
+Read the `[ESR SQUAD ATTR R HOLD]`, `R FAR BURST`, `R PROVOKED`, `W WARNING`,
+`W REARM`, `F LEAK` and `V WOKEN` lines for the measured values. Deadline 360 s.
+Not covered: the GM dialog UI, clients and JIP, a vehicle target for warning
+shots, EXPBG RO AI (the runner loads only this pack), native and CDF save/load.
+The sites of S0 (`150 0 50` from the origin), V (`150 0 -90`) and E2
+(`-600 0 660`) are new positions with unproven terrain, and the combat timings
+vary from run to run. Source reviewed; native execution pending. After it
+passes, re-run
+`tests/ESR_OverrideGameplay.c`, `tests/ESR_SuppressGameplay.c`,
+`tests/ESR_SurrenderGameplay.c` and `tests/EGS_SkillsTest.c`.
+`tests/Test-SquadRoe.ps1` guards the rule and this fixture's wiring portably.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ESR_SquadAttributesGameplay.c -TimeoutSeconds 540 -OrchestratorSlotGranted -ExpectResult '\[ESR SQUAD ATTR RESULT\] checks=[1-9]\d* failures=0 surrender100=5 surrender0=0 holdShots=0 farBurst=1 provoked=1 warning=1 lethal=1 rearm=1 leak=0 sync=1 cached=1 reason=complete'
+```
+
 ## Time and Weather fixture
 
 `tests/ETW_TimeWeatherGameplay.c` (custom fixture, same driver name) spawns the
@@ -516,25 +572,123 @@ entry points the Game Master attributes call (`ETW_TimeSkip.Start`,
   skip during the first is refused; the dedicated server draws no black screen.
 - broadcasts: three skips send three fade broadcasts and the local handler runs
   three times.
-- gradual / finished: a 1-minute transition to another weather (Rainy unless
-  the start is Rainy) with rain to 100% (0% if it starts at 50% or more) and
-  wind 8 m/s. Rain moves monotonically and is about half way after 30 s; at the
-  end rain and wind are at target, the target state is reached and held.
+- gradual / finished: the weather phases run at a 1440 s day (one in-game
+  minute per real second), so the engine's 10-in-game-minute cloud minimum is
+  10 s; they start 12 s after the day length changed, past the weather's hold. A
+  1-minute transition to another weather (Rainy unless the start is Rainy) with
+  rain to 100% (0% if it starts at 50% or more) and wind 8 m/s. Rain moves
+  monotonically and is one fifth to four fifths of the way after 30 s; at the
+  end rain and wind are at target, the target state is reached and held. The
+  day length is restored at the end.
 - interrupt: a new transition 20 s into another one continues from the rain
   reached (no jump a second later) with a restarted clock.
 - skipFinish: a time skip during a transition completes it at full black.
 - foreign: `ForceWeatherTo` (what Scenario Properties weather does) stops the
   transition and hands rain back to the weather.
-- smooth (evidence only, 0 or 1): 1 when the clouds reached the target through
-  the engine's own blend without the end-of-transition snap. Judge it from the
-  `[ETW SAMPLE]` overcast column as well; 0 means the smooth engine transition
-  did not run from script and needs a fix before release.
+- smooth: the clouds reached the target through the engine blend without the
+  end-of-transition snap (required). Judge it from the `[ETW SAMPLE]` overcast
+  column as well.
 
 Deadline 300 s. No players, GM UI, client black screen, JIP or real save/load.
 Source reviewed; native execution pending.
 
 ```powershell
 pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ETW_TimeWeatherGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ETW RESULT\] checks=[1-9]\d* failures=0 rollover=1 skip=1 broadcasts=3 gradual=1 finished=1 interrupt=1 skipFinish=1 foreign=1 smooth=1 reason=complete'
+```
+
+## Cloud probe fixture (evidence)
+
+`tests/ETW_CloudProbeGameplay.c` (custom fixture, same driver name) measures how
+the engine's weather state queue starts a queued node, directly on the
+transition manager (no Weather Transition module, no players). It runs at a
+1440 s day, so the engine's 10-in-game-minute node minimum is 10 s. A is the
+weather in place (Clear when the terrain has it), B another one (Rainy when
+there is one). Every case also prints `[ETW PROBE QUEUE]` lines (node count, the
+node in place, the first queued nodes, whether the node in place is queue entry
+0, where B sits, the time left until the next weather). Record the values: they
+set the runner's switches in `ETW_WeatherRunner.c`.
+
+- direct, directAuto: B queued behind the node in place, which is unlooped with
+  the shortest hold, 12 s after a held `ForceWeatherTo` (or after automatic
+  weather with a long hold first). Seconds until B starts; `0s` means the direct
+  start works. `never` or `misdirected` means it does not: look at
+  `inPlaceIsFirst` in the queue lines (the runner then pins about 2 s after the
+  hold left over).
+- directEarly: the same only 3 s after `ForceWeatherTo`, inside the hold. About
+  `7s` keeps `DIRECT_WAITS_HOLD = true` (about `10s` means setting the hold
+  restarts it); `never` means set it false.
+- predicted: the hold left over as the runner reads it, direct case / early case
+  (expected about `0/7`). Other values mean the runner's reading is wrong; it then
+  plans the latest start (safe, but the status says "within about").
+- pin: pin A and B at the back of the queue, the pin set at once; expected about
+  `10s` (the pin's hold).
+- kick: as pin, then one `RequestStateTransition()`. `started` or `nothing`
+  keeps `START_REQUEST = true`; `misdirected` means set it false.
+- paused: as pin with day auto-advance off; `wait` confirms that the clouds do
+  not move while time is paused (`blend` if they do).
+- pinHold, blendFloor: the pin's hold and B's blend as the engine kept them, in
+  in-game hours; expected about 0.167 (the minimum on new nodes).
+- headHold, setBlend, setHold: the hold of the node in place after setting it to
+  0.001, and the blend and hold of an already queued node after setting them to
+  0.001. About 0.167 means the setters are raised to the engine minimum and the
+  runner's `SetBlend` floor is only a second safeguard. 0.001 means they are not:
+  the floor is then what prevents an instant switch (record it); headHold=0.001
+  also means a direct start begins at once.
+- queueB: B's queue index right after the direct case queued it, 0 or 1. -1
+  means the engine does not hand back the same node object: the runner then
+  always pins and never asks for a start (safe, but the direct path is dead;
+  report it).
+
+Deadline 240 s (about 2.5 minutes). Also read the `[ETW PROBE] direct ...` line
+(`timeLeft`, `predicted`). Source reviewed; native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ETW_CloudProbeGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ETW PROBE RESULT\] checks=[1-9]\d* failures=0 direct=\w+ directAuto=\w+ directEarly=\w+ pin=\w+ kick=\w+ paused=\w+ predicted=\S+ pinHold=\S+ blendFloor=\S+ headHold=\S+ setBlend=\S+ setHold=\S+ queueB=-?\d+ reason=complete'
+```
+
+## Cloud blend fixture
+
+`tests/ETW_CloudBlendGameplay.c` (custom fixture, same driver name, real Weather
+Transition module prefab, public server entry points) is the gate for the cloud
+blend. It runs at a 1440 s day. A is the start weather, B another one, C a third
+when the terrain has one.
+
+- smooth: A held for 15 s (past the 10 s hold `ForceWeatherTo` leaves), then a
+  1-minute transition to B (rain to 100% or 0%, wind 8 m/s, hold) reaches B
+  through the engine blend with no cloud snap.
+- heading: while it runs the clouds blend and the engine's next weather is B.
+- together: rain has moved at most 20% when the clouds start blending, the
+  planned end is within 3 s of the cloud end, and at the end rain is at target
+  with B reached.
+- replace: a transition to A started right after B arrived (inside B's hold),
+  replaced 12 s in by one to B, ends on B without a snap.
+- pinned: rain and fog left to the weather; a transition to A replaced in the
+  same frame by one to C pins the clouds on B, and C is reached through the
+  engine blend without a snap. Fails if rain or fog moved by 0.05 or more (plus
+  their drift in the second before) in the second after the pin.
+- stop: "Stop here and hold" 12 s into a transition stops and holds, and the
+  weather does not change in the next 15 s.
+- automatic: "Return to automatic weather" while the clouds blend lets the blend
+  finish on its target, hands rain back and no longer holds the weather.
+- foreign: `ForceWeatherTo` (Scenario Properties weather) stops the transition
+  and hands rain back.
+- Evidence: path (how the smooth case's clouds started; expected `direct`),
+  early (how and when the replace case's first clouds started inside B's hold,
+  for example `direct@10s`), paused (`blend`, or `wait` and set at the end) and
+  pinJump (the largest move of rain or fog across the pin).
+
+If the pin check fails (`[ETW BLEND PIN]` lines, pinJump 0.05 or more), set
+`HOLD_ACROSS_PIN = true`, rebuild and rerun; pinJump should then be about 0.
+Also read the `[ETW]` lines ("the weather in place holds for N s more", "clouds
+are blending", "clouds reached", "across the immediate weather change"); there
+should be no "set at once" outside the paused case. Once the probe confirms
+`direct=0s`, tighten `path=\S+` to `path=direct ` here, in the fixture header
+and in `$blendRegex` in `tests/Test-TimeWeather.ps1`. Deadline 520 s (about 6.5
+minutes); `-TimeoutSeconds 600` is the Run-Gameplay maximum. Source reviewed;
+native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ETW_CloudBlendGameplay.c -TimeoutSeconds 600 -OrchestratorSlotGranted -ExpectResult '\[ETW BLEND RESULT\] checks=[1-9]\d* failures=0 smooth=1 heading=1 together=1 replace=1 pinned=1 stop=1 automatic=1 foreign=1 path=\S+ early=\S+ paused=\w+ pinJump=\S+ reason=complete'
 ```
 
 
@@ -595,3 +749,144 @@ zone is Idle. Regenerate with the same seed: the same buildings in the same orde
 with the same squads. Deleting the module (Keep garrisons) leaves every garrison
 active 10 s later. Deadline 540 s. Not covered: GM UI and the dialog, the radius
 mesh, saves and loads (native and CDF), a second faction, players, multiplayer.
+
+`tests/EXPG_RandomGarrisonFillGameplay.c` (driver class names fixed for the
+runner): Random Garrison reaches its building target. Same town centre, no
+player, radius 150, 4 buildings, one squad per building, faction US, cache Off.
+Fire teams and squads (the preset of the Chernarus Minus report) with seeds 101,
+202 and 303 one after the other: each ends Done with 4 distinct buildings, the
+tries stay within `EXPG_RGRules.AttemptCap(4, eligible)`, and a generation with
+failed buildings lists them by reason in the status ("N failed: ..."). Seed 101
+again gives the same buildings in the same order. Squads only (6-9 soldiers,
+which most houses and sheds cannot take), seed 404, ends Done with 4 buildings,
+or with "x of 4 buildings" and the reason no more were tried ("none left" or the
+try limit). Deadline 570 s. No GM UI, save/load or multiplayer. Source reviewed;
+native execution pending.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RandomGarrisonFillGameplay.c -ExpectResult '\[EXPG RANDOM FILL RESULT\] checks=[1-9]\d* failures=0 seeds=3 reached=3 repeated=1 reported=1 explained=1 maxTries=\d+ maxFailed=\d+ reason=completed' -TimeoutSeconds 600 -OrchestratorSlotGranted
+```
+
+`tests/EXPG_RandomGarrisonStopGameplay.c` (driver class names fixed for the
+runner): stops and refusals. Same town centre, fire teams and squads, seed 101;
+every notice the zone gives is recorded.
+
+1. Generate, then Generate again at once: refused with "Busy (...): wait for
+   Done or use Stop first". A Stop by another Game Master (player 7) tells both
+   the starter and player 7 "Stopped (stopped by the Game Master)", and the zone
+   is Stopped. Clear, then Generate at once: refused with "Busy (Clearing): wait
+   until it has finished".
+2. Generate, then Stop by the starter: one notice only.
+3. The AI limit set to the active AI count + 1 (no squad has room), then
+   Generate: after the zone's 60 s wait it is Stopped with "Stopped (the AI limit
+   was reached" in the status and in its one notice; 3 s later it is still
+   Stopped (never Done on top of it) with no second notice. The limit is
+   restored. On 0.1.14 this phase fails with "the AI-limit stop must not end as
+   Done".
+
+Deadline 570 s. No GM UI, save/load or multiplayer. Source reviewed; native
+execution pending. `tests/Test-RandomGarrisonFill.ps1` guards the try limit, the
+notices and the wiring of both fixtures portably.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EXPG_RandomGarrisonStopGameplay.c -ExpectResult '\[EXPG RANDOM STOP RESULT\] checks=[1-9]\d* failures=0 busyRun=1 busyClear=1 stopTold=1 stopSelf=1 aiStopped=1 aiStayed=1 reason=completed' -TimeoutSeconds 600 -OrchestratorSlotGranted
+```
+
+## Unit Scripts Freeze leader fixture
+
+`tests/EUS_FreezeLeaderGameplay.c` (custom fixture, same driver name) covers the
+2026-10-07 op: a frozen lone officer drifted 0.78 m in 35 s, a displacement that
+was not a Game Master move was logged as "re-anchored", and "Sit on a chair" next
+to a GM-placed table coincided with the server falling from 240 to 70-145 FPS.
+`tests/EUS_UnitScriptsGameplay.c` freezes only a follower; this fixture covers:
+
+- ORDER and IDLE: Freeze on the fire team leader under a squad Move order (30 s),
+  then idle with no waypoint (45 s). He stays within 0.5 m of his spot, a body
+  turn beyond the Freeze limit (about 75 degrees) never lasts longer than one
+  manager tick, and there is no correction loop. The largest turn is printed.
+- Hold on a follower under the same order: within 1.5 m.
+- GM MOVE: a Game Master move (`SCR_EditableCharacterComponent.SetTransform`,
+  the editor's own path) of 5 m sets the new spot, and he stays there.
+- RAW MOVE and RAW TURN: a 3 m teleport outside the editor is put back within
+  3 s and counted; a 180 degree turn in place is turned back within 3 s and never
+  changes the held heading.
+- CHAIR: "Sit on a chair" in the open binds and loiters; a Game Master move keeps
+  it and seats him again at the new spot. In front of a vanilla military table
+  (the same collider layer as the production GM table) it is refused for a frozen
+  soldier ("no room"), he stays frozen, and for 18 s after the table appears he
+  is put back at most twice and never in the second half (TABLE).
+- POSE: "Sit on the ground" stays bound through a Game Master move; a 3 m push
+  outside the editor ends it ("pushed").
+
+Read the ORDER, IDLE, GM MOVE, RAW MOVE, RAW TURN, CHAIR BLOCKED and TABLE lines
+for the measured values and correction counts. A leaderTurn above 30 means
+something still turns him inside the 75 degree limit. More than 10 corrections
+in a phase fail as a correction loop; corrections near that limit, or any on an
+idle leader, mean something native keeps moving him and he will visibly pop
+back. Also read the `[EUS]` "held on its spot ... (N
+turned back)" and "keeps being pushed off by <object>" lines. Deadline 280 s.
+The runner caps the server at 60 FPS, so frame cost is not measured here: the
+chair FPS A/B is a manual server check with the production furniture (see
+`docs/TESTING.md`). No players and no GM UI: head tracking and the client view
+stay in-game checks. Source reviewed; native execution pending. After it
+passes, re-run `tests/EUS_UnitScriptsGameplay.c`, `tests/EUS_CacheHoldGameplay.c`
+and `tests/EUS_DisciplineRhsGameplay.c`. `tests/Test-UnitScriptsHold.ps1` guards
+the source invariants and this fixture's wiring portably.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EUS_FreezeLeaderGameplay.c -TimeoutSeconds 420 -ExpectResult '\[EUS FREEZE TEST RESULT\] checks=[1-9]\d* failures=0 reason=completed' -OrchestratorSlotGranted
+```
+
+## Ambient Sounds radio state fixtures
+
+`tests/EAS_RadioStateGameplay.c` and `tests/EAS_RadioRetryGameplay.c` (custom
+fixtures, same driver name) check `EAS_RadioState`, the timing behind placed
+radios, TVs, crowds and placed sounds. A dedicated server has no listener, so
+they prove the decisions `EAS_RadioRuntime` takes on clients, not the engine's
+playback. Every check prints an `[EAS TEST CHECK]` line; judge each run by its
+one `[EAS TEST RESULT]` line. Deadline 60 s each; the runner's default timeout
+applies.
+
+`EAS_RadioStateGameplay.c` (22 checks):
+
+- start range: starts keep a 10% margin (at least 1 m) inside the audible range,
+  27 of 30 m.
+- early end: an end at least 2 s before the recording's own end counts as an
+  eviction.
+- eviction: a looping radio evicted 12 s into a 177.7 s recording is due again in
+  3 s, not after the rest of the recording; back-to-back evictions back off 3, 6,
+  12, 24, 30, 30 s; a voice that lasted 60 s starts a new streak.
+- one-shot: an evicted one-shot stays used, as when its listener leaves.
+- inaudible: ten refusals below audibility never park the radio; each retries in
+  3 s.
+- refused: other refusals back off 5, 10 ... 30 s and never park the radio.
+- metadata: three invalid-metadata tries park the module until its settings
+  change.
+- voices: four radios in range play at once; a fifth waits for a free voice.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EAS_RadioStateGameplay.c -OrchestratorSlotGranted -ExpectResult '\[EAS TEST RESULT\] checks=[1-9]\d* failures=0 reason=completed'
+```
+
+`EAS_RadioRetryGameplay.c` (12 checks):
+
+- cap: a looping 21.57 s emergency-alert TV evicted 2 s into every play backs off
+  3, 6, 12 s and then waits only for its own end plus its 1 s pause (20.57 s),
+  never 24 or 30 s: a retry is never later than without eviction handling.
+- long pause: a TV with a 600 s pause still retries an eviction in 3 s.
+- completed: a TV evicted five times, with a complete play after each retry,
+  retries in 3 s every time.
+- streak: back-to-back evictions of a 177.7 s radio still back off (3, then
+  6 s); after a complete play the next eviction retries in 3 s again.
+- clocks: the real clock also needs an early end; a natural end that lagging
+  world time sees as early after a client hitch is not an eviction.
+- notices: refused starts log only the first and third notice per placement;
+  starts do not refill that budget, a settings change does.
+
+```powershell
+pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/EAS_RadioRetryGameplay.c -OrchestratorSlotGranted -ExpectResult '\[EAS TEST RESULT\] checks=[1-9]\d* failures=0 reason=completed'
+```
+
+Expect 22 and 12 `[EAS TEST CHECK] pass=1` lines. Source reviewed; native
+execution pending. `tests/Test-RadioPlayback.ps1` guards the same rules and the
+wiring of both fixtures portably.

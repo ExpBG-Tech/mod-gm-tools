@@ -265,7 +265,14 @@ not a ruin or part, not an Ambient Destruction collapse, inside the planner's
 limits, no rejected prefab path, doors or an interior volume). Eligible buildings
 are sorted by position and prefab, shuffled with the seed; buildings near players
 (bounds plus 5 m) are left out after the shuffle, the first Target are queued, the
-rest are reserves. Each building draws its faction and squad count from its own
+rest are reserves. A building that fails is replaced by the next reserve, up to
+`EXPG_RGRules.AttemptCap` tries (three times the target, at least the target plus
+16, never more than the eligible buildings). A reserve whose type (prefab and drawn
+faction) failed in this run for its posts or rooms, and never took a squad, is put
+back for a second pass after the first one. While an earlier building of its type
+is still analysed the choice waits, so every choice depends only on the buildings
+before it in the order and a seed repeats its generation whatever analysis
+finishes first. Each building draws its faction and squad count from its own
 generator (seed and building key), so results do not depend on analysis order.
 A generation runs with the settings it started with (Generate copies them; later
 edits wait for Regenerate, cache settings apply at once). Before any analysis every
@@ -278,6 +285,12 @@ above 56 plans. Squads: one spawn every 1.5 s across zones, at most two spawning
 once, one at a time per building; the squad must fit the building's planned posts
 minus the soldiers already there, so fresh squads are never trimmed. A squad that
 does not take its posts within 60 s is deleted (one retry with a smaller size).
+A drawn squad waits while the AI limit leaves no room for it; after 60 s the
+generation stops (Stopped with the reason, never Done afterwards). When a
+generation ends or stops, the status counts the failed buildings by reason, the
+server log line counts the buildings tried, and the Game Master who started it
+gets one notice (`EXPG_Notice`, hint and chat); a Game Master who stops another
+one's generation is told too.
 Clear discards the zone's garrisons one per tick (`EXPG_GarrisonManager.Discard`,
 nobody woken or respawned) and deletes their squads and soldiers 8 entities per
 tick; soldiers who left a squad (surrender, possession) are kept.
@@ -349,23 +362,63 @@ always-relevant Systems entities; all state changes run on the server.
 
 Weather Transition. One transition per session (`ETW_WeatherRunner`, statics with
 a weak reference to the world's `TimeAndWeatherManagerEntity`, so nothing leaks
-into the next mission). Clouds only change through the weather state machine: the
-queue after the current node is cleared, one node to the target is enqueued with
-a transition duration in in-game hours equal to the requested real minutes at the
-current day length, and `RequestStateTransition()` starts it smoothly (vanilla
-uses `RequestStateTransitionImmediately`, which is instant). That call starts the
-head of the queue, so a pending automatic node still queued ahead of ours is
-dropped first (never the current node or one that is transitioning); a request
-heading elsewhere is logged. A refused request is retried with the time left. Rain, fog and wind use the replicated overrides,
-stepped every 0.5 s from their live values along an ease-in-out curve. Wind
-direction turns the short way round. A value left to the weather that is
-overridden now blends to the target state's typical value and is released at the
-end. At the end, clouds that have not arrived within 30 s of grace are set through
-our own immediate node (counted, logged). The vanilla looping flag and the
-automated-wind flag are kept in step through two `modded TimeAndWeatherManagerEntity`
-methods, without forcing the state. A new request replaces the running one from
-the live values. A cloud blend still running completes at once to the nearer
-weather unless it already goes to the same target.
+into the next mission).
+
+Clouds only change through the engine's weather state queue. It raises every
+node's blend and hold to at least 10 in-game minutes, and starts a queued node
+only when the node in place stops looping and its hold is over. It cannot blend
+from the middle of a running blend. `RequestStateTransition()` on its own
+restarted the weather in place (0.1.14 fixtures).
+
+A clean start puts our node right behind the node in place, which stops looping
+and gets the shortest hold (direct). The hold left over comes from the engine
+(time left until the next weather, minus our blend). It is capped by the hold
+read back from that node (at most 0.2 in-game hours), and the start waits it out
+(`DIRECT_WAITS_HOLD`; off, a hold left over of more than 2 s pins at once). A
+hold left over that the engine reported counts toward the requested time.
+Without a reading the latest start is planned, so rain, fog and wind never lead
+the clouds.
+
+The clouds pin instead when something else blends (on the nearer weather), when
+our node is no longer next, when the direct start has not taken 2 s after the
+hold left over (`DIRECT_MARGIN_S`), or when a blend is running at the start. A
+pin node aimed at the current (or nearer) weather and our node go to the back of
+the queue, and the pin is set at once with `RequestStateTransitionImmediately`.
+That drops everything ahead of it, as vanilla `ForceWeatherTo` and the vanilla
+looping toggle do. Our node then blends after the pin's hold. When our node is
+first in the queue, `RequestStateTransition()` is asked once (`START_REQUEST`);
+if that moves anything else, one more pin undoes it. A transition makes at most
+one direct start, two pins and one start request.
+
+Empty weather names are never sent to the engine. Node durations are read back.
+A queued node's blend only changes through `SetBlend`, never below the engine's
+minimum (or the requested time when that is shorter), so no setter can ask for an
+instant switch whether the engine raises it or not. Rain, fog and wind ease from
+the clouds' start to their arrival, never ending before the requested time; the
+transition takes longer than set when the minimum requires it, and the status
+says so. Progress is tracked on the 0.5 s tick with bounded queue scans (eight
+entries) and at most three queue dumps per transition. Nodes are never removed
+(`RemoveStateTransition` crashed the server).
+
+Rain and fog left to the weather are measured across each pin and logged a tick
+later. `HOLD_ACROSS_PIN` (off) would hold them and hand them back at the end. If
+our node vanishes and nothing heads to the target for four ticks, the clouds are
+left to whatever rebuilt the queue: the end and Stop then leave its queue and
+looping alone.
+
+Rain, fog and wind use the replicated overrides, written on the 0.5 s tick only
+when the value changed, along an ease-in-out curve. Wind direction turns the
+short way round. A value left to the weather that is overridden now blends to
+the target state's typical value and is released at the end. At the end, clouds
+that have not arrived within 30 s of grace (for example while time is paused) are
+set through our own immediate node (counted, logged). The vanilla looping flag
+and the automated-wind flag are kept in step through two
+`modded TimeAndWeatherManagerEntity` methods, without forcing the state. A new request
+replaces the running one from the live values. A cloud blend still running
+completes at once on the nearer weather unless it already goes to the same
+target (then our node keeps going, resized if it has not started). Keeping the
+clouds (no target, "Return to automatic weather") never jumps: a blend of ours
+goes on and one of the weather's own is left to run.
 
 Foreign changes. The runner never calls `ForceWeatherTo`, so every call
 (Scenario Properties weather or automated weather, mission load, other mods)
@@ -374,7 +427,10 @@ setters drop only the wind channels. Smoothing of Scenario Properties weather
 replaces the instant `ForceWeatherTo` in `SCR_WeatherInstantEditorAttribute.WriteVariable`
 with a transition over the newest smoothing module's duration. It applies only to
 interactive writes (item, manager, player above 0) and starts one call-queue tick
-later, after the rest of the Save. Previews and restores stay vanilla.
+later, after the rest of the Save. Restores stay vanilla; with smoothing on, the
+instant local preview is skipped (the smoothing switch is replicated). The Weather
+Transition's own target attribute never previews; it only clears a preview
+something else left.
 
 Time Skip. `ETW_TimeSkip.Start` refuses overlap and empty skips, then sends one
 reliable broadcast RPC from the module: the host runs the handler itself, and a

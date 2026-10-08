@@ -67,7 +67,8 @@ character (US Rifleman). The character stays in the world while the GM editor is
 hold `z` to drop into first person and back. Entity context menus offer **Teleport player**
 to move the character into or out of a zone. GM Eden has no faction spawn point.
 Persistent Battlefield: killing the client process logs `[EXPBG Reconnect] Reserved living
-character`; rejoining shows "Reconnect successful" with the same body and loadout.
+character for playerId=N cause=REPLICATION/<reason> (1/<n>)`; rejoining shows "Reconnect
+successful" with the same body and loadout.
 
 ## 5. Cases and evidence
 
@@ -76,6 +77,7 @@ character`; rejoining shows "Reconnect successful" with the same body and loadou
 | Browser catalog | EXPBG filter, page through 4 pages | 2 caching, 7 intel, civ module + no-civ zone, destruction, war module, 3 radios (Red is legacy, hidden), crowd, TV, 28 sounds |
 | No GM Budget | Scenario properties -> Game -> Enable Game Master Budgets No -> Save | both peers: `[EXPBG NO BUDGET] Game Master budgets enabled=0` |
 | Sound module | place, Edit properties: On, Debug, distance, Save | server `[EAS DIAG] action=activation ... active=1`; client `action=play ... event=SOUND_EAS_VINNY_<NAME>_R<range> handle=<n>` |
+| Radio module (busy scene) | client started with `-easDiagnostics 1`; place 3 radios, 1 emergency-alert TV and 2 running generator floodlights, Debug on; stand 10-20 m away | client `action=play` per source; a cut source shows `release ... reason=evicted`, then `action=evicted ... retry_s=3`, then a new `play`; at most 2 `[EAS] Radio start failed` lines per source and none at 28-30 m; summary lines end with `evicted=N` |
 
 ## 6. Session log (2026-10-05)
 

@@ -124,6 +124,10 @@ Every new addon: own folder `addon/<name>/`, EXPBG label 157026, EXPBG prefix in
 ### F1 `unit-scripts` (AI unit behaviour)
 - [ ] **Hold position**: unit stops roaming, stays in place, may still turn and change stance.
 - [ ] **Freeze**: fully static (no movement, no stance change), only the head tracks.
+  - [s] 2026-10-07 op: a frozen lone officer drifted 0.78 m in 35 s. Freeze now holds squad leaders and lone soldiers and puts them back (native fixture `tests/EUS_FreezeLeaderGameplay.c` pending; if it prints leaderTurn above 30, reword "fully static" first).
+  - [ ] verify: a lone or leader unit stays within 0.35 m for 2 min with a player walking around him
+  - [ ] verify: a Game Master drag logs "moved by the Game Master"
+  - [ ] verify: "Sit on a chair" at a desk is refused with "no room" and keeps Freeze
 - [ ] **Release**: return the unit to normal AI.
 - [ ] **Animation state**: pick from an approved animation list (ambience); unit stays in it.
 - [ ] Hold/freeze/animation break on damage and on GM release.

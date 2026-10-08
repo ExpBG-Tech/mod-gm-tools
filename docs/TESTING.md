@@ -1,5 +1,201 @@
 # EXPBG GM Tools validation gates
 
+## Unit Scripts: Freeze, Hold and the chair pose (Unreleased)
+
+Portable: `tests/Test-UnitScriptsHold.ps1` (run by `tests/Test-Tools.ps1`)
+checks the following:
+
+- a displacement is never taken for a Game Master move: only the editor's
+  `SCR_EditableCharacterComponent.SetTransform` sets a new spot;
+- Freeze and Hold put the soldier back the way the editor's owner teleport moves
+  him, and keep a new spot only for a drop, a moving platform or an object on
+  his spot; Freeze keeps its look claimed;
+- the chair pose needs room where it is issued, and a pushed pose ends;
+- every log line stays bounded, the Enforce gotchas, and the wiring of
+  `tests/EUS_FreezeLeaderGameplay.c`.
+
+Pending gates:
+
+- build.ps1 compile. Most likely to break: the modded
+  `SCR_EditableCharacterComponent.SetTransform` next to Unit Dialog's modded copy
+  of the same class, `PoseAt` with an out static array, the `TraceOBB` with
+  `TracePosition` and a member filter callback, and
+  `CharacterAnimationComponent.PhysicsIsLinked()` / `GetLinkedEntity()`;
+- native fixture `tests/EUS_FreezeLeaderGameplay.c` (command in
+  `tests/GAMEPLAY.md`), then the existing `tests/EUS_UnitScriptsGameplay.c`,
+  `tests/EUS_CacheHoldGameplay.c` and `tests/EUS_DisciplineRhsGameplay.c`;
+- manual chair FPS A/B before release: a local dedicated server with
+  `-maxFPS 240 -logStats 10000`, the op modset including Heine
+  Structures/Placeables, and a client in GM:
+  - place `MilTable_Open_GM` and an RHS USMC Officer about 0.1 m and about
+    0.5 m from the table origin, then apply "Sit on a chair": a refusal naming
+    the table, and FPS stays at 240. If it binds instead, the trace does not see
+    this table: watch FPS for 5 minutes (a drop means the room check misses this
+    furniture; no drop means the inferred cause is wrong);
+  - move him 3 m into the open and apply the chair again: it binds, FPS at 240
+    for 5 minutes;
+  - place the table where he sits: released with "no room" within 10 s, no FPS
+    drop;
+  - optional: "Sit on the ground", "Stand at ease" and "Push-ups" against the
+    table; if FPS drops, extend `EUS_AnimationCatalog.NeedsRoom`. If the chair
+    costs FPS even in the open, remove "Sit on a chair" from
+    `addon/unit-scripts/Configs/Editor/AttributeLists/Edit.conf`;
+- GM session on a local server and client:
+  - Freeze a lone officer and walk 5-8 m around him for 2 minutes: his head
+    follows you inside the cone, his body does not step or turn round;
+  - drag him with the editor: he stays at the new spot with one "moved by the
+    Game Master" line; a second drag within 10 s shows as a count on the next
+    line; the rotation attribute and a squad drag also log it;
+  - Freeze a fire team leader and give the squad a Move waypoint: he stays on
+    his spot facing the same way;
+  - Freeze an officer at a desk for 2 minutes: no correction loop, at most one
+    "held" line every 300 s; then "Sit on a chair" gets the "no room ... is in
+    the way" reply and he stays frozen;
+  - drag a seated chair-pose soldier: he stands up and sits down again at the
+    new spot, and no chair is left behind on the client;
+  - another AI walking into a frozen soldier: he is put back, with bounded log
+    lines;
+  - Push-ups and Lean are not ended as "pushed".
+
+## AI Global Skills and AI Surrender: squad attributes (Unreleased)
+
+Portable: `tests/Test-SquadRoe.ps1` (run by `tests/Test-Tools.ps1`) checks the
+following:
+
+- Return Fire Only and armed Warning Shots First follow the strict fired-upon
+  rule (`EGS_Provocation.c`: a hit, a kill, a near miss within 4 m, an explosion
+  within 10 m) at the actual combat-mode decision point, from the attribute
+  through the override and the applied ROE; one log line per contact and the
+  calm-down on the shared tick; a PowerShell model of the 4 m rule against
+  vanilla's 13 m rule;
+- vanilla Set combat mode and the EXPBG squad ROE agree (the Exempt switch, the
+  order within one save, the re-assert), and the squad's own combat mode
+  survives Unit Caching Full, native saves and session loads;
+- a soldier holding fire under his own ROE stays out of his squad's suppressive
+  fire; warning shots at player vehicles, a second shooter and vehicle
+  clearance;
+- the AI Surrender chance descriptions name the casualty threshold, and squads
+  whose cache state was held are evaluated once awake;
+- the fixture's runner command and RESULT regex.
+
+`tests/Test-PerfSurrender.ps1` now also checks that a soldier the native chain
+takes out of his squad before his death is reported still counts for that squad
+(a bounded, lazily created list kept for 2 s).
+
+Pending gates:
+
+- build.ps1 compile;
+- native fixture `tests/ESR_SquadAttributesGameplay.c` (command in
+  `tests/GAMEPLAY.md`), then the existing `tests/ESR_OverrideGameplay.c`,
+  `tests/ESR_SuppressGameplay.c`, `tests/ESR_SurrenderGameplay.c` and
+  `tests/EGS_SkillsTest.c`;
+- a GM session on a dedicated-server client: a Return Fire Only squad ignores a
+  firefight next to it until it is fired upon; Set combat mode on an EXPBG squad
+  shows Exempt (vanilla) in the EXPBG tab after reopening; warning shots at a
+  player in a vehicle; EXPBG RO AI loaded;
+- a native save and load and a CDF save and load of a squad with its own
+  vanilla combat mode and an EXPBG ROE.
+
+Open decision: Return Fire Only ignores an enemy firing point-blank at someone
+else unless a round passes within 4 m, and explosions with no enemy behind them
+(for example a GM-placed blast). The limits are constants in
+`EGS_Provocation.c`.
+
+## Ambient Sounds: radio playback in busy scenes (Unreleased)
+
+Portable: `tests/Test-RadioPlayback.ps1` (run by `tests/Test-Tools.ps1`) checks
+the following in `EAS_RadioRuntime` and `EAS_RadioState`:
+
+- an engine end at least 2 s before the recording's end, heard in range and
+  confirmed by the real clock, is an eviction; it retries in 3 s, doubling to
+  30 s while evictions follow each other, never later than the recording's own
+  end plus its pause; a complete play or a 60 s voice ends the streak; a
+  one-shot is never re-armed;
+- starts keep a 10% margin inside the audible range (27 of 30 m) and playing
+  voices keep the full range; a refusal below audibility retries in 3 s, other
+  refusals back off 5-30 s, and only invalid metadata parks a module;
+- refused starts log two normal lines per placement until a settings change;
+- up to four finite sources play at once;
+- both native fixtures are present.
+
+`tests/Test-Radios.ps1` now also requires every radio and TV event to keep
+priority 80-100 and `bypassVolumeTest 1` in Workbench key order (no
+`noInAudible`); crowd events are unchanged.
+
+Pending gates:
+
+- build.ps1 compile (Windows and the Linux DS);
+- native fixtures `tests/EAS_RadioStateGameplay.c` (22 checks) and
+  `tests/EAS_RadioRetryGameplay.c` (12 checks) (commands in `tests/GAMEPLAY.md`);
+- Workbench Audio Editor: the 15 radio and TV nodes in `EXPBG_Radio.acp` show
+  Priority 85 and Bypass Volume Test ticked, the crowd nodes are unchanged. Do
+  not commit a Workbench re-save: it rewrites the one-class-per-line layout that
+  `Test-Radios.ps1` and `Test-CrowdAudio.ps1` parse;
+- GM session on a local retail server and client started with
+  `-easDiagnostics 1`:
+  - setup: Radio Black, AN/GRC-160 and R-123M 5-10 m apart (On, Debug on,
+    Volume 20, different recordings), an emergency-alert TV (Loop on, pause
+    600), two running `E_GeneratorFloodlight_US_01`, a few placed sounds (close
+    firefight, shelling) and running vehicles; stand 10-20 m away;
+  - expect `action=play` for each radio (voices=1..4) and the radios audible
+    together, no `release ... reason=finished` with a large `remaining=`; a cut
+    voice shows `release ... reason=evicted`, then `action=evicted ...
+    retry_s=3` (later 6, 12 ... at most 30), then a new `action=play`. For the
+    TV, `retry_s` is never above its remaining length plus 1 s; after a complete
+    play the next cut shows `retry_s=3` again. Summary lines end with
+    `evicted=N`;
+  - edge: walk out to 28-29 m: playing sources keep playing until 30 m
+    (`reason=inaudible`) and restart only at 27 m or closer; no
+    `[EAS] Radio start failed ... distance=29.x`;
+  - log bound: after about 30 minutes in the busy scene, at most two
+    `[EAS] Radio start failed` lines per placed source; with Debug on, later
+    refusals appear only as `action=refused` or `action=inaudible`;
+  - optional: a client stall (long alt-tab while a TV plays near its end) still
+    ends with `reason=finished` and keeps the 600 s pause;
+- EXPBG Ambient Radio vehicle chatter (same `EXPBG_Radio.acp` events) still
+  plays, now with priority 85, next to a running generator.
+
+## Unit Caching, Persistent Battlefield and Garrison patrol spacing (Unreleased)
+
+Portable:
+
+- `tests/Test-SaveGateReconnect.ps1`: no GM-created latch (no placement or
+  squad-member wrappers in EXPBG stacks); `EBG_CacheSnapshot.CanSave` names a
+  mission end or change as such and refuses it only while the Optimizer holds
+  state or this world's cleanup has begun; EXPBG Reconnect prints the disconnect
+  cause as group/reason and names the check that refused a reservation;
+- `tests/Test-GarrisonPatrolSpacing.ps1`: a re-anchored guard makes patrol
+  claims within 1.5 m yield to another free stop (never in an alarm or a cache
+  settle, never moving a guard), off-plan posts are seen by every claim,
+  arrivals and failed walks never dwell within 1.2 m of a standing soldier,
+  event-driven work only, and `tests/EXPG_InteriorGameplay.c` still fails on
+  soldiers within 1.2 m or claims within 1.5 m. A self-test proves every check
+  fires on a regressed copy.
+
+Pending gates:
+
+- build.ps1 compile on Windows and the Linux DS (the removed modded
+  constructors and override, `EBG_CacheManager.IsCleaningUpCurrentWorld`,
+  `EBG_CacheSnapshot.HasOptimizerState`, `GetGame().GetFullKickReason`);
+- native fixtures `tests/EBG_CacheRecoveryGameplay.c` (its `CanSave` checks with
+  zones present must still pass), `tests/EBG_LocalCacheGameplay.c` and
+  `tests/EXPG_InteriorGameplay.c` (it failed the spacing check in 5 of 5 runs
+  before this fix);
+- reconnect on a local retail server and client: kill the client process; the
+  server logs `[EXPBG Reconnect] Reserved living character for playerId=N
+  cause=REPLICATION/<NAME> (1/<n>)` with no `0x0x`; rejoin with the same body.
+  Dead, or on the deploy screen, then quit: `Reservation rejected: character is
+  dead ...` or `Reservation rejected: no controlled entity ...`;
+- GM placement of a character, a group and a vehicle behaves as before; a
+  placement script error no longer has `EBG_PlayerHistory.c` in its stack;
+- CDF at mission end (GM Tools, CDF Compat and CDF with `saveOnGameEnd=true`):
+  without cache zones a shutdown logs no `[EBG CDF HOLD]` and the endgame slot
+  loads complete; with a Unit Caching zone (Simulation and Full groups) the
+  second capture logs `[EBG CDF HOLD] The mission is ending, changing or not
+  running; capture skipped and the existing save kept` and the first endgame
+  save loads with the zone and its cached groups. Also run EXPBG CDF Compat
+  `tests/Run-CdfRoundTrip.ps1`.
+
 ## Random Garrison (Unreleased)
 
 Portable: `tests/Test-RandomGarrison.ps1` (run by `tests/Test-Tools.ps1`) checks
@@ -44,6 +240,85 @@ Pending gates:
 - a modded faction (RHS) catalog: squads that spawn no members or carry stale
   size labels are rejected or bucketed by their roster.
 
+## Random Garrison: building target, stops and notices (Unreleased)
+
+Portable: `tests/Test-RandomGarrisonFill.ps1` (run by `tests/Test-Tools.ps1`)
+checks the following:
+
+- up to `EXPG_RGRules.AttemptCap` tries (three times the target, at least the
+  target plus 16, never more than the eligible buildings: 20 for 4 of 49, 96 for
+  32), with a model of the try limit;
+- building types that failed for their posts or rooms are put back for a second
+  pass, the first squad is judged as soon as the analysis is ready, and a
+  behaviour model of the queue on the 49 eligible buildings around Krasnostav
+  (0.1.14 against the new rule) with the event order shuffled, so a seed
+  repeats its generation whatever analysis finishes first;
+- the status, the log and the Game Master notice carry the failures by reason;
+- an AI-limit stop stays Stopped with one notice instead of turning into Done, a
+  Generate while clearing is told to wait, and a Game Master who stops another
+  one's generation is told too;
+- the wiring of the fill and stop fixtures.
+
+Pending gates:
+
+- build.ps1 compile, or Run-Contracts on a snapshot with these changes (the
+  module, `EXPG_RGRules.AttemptCap` and `ReasonLabel` have not been compiled);
+- the existing fixture `tests/EXPG_RandomGarrisonGameplay.c` with its existing
+  regex (buildings=4, squads=[4-8], analysingSeen=1, sameBuildings=1,
+  samePrefabs=1, orphans=0);
+- native fixtures `tests/EXPG_RandomGarrisonFillGameplay.c` and
+  `tests/EXPG_RandomGarrisonStopGameplay.c` (commands in `tests/GAMEPLAY.md`);
+- Krasnostav on the local production-replica server and client (`.local/e2e`:
+  GM_Cherno, Chernarus Minus, RHS, retail server and client). As GM, place
+  Random Garrison at about 11100,12300: radius 150, RHS_AFRF, fire teams and
+  squads, 4 buildings, 1-2 squads.
+  - Generate; pressing it again during the run shows "Busy (Analysing ...): wait
+    for Done or use Stop first".
+  - At the end, "Done: 4 buildings, N squads (seed S)" plus any failures by
+    reason, in both the status and the hint/chat.
+  - Server console: the `selection: ... tries=20` line, the per-building
+    `failed (posts P, tries a/b): <reason>` and `deployed in ... posts P` lines,
+    and `done: buildings=4/4 ... tried=x/49 tries=20`.
+  - Regenerate with the same seed: the same buildings.
+- the other cases in game: Generate during a Clear ("Busy (Clearing ...): wait
+  until it has finished"); with two GMs, GM A generates and GM B stops, and both
+  get "Stopped (stopped by the Game Master): ..."; with a low AI limit
+  (`operating.aiLimit`, for example 10), Generate gives exactly one notice
+  "Stopped (the AI limit was reached (AI limit X/Y)): ..." after about 60 s, the
+  status stays Stopped and the console shows one `stopped` line and no `done`
+  line for that run;
+- confirm the original cause: grep the production server log of 2026-10-07
+  (about 16:00 to 18:00 UTC) for `[EXPG RANDOM] zone`, especially an AI-limit
+  `stopped (the AI limit was reached` followed by `done:` for the same zone (in
+  0.1.14 that pair showed the Game Master a plain "Done: 1 buildings"), and for
+  `failed (...)` lines and manual Stops.
+
+## Random Garrison: support squads (Unreleased)
+
+Portable: `tests/Test-RandomGarrisonSupport.ps1` (run by `tests/Test-Tools.ps1`)
+checks the following:
+
+- a catalog squad is a support squad by the labels of its group, else by the
+  labels of every soldier, else by its file name (`EXPG_RGRules.SupportName`),
+  classified once while the faction's catalog is read, never per pick; a mission
+  maker's Squad prefabs list is used as given;
+- the wiring in `EXPG_SquadPool.c` and the `squad catalog` log line;
+- the keyword list against false positives (vanilla and installed mod squad
+  names and folders);
+- a PowerShell model of the whole rule over the vanilla USSR, US and FIA group
+  catalogs plus the REAPER helicopter crews: ammo teams, crews and medical
+  sections are support squads; rifle, machine gun, AT, sniper, recon, special
+  forces, sapper and engineer squads stay;
+- "Exclude support squads" keeps key 2, default on and its saved 0/1 value; the
+  attribute text, README and CHANGELOG name the kinds; the native Rules contract
+  runs `SupportNames`.
+
+Pending gates:
+
+- Run-Contracts (`tests/EXPG_RandomGarrisonTest.c` Rules runs `SupportNames`);
+- a GM session with the RHS catalog: the server's `squad catalog` line counts
+  the support squads, and no ammo team, crew or medical squad is placed.
+
 ## Garrison save bridge and no trimming (Unreleased)
 
 Portable: `tests/Test-GarrisonLedger.ps1` (run by `tests/Test-Tools.ps1`) checks
@@ -81,27 +356,59 @@ the following:
 - the defaults (10 min; 6 h, fades 2/3/2 s, "{hours} hours later"), clamps and
   the attribute list (order, keys, choices, local read-only statuses, actions
   never saved);
-- clouds through `RequestStateTransition` with no `ForceWeatherTo` in the
-  runner, the foreign-change hooks, the Scenario Properties smoothing guard;
+- clouds through the engine queue (direct start after the hold left over, else
+  pin, at most one start request) with no `ForceWeatherTo` or
+  `RemoveStateTransition`, no empty weather names, rain, fog and wind eased with
+  the clouds, pins measured for rain and fog jumps, deferral that leaves another
+  source alone, no instant previews;
+- the foreign-change hooks, the Scenario Properties smoothing guard;
 - the broadcast fade RPC, the overlap refusal and the clock change at full
   black, plus a PowerShell model of the date rollover;
-- the Enforce gotchas, ASCII/LF, and the fixture's runner command and RESULT
-  regex.
+- the Enforce gotchas, ASCII/LF, and the runner commands and RESULT regexes of
+  `tests/ETW_TimeWeatherGameplay.c`, `tests/ETW_CloudProbeGameplay.c` and
+  `tests/ETW_CloudBlendGameplay.c` (all three at a 1440 s day).
 
 Pending gates:
 
-- build.ps1 compile;
-- native fixture `tests/ETW_TimeWeatherGameplay.c` (command in
-  `tests/GAMEPLAY.md`), including the `smooth` evidence. If clouds only snap at
-  the end, the state machine route needs a fix: path through adjacent states,
-  or day auto-advance;
+- build.ps1 compile (watch `ETW_WeatherRunner.c`: the new helpers and the
+  `HOLD_ACROSS_PIN` const used in a condition; also `ETW_Hooks.c` and
+  `ETW_WeatherModule.c`);
+- native fixtures (commands in `tests/GAMEPLAY.md`), in this order:
+  - the cloud probe `tests/ETW_CloudProbeGameplay.c` (evidence; its values set
+    `DIRECT_WAITS_HOLD`, `START_REQUEST` and whether the direct path works);
+  - the cloud blend gate `tests/ETW_CloudBlendGameplay.c` (pinJump below 0.05,
+    otherwise set `HOLD_ACROSS_PIN`; check the elapsed time against its 520 s
+    deadline);
+  - the existing fixture `tests/ETW_TimeWeatherGameplay.c`, now with its weather
+    phases at a 1440 s day starting 12 s past the hold, and smooth=1 required;
 - GM session:
   - both modules in the Systems list with names and descriptions;
-  - preset buttons and their host preview;
+  - preset buttons, with no preview: picking a weather does not change the sky
+    before Save, and Save does not reset it;
   - status rows refresh on reopen;
   - Scenario Properties weather blends with the module present and is instant
     without it;
-- dedicated server with a client:
+- dedicated server with a client and the production modset (Cherno, normal day
+  length, Atmospheric Weather Mod):
+  - a Weather Transition to Overcast Rain at 5 and at 10 minutes: no flash when
+    picking, no reset on Save, the status shows "Clouds start changing ...", the
+    clouds thicken gradually with the rain, no jump at the end; server log
+    `[ETW] clouds are blending to ...` and `transition done ...` with snapped and
+    deferred off and clouds `direct` (or `pinned`);
+  - let a transition finish, then about 3 minutes later pick another target
+    with 5 minutes: the clouds take at least 5 real minutes, never about 1 s,
+    and the "clouds are blending ..., N s to go" line shows N of 300 or more;
+  - pick a weather in Scenario Properties, then within a few minutes start a
+    module transition: the status says "Clouds start changing in about N", and
+    the clouds start after at most the rest of the 10 in-game minutes, not 10
+    more;
+  - during a run: Start again with the same target, a different target, Stop
+    here and hold (settles on the nearer weather), Return to automatic weather
+    mid-blend (finishes, no jump), time paused, and smoothing OFF plus a
+    Scenario Properties change (the status names a Game Master);
+  - watch the client for a sudden rain or fog change when the log shows "clouds
+    settled on" (a pin), and compare it with the "across the immediate weather
+    change" line;
   - clouds, rain, fog and wind change smoothly on the client;
   - the black screen covers the player view, the deploy menu and the GM editor
     (Z order);

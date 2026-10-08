@@ -114,7 +114,13 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   US battlefield, Russian, Chinese and Arab chatter, Hanoi Hannah, or Random per
   language). Plus 28 placeable "Sound: ..." modules from Vinny - Sounds (radio
   chatter, Hanoi Hannah, firefights, shelling, jets, drone, market, prayer,
-  traffic and sound effects). New modules start OFF.
+  traffic and sound effects). New modules start OFF. Radios, TVs, crowds and
+  placed sounds start within 90% of their audible distance (27 m for a 30 m
+  radio) and keep playing out to the full distance; up to four play at once.
+  Radio and emergency-alert TV recordings have a raised sound priority, so in a
+  busy scene the game cuts other sounds first. A looping source the game still
+  cuts short starts again after about 3 seconds (longer if it keeps being cut,
+  at most 30 seconds).
 - **Persistent Battlefield**: body/wreck lifetime rules, reconnect retention
   and spawn weapon safety. It overrides the vanilla `Character_Base` prefab and
   systems config. Bodies owned by Unit Caching cleanup are removed by that
@@ -129,8 +135,18 @@ The only dependency is the base game (`58D0FB3206B6F859`).
 - **Unit Scripts**: right-click AI soldiers or squads for EXPBG Hold Position,
   Freeze or Release Unit Scripts; the EXPBG Unit Scripts tab also offers ambient
   animations, and "EXPBG Night discipline" in a group's Group tab sets Light
-  discipline or Terror tactics. Scripts end when the unit is hurt or possessed;
-  mission-only.
+  discipline or Terror tactics. Freeze keeps a soldier (squad leaders and lone
+  soldiers included) on his spot and facing his way; only his head follows a
+  nearby player in front of him. If anything but a Game Master move shifts him
+  more than about a third of a metre, or turns him more than about 75 degrees,
+  he is put back (unless he falls, rides a moving vehicle or something now
+  stands on his spot). Hold lets him turn, aim, fire and change stance, and puts
+  him back once he is pushed more than 1.5 m. Moving a scripted soldier with the
+  editor (dragging him, moving his squad, or the position field) gives him a new
+  spot. An animation ends if he is pushed out of it. "Sit on a chair" needs room:
+  next to furniture (for example at a desk) it is refused with "no room" and the
+  soldier keeps his script, and furniture placed into a seated soldier ends the
+  pose. Scripts end when the unit is hurt or possessed; mission-only.
 - **Unit Dialog**: GM-authored speaker name and up to ten dialog lines on AI
   units; players read them with "Speak to <Name>" (Continue, Restart, End).
 - **Advanced Briefing Map**: "Briefing Projector Screen" (Systems), a projector
@@ -159,7 +175,10 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   and the reveal squad, identity and reveal intel items chances (0-100%, default
   "Use module setting"). The soldier's value wins over his squad's, the squad's
   over the module; a set surrender chance is exact (no random factor). The
-  module's casualty threshold still decides when a squad breaks. A prisoner
+  module's "Squad casualty threshold (%)" (default 50%) still decides when a
+  squad breaks, and nothing happens before that: 100% means every able soldier
+  surrenders once his squad has broken, not on first contact. A casualty taken
+  while a squad is asleep in a cache is rolled once it wakes. A prisoner
   keeps the interrogation values his squad had when he surrendered; his own can
   be changed while he is a prisoner. The values survive caching and saves.
 - **AI Global Skills**: place "AI Global Skills" from Systems for per-faction
@@ -168,6 +187,17 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   Sight, Warning Shots First; per squad and per soldier in the "EXPBG Rules of
   Engagement" tab of their Edit properties, soldier over squad over module) and
   AI ammunition (unlimited or N refills). Everything starts on vanilla.
+  Return Fire Only holds fire until the squad is actually fired upon (a member
+  hit or killed by an enemy, an enemy round within about 4 m of a member, or an
+  enemy explosion within about 10 m), then returns fire until the contact is
+  over; a soldier with his own Return Fire Only also stays out of his squad's
+  suppressive fire. Warning Shots First fires 2-3 rounds beside a spotted player
+  (on foot or in a vehicle) and is lethal 5 s later; otherwise it follows the
+  same fired-upon rule. A squad's "Exempt (vanilla)" leaves its combat mode to
+  the vanilla Set combat mode, and changing Set combat mode on a squad with
+  EXPBG rules of engagement switches it to Exempt, so both tabs agree. A squad
+  keeps its own vanilla combat mode through Unit Caching Full, native saves and
+  CDF loads.
 - **Ambient Unrest**: "Civil Protest Zone", a static crowd of 10-15
   unarmed protesting civilians with crowd audio from Ambient Sounds; the "Crowd
   sound" setting picks Angry crowd, Rioting crowd or Alternate (the default,
@@ -181,16 +211,26 @@ The only dependency is the base game (`58D0FB3206B6F859`).
     Scenario Properties, plus optional rain, fog, wind speed and direction) over
     1-120 real minutes (default 10) instead of switching at once. Changing any
     of its settings and pressing Save starts the transition from the current
-    weather; a new one takes over smoothly from the values reached. Clouds use
-    the game's own weather blend; rain, fog and wind move every half second.
-    Afterwards the weather holds (default) or runs automatically again. The
-    Action setting offers Start again, Stop here and hold, and Return to
-    automatic weather. A read-only progress row shows the status.
+    weather; a new one takes over smoothly from the values reached (a cloud
+    blend under way to another target first settles at once on the nearer
+    weather). Clouds use the game's own weather blend, which needs at least 10
+    in-game minutes (10 real minutes at the normal day length). Right after
+    another weather change, the game may first hold the current sky for up to
+    that long; the transition starts the clouds as soon as the game allows.
+    Rain, fog and wind move with the clouds, so everything arrives together. A
+    transition shorter than the clouds need takes as long as they need, and the
+    status says when the clouds start. While time is paused the clouds may not
+    move; they are then set at the end. If another weather mod takes over the
+    weather queue, the clouds are left to it and the status says so. There is
+    no instant preview: the sky only changes by blending. Afterwards the
+    weather holds (default) or runs automatically again. The Action setting
+    offers Start again, Stop here and hold, and Return to automatic weather. A
+    read-only progress row shows the status.
   - While a Weather Transition module exists, a weather picked in Scenario
     Properties also blends over its transition time ("Smooth Scenario
-    Properties weather", ON by default). Changing the weather or wind in
-    Scenario Properties during a transition stops it, or stops it moving the
-    wind.
+    Properties weather", ON by default) and picking it shows no instant
+    preview. Changing the weather or wind in Scenario Properties during a
+    transition stops it, or stops it moving the wind.
   - "Time Skip": choose "Skip time now" and every screen (players, and Game
     Masters unless switched off) fades to black, shows "6 hours later" (editable
     text with {hours}, {minutes}, {time} and {date}) and the new time, the clock
@@ -206,18 +246,30 @@ The only dependency is the base game (`58D0FB3206B6F859`).
   squads each from the Game Master squad list of one faction, or of two with each
   building drawing one (so one building never holds both). Squad sizes go by the
   number of soldiers (fire teams, squads, large, small teams) and a squad only
-  goes where it fits the building's posts. Support squads (medical, logistics,
-  ammo and crew squads, also those of other mods, and the essential transport
-  and guard teams) are skipped by default; a mission maker's squad list is used
-  as given.
+  goes where it fits the building's posts. A building that is too small for the
+  chosen squad sizes or has no usable rooms is replaced by the next one. A
+  generation tries up to three times as many buildings as asked for (and at
+  least 16 more than asked for). Other buildings of a type that just failed are
+  tried only after the rest, so villages of sheds and one-room houses still
+  reach the target, and the same seed still gives the same buildings.
+  Support squads (medical, logistics, ammo and crew squads, also those of other
+  mods, and the essential transport and guard teams) are skipped by default; a
+  mission maker's squad list is used as given.
   No building closer than 200 m (adjustable) to a player character is used. The
   seed (0: a new one each time, shown in the status) repeats a generation. Every
   squad is an ordinary EXPBG garrison with its cache mode and distances (set on
   the zone, applied to its garrisons at once); casualties are never refilled.
   Regenerate clears the zone's garrisons and generates again, Clear generated
   garrisons deletes them, Stop ends the work in progress and keeps what has
-  deployed. Deleting the zone keeps its garrisons (or deletes them, if set). The
-  read-only status row shows the progress (reopen the attributes to refresh).
+  deployed. If the AI limit leaves no room for a squad for a minute, the
+  generation stops by itself and says so. Generate while the zone is still
+  working is refused with its progress. When a generation finishes or is
+  stopped, the status lists the failed buildings by reason, and the Game Master
+  who started it (and one who pressed Stop) gets a message with the result. If
+  fewer buildings than asked for were garrisoned, both say how many were tried
+  and why no more were. Deleting the zone keeps its garrisons (or deletes them,
+  if set). The read-only status row shows the progress (reopen the attributes
+  to refresh).
   Garrisons are saved with the mission like any garrison and the zone finds its
   own again after a load; a loaded zone never generates by itself. Mission
   makers can give the prefab a fixed squad list and have it generate once at
