@@ -59,7 +59,7 @@ shared with EXPBG Ambient Radio, kept in its own folder `mod-audio-data` (outsid
 Git) and built with the tooling of `mod-ambient-radio`, at the same resource
 paths and IDs; this repository keeps
 the audio projects (`.acp`) that play them and no audio file. Servers and
-clients must load EXPBG Audio Data 0.1.2 or later. The sample list is
+clients must load EXPBG Audio Data 0.1.3 or later. The sample list is
 [`tools/audio-data.json`](tools/audio-data.json).
 
 ## Modules

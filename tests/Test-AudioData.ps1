@@ -46,7 +46,7 @@ Assert ($readme.Contains('EXPBG Audio Data') -and $readme.Contains($audioDataId)
 # ---- Inventory and references ----
 $audioData = Get-Content -LiteralPath (Join-Path $repo 'tools/audio-data.json') -Raw | ConvertFrom-Json
 $dependency = $audioData.dependency
-Assert ($dependency.id -ceq $audioDataId -and $dependency.name -ceq 'EXPBG Audio Data' -and $dependency.project -ceq 'EXPBG_Ambient_Radio_Audio' -and [version]$dependency.minimumVersion -ge [version]'0.1.2') 'tools/audio-data.json must describe EXPBG Audio Data 0.1.2 or later'
+Assert ($dependency.id -ceq $audioDataId -and $dependency.name -ceq 'EXPBG Audio Data' -and $dependency.project -ceq 'EXPBG_Ambient_Radio_Audio' -and [version]$dependency.minimumVersion -ge [version]'0.1.3') 'tools/audio-data.json must describe EXPBG Audio Data 0.1.3 or later'
 $samples = @($audioData.samples)
 $modules = @($pack.modules | ForEach-Object name)
 Assert ($samples.Count -ge 1 -and !@($samples | Where-Object { $_.path -cnotmatch '^(Audio|Sounds)/[A-Za-z0-9_./-]+\.wav$' -or $_.guid -cnotmatch '^[0-9A-F]{16}$' -or $_.sha256 -cnotmatch '^[0-9A-F]{64}$' -or $_.bytes -le 44 -or $_.frames -le 0 -or $_.rate -lt 8000 -or $_.rate -gt 96000 -or $_.module -cnotin $modules }).Count) 'every inventory entry needs a WAV path, GUID, sha256, size, frames, rate and a pack module'

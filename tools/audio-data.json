@@ -4,7 +4,7 @@
     "id": "198987BE7BAC4C84",
     "name": "EXPBG Audio Data",
     "project": "EXPBG_Ambient_Radio_Audio",
-    "minimumVersion": "0.1.2",
+    "minimumVersion": "0.1.3",
     "folder": "mod-audio-data",
     "inventory": "gm-samples.json",
     "tooling": "mod-ambient-radio"

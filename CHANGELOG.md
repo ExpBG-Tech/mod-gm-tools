@@ -2,23 +2,14 @@
 
 ## 0.1.16
 
-- Workshop listing: a short feature list, licence Arma Public License Share Alike (APL-SA); credits stay in the addon's Credits and Licenses files.
-The sounds moved to the new dependency **EXPBG Audio Data** (`198987BE7BAC4C84`);
-no behaviour change. Servers must load EXPBG Audio Data (0.1.2 or later) with
-GM Tools; clients get it as a Workshop dependency.
-
-- The 115 samples of Ambient Sounds, Ambient Civilians and Intel Items (war
-  ambience, crowds, radio transmissions, sound effects, civilian sounds and the
-  laptop startup sound; 594 MB) left this item. They ship in EXPBG Audio Data,
-  the pure data mod shared with EXPBG Ambient Radio (formerly EXPBG Ambient Radio
-  Audio), byte for byte at the same paths and with the same resource IDs, so
-  every radio, TV, crowd, placed sound and civilian voice plays exactly as in
-  0.1.15. Saves and missions are unaffected.
-- The audio projects stay here; the sound credits (Vinny - Sounds by Vinuesa,
-  JSRS SOUNDMOD, Northcom Ambient Voices, CC0 and CC BY recordings, Mixkit) stay
-  in this item's Credits and Licenses and also ship with the sounds in EXPBG
-  Audio Data.
+- The sounds of Ambient Sounds, Ambient Civilians and Intel Items moved to the
+  new dependency EXPBG Audio Data (198987BE7BAC4C84), byte for byte at the same
+  paths with the same resource IDs: everything plays exactly as in 0.1.15.
+  Servers must load EXPBG Audio Data (0.1.3 or later) with GM Tools; clients get
+  it as a Workshop dependency. Saves and missions are unaffected.
 - The download of this item is about 590 MB smaller.
+- Workshop listing: a short feature list, licence Arma Public License Share
+  Alike (APL-SA). Credits stay in the addon's Credits and Licenses files.
 
 ## 0.1.15
 

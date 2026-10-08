@@ -24,7 +24,7 @@ released with the tooling of `mod-ambient-radio` (`./build.ps1 -NonInteractive -
 `./release.ps1 -Publish -Interactive -Audio`); its sample list for GM Tools is
 [`tools/audio-data.json`](../tools/audio-data.json).
 
-- Order: publish EXPBG Audio Data 0.1.2 (or later) first, then GM Tools. A GM
+- Order: publish EXPBG Audio Data 0.1.3 (or later) first, then GM Tools. A GM
   Tools release builds against it and refuses an older one.
 - Resolution (`tools/Copy-AddonDependencies.ps1`, used by `build.ps1`,
   `release.ps1`, `tests/Run-Gameplay.ps1` and `tests/Run-Contracts.ps1`): the

@@ -19,7 +19,7 @@ sample there (size, sha256, frames, rate, `.meta` GUID and path), its
 
 Pending gates (native, maintainer):
 
-- build EXPBG Audio Data 0.1.2 (folder `mod-audio-data`) with `mod-ambient-radio`
+- build EXPBG Audio Data 0.1.3 (folder `mod-audio-data`) with `mod-ambient-radio`
   (`./build.ps1 -NonInteractive -Audio`, which registers the moved `.wav.meta`
   files in its resource database), then `./build.ps1 -NonInteractive` here: the
   build must resolve `EXPBG_Ambient_Radio_Audio` and log no missing sample;

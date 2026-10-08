@@ -36,7 +36,7 @@ function Test-AddonIdentity([string]$Path, [string]$Id) {
 $audioDataPath = Join-Path $settings.repo 'tools/audio-data.json'
 $audioData = if (Test-Path -LiteralPath $audioDataPath -PathType Leaf) { Get-Content -LiteralPath $audioDataPath -Raw | ConvertFrom-Json } else { $null }
 function Assert-AudioData([string]$Path) {
- $hint = 'Build EXPBG Audio Data 0.1.2 or later (its folder mod-audio-data, with ./build.ps1 -NonInteractive -Audio in mod-ambient-radio) or update its Workshop download.'
+ $hint = 'Build EXPBG Audio Data 0.1.3 or later (its folder mod-audio-data, with ./build.ps1 -NonInteractive -Audio in mod-ambient-radio) or update its Workshop download.'
  if (Test-Path -LiteralPath (Join-Path $Path 'data.pak') -PathType Leaf) {
   # A Workshop download: packed, so only its version can be checked.
   $version = $null
