@@ -1,6 +1,11 @@
 # EXPBG GM Tools changelog
 
-## Unreleased
+## 0.1.15
+
+Fixes from the 2026-10-07 op and a performance pass: less server and client
+work per frame and per second, mainly on long sessions with many players and
+AI. Saves from 0.1.14 load unchanged. Behaviour is unchanged except where a
+bullet below says otherwise.
 
 - Random Garrison: "Exclude support squads" (default on) let ammo teams and
   helicopter crews through, because only squads labelled medical, logistics or
@@ -148,6 +153,95 @@
   against him.
 - Tests: the fixture runners delete their copy of the pack after each run
   (each kept about 0.8 GB).
+
+Performance:
+
+- Unit Caching (server, except where noted): the 500 ms possession safety net
+  no longer re-checks every player against the whole cleanup ledger on every
+  tick. A player is re-checked when his controlled character changes, after
+  a cache record, member or ledger binding change, and otherwise in turn (one
+  player per tick); taking control of a unit is still handled at once. The
+  ledger's part of that check uses a per-member row index. When a tracked
+  item changes inventory slot (reload, pickup, loot), and in the other
+  per-group cleanup checks, the ledger visits only that group's rows through
+  a per-group index instead of scanning every row. Player-history and saved
+  release-id checks use hash lookups instead of list scans. The bayonet,
+  cloth-blade and RHS rail samplers share one timer per kind (each item is
+  still sampled about once a second) instead of one 1 s timer per item.
+  Between the 500 ms ticks, wake protection is reused unless a record, member
+  or Full Cache change happened. Zone enrolment reads each AI group's members
+  once per pass instead of once per zone. Inventory events, on server and
+  clients, find a cached part's owner through a map instead of scanning every
+  cached character (this was quadratic when a group was suspended). "Soldiers
+  only" now names only the first civilian group each zone skips; later ones
+  are counted in one summary line per zone at most every 300 s.
+- Garrison: the costly Unit Caching support check on each guard now runs
+  only when the garrison could go to sleep, not on every garrison tick while
+  players are near (up to 40 garrison ticks a second, each over every living
+  guard); the near-player test reads each player's and guard's position once
+  per call. Posted and patrolling guards keep their per-frame movement gate,
+  but it no longer looks up the guard's replication component every frame
+  and a patrol tests ownership once per frame instead of twice; a calm
+  guard's look request is re-sent once a second instead of on every garrison
+  tick. The Unit Caching reservation and status lookups match a garrison's
+  own squad before checking its guards. The save-exclusion sync runs every
+  5 s instead of every second, with one pass over each garrison's guards
+  (every save and load still syncs first). Building analysis checks its 4 ms
+  slice after every step instead of every 8, and a Full-cached garrison
+  skips its floor check until it wakes.
+- Random Garrison: while every zone is idle, the director ticks every 2 s
+  instead of every 100 ms and returns to 100 ms as soon as a zone has work
+  (an idle zone's status text refreshes within 2 s instead of 0.5 s). While
+  the AI limit leaves no room for any squad a building could take, the squad
+  already drawn is kept instead of being redrawn every tick, so the length
+  of such a wait no longer changes which squads a seed produces; once any
+  squad has room, a squad is drawn afresh as before. A seed that hit the AI
+  limit can therefore give different squads than in 0.1.14. The building
+  census makes cheaper checks and keeps its eligibility checks within the
+  director's per-tick time budget.
+- Time and Weather: during a transition, the rain, fog and wind overrides
+  are written (and sent to clients) only when their value changes, instead
+  of every 0.5 s; a channel that stays at its current value is written once.
+  The final values are still set when the transition ends.
+- Ambient Civilians: where a mission has a transit-blocking exclusion zone,
+  a resident's route (walk, activity approach, shelter and emerge) is first
+  checked against the route's bounding box, and the per-segment exclusion
+  test runs only when a zone touches that box. A resident's components are
+  looked up once when it is bound; the shelter check no longer repeats the
+  possession query the danger check has just made; home discovery stops
+  probing a ring of cells that is already fully indexed; residents far from
+  players have their 2 s checks spread over four passes. Clients (not a
+  listen-server host) no longer run the module's frame handlers, and the GM
+  debug view asks the server for snapshots only while civilian debug is on.
+  Traffic remembers its hidden-from-players test for the rest of each step.
+  The scene-prop memo grows from 512 to 4096 paths (DebugLevel 3 shows how
+  full it is).
+- AI Surrender: the interrogation point used to follow the prisoner's face
+  ten times a second on every machine. It now does so only within 20 m of
+  the local player and once a second otherwise, which includes a dedicated
+  server (the server's 5 s upkeep also moves it). At most 128 squad and
+  intel map markers are kept per session: each marker published past that
+  removes the oldest one, if it is still on the map (also when markers are
+  set to stay forever).
+- Ambient Destruction: a zone with no player near but still occupied by
+  characters or vehicles checks occupancy every 10 s instead of every
+  second, so it can go to sleep up to 10 s later; the suppressed-prop scan
+  runs only while a suppression is pending; prefab path checks are
+  remembered (up to 4096 paths); and sleeping zones skip the wall-support
+  step.
+- Small fixes: the AI "proper fire mode was not found" warning is printed
+  once per weapon prefab and requested mode (the first 256 pairs per server
+  run; later new pairs are not logged); Ambient Unrest looks up each
+  protester's AI control once, at spawn; Unit Scripts no longer logs a
+  routine loiter re-issue (the first loiter of each script, real retries
+  and the final failure still log).
+- Portable guards for this work (`tests/Test-PerformanceGuards.ps1`,
+  `tests/Test-Perf*.ps1` and additions to `tests/Test-RandomGarrison.ps1`
+  and `tests/Test-TimeWeather.ps1`), `tools/Measure-LogRate.ps1`, debug
+  cross-checks of the new unit-caching indexes against the old full scans
+  and of the new civilian route check against the old per-segment loop
+  (`tests/EAC_RouteEquivalenceTest.c`), and a Unit Caching A/B soak fixture
+  (`tests/EBG_PerfSoakGameplay.c`).
 
 ## 0.1.14
 
