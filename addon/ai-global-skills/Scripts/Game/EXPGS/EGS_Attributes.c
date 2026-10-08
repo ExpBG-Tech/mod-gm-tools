@@ -42,6 +42,23 @@ class EGS_Attributes
 
 		return true;
 	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Dialog target of the squad attributes: an AI squad (any faction or mod, no player in it),
+	//! edited itself or through one of its soldiers, like the vanilla Group tab. Shown with or
+	//! without a module; session saves use the saved attributes (EGS_SavedAttributes.c).
+	static SCR_AIGroup DialogGroup(Managed item)
+	{
+		SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
+		if (!editable)
+			return null;
+
+		EEditableEntityType entityType = editable.GetEntityType();
+		if (entityType != EEditableEntityType.GROUP && entityType != EEditableEntityType.CHARACTER)
+			return null;
+
+		return EGS_Manager.ResolveGroup(editable);
+	}
 }
 
 //------------------------------------------------------------------------------------------------
@@ -206,10 +223,10 @@ class EGS_RoeDefaultAttribute : EGS_ModuleAttribute {}
 class EGS_RefillCountAttribute : EGS_ModuleAttribute {}
 
 //------------------------------------------------------------------------------------------------
-//! "Rules of engagement (squad)": per-group rules of engagement in the EXPBG Rules of
-//! Engagement tab of the group's attribute dialog (shown while a module exists), next to
-//! the soldier's own (EGS_UnitRoe.c). The editor writes only changed values, once per
-//! edited group.
+//! "Rules of engagement (squad)": per-group rules of engagement in the EXPBG AI Skill & ROE
+//! tab of an AI squad's attribute dialog and of its soldiers' (any faction or mod, with or
+//! without a module), next to the soldier's own (EGS_UnitRoe.c) and the skill overrides
+//! (EGS_SkillOverrides.c). The editor writes only changed values, once per edited item.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class EGS_GroupRoeAttribute : SCR_BaseEditorAttribute
 {
@@ -232,14 +249,10 @@ class EGS_GroupRoeAttribute : SCR_BaseEditorAttribute
 	//------------------------------------------------------------------------------------------------
 	override SCR_BaseEditorAttributeVar ReadVariable(Managed item, SCR_AttributesManagerEditorComponent manager)
 	{
-		if (!manager || !EGS_Module.HasAny())
+		if (!manager)
 			return null;
 
-		SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
-		if (!editable || editable.GetEntityType() != EEditableEntityType.GROUP)
-			return null;
-
-		SCR_AIGroup group = EGS_Manager.ResolveGroup(editable);
+		SCR_AIGroup group = EGS_Attributes.DialogGroup(item);
 		if (!group)
 			return null;
 

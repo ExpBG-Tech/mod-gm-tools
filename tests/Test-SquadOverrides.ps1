@@ -5,8 +5,11 @@
 #   setting" by default; soldier > squad > module, resolved at decision time; the squad's
 #   values cached per group against the module settings revision; prisoners take their
 #   squad's values at surrender and keep their own on them.
-# - AI Global Skills: the squad ROE moved to an "EXPBG Rules of Engagement" tab with a new
-#   per-soldier ROE; the soldier answers the vanilla combat-mode query himself.
+# - AI Global Skills: the squad ROE moved to an "EXPBG Rules of Engagement" tab (renamed
+#   "EXPBG AI Skill & ROE" when the squad and soldier skill joined it) with a new per-soldier
+#   ROE; the soldier answers the vanilla combat-mode query himself.
+# Visibility without a module, the squad and soldier skill and the script fallback for the
+# attribute registration are pinned by Test-SquadSoldierAttributes.ps1.
 # - No replication for the new values; native saves (ESR_OverridesState, EGS state
 #   version 2 with version 1 compatibility), attribute-based saves (serializable / saved
 #   attributes), Unit Caching and Garrison Full caching (survivor carry, group snapshot,
@@ -58,7 +61,7 @@ $egsList = Read-Text (Join-Path $egs 'Configs/Editor/AttributeLists/Edit.conf')
 $esrCategory = Join-Path $esr 'Configs/Editor/AttributeCategories/EXPBG_SurrenderIntel.conf'
 $egsCategory = Join-Path $egs 'Configs/Editor/AttributeCategories/EGS_Roe.conf'
 Assert ((Read-Text $esrCategory) -match 'SCR_EditorAttributeCategory' -and (Read-Text $esrCategory) -match 'Name "EXPBG Surrender & Intel"' -and (Read-Text $esrCategory) -match 'EXPBG_Badge_UI\.edds') 'EXPBG Surrender & Intel category'
-Assert ((Read-Text $egsCategory) -match 'Name "EXPBG Rules of Engagement"' -and (Read-Text $egsCategory) -match 'EXPBG_Badge_UI\.edds') 'EXPBG Rules of Engagement category'
+Assert ((Read-Text $egsCategory) -match 'Name "EXPBG AI Skill & ROE"' -and (Read-Text $egsCategory) -match 'EXPBG_Badge_UI\.edds') 'EXPBG AI Skill & ROE category (squad and soldier skill and rules of engagement)'
 Assert ((Read-Text ($esrCategory + '.meta')) -match 'Name "\{5F9AC55BEEA3F6FA\}Configs/Editor/AttributeCategories/EXPBG_SurrenderIntel\.conf"') 'surrender category metadata'
 Assert ((Read-Text ($egsCategory + '.meta')) -match 'Name "\{CB1FB5533BC95820\}Configs/Editor/AttributeCategories/EGS_Roe\.conf"') 'ROE category metadata'
 
@@ -76,17 +79,17 @@ for ($n = 0; $n -lt $classes.Count; $n++) {
  Assert ($body -match "return ESR_Overrides\.$($slots[$n]);") "$($classes[$n]) edits slot $($slots[$n])"
 }
 $names = [regex]::Matches($esrList, '(?s)  ESR_(Group|Unit)\w+Attribute \{\s*m_UIInfo SCR_EditorAttributeUIInfo \{ Name "([^"]+)"') | ForEach-Object { $_.Groups[2].Value }
-Assert (($names -join '|') -eq 'Surrender chance (%)|Interrogation: reveal squad (%)|Interrogation: identity (%)|Interrogation: reveal intel items (%)|Surrender chance (%)|Interrogation: reveal squad (%)|Interrogation: identity (%)|Interrogation: reveal intel items (%)') "override names match the module settings: $($names -join '|')"
+Assert (($names -join '|') -eq 'Squad surrender chance (%)|Squad interrogation: reveal squad (%)|Squad interrogation: identity (%)|Squad interrogation: reveal intel items (%)|Soldier surrender chance (%)|Soldier interrogation: reveal squad (%)|Soldier interrogation: identity (%)|Soldier interrogation: reveal intel items (%)') "override names follow the module settings, marked squad or soldier (both show when a soldier is edited): $($names -join '|')"
 
 # Attribute behaviour: entries in code (0 = no override, then 0-100 % in steps of 5),
 # serializable, set values only in saves, GM edits only from an unlimited Edit-mode editor,
-# shown while a module exists, squad/soldier targets kept apart.
+# shown for every AI squad and soldier with or without a module, squad/soldier targets kept apart.
 $base = Get-Body $text.esrAttributes 'class\s+ESR_OverrideAttribute\s*:\s*SCR_BaseEditorAttribute'
 Assert ($base -match 'override bool IsSerializable\(\)' -and $base -match 'return ESR_Overrides\.IsSlot\(Slot\(\)\);') 'override attributes are serializable'
 Assert ($text.overrides -match 'static const int STEP = 5;' -and $text.overrides -match 'static const int ENTRY_COUNT = 22;') 'spinbox: 22 entries in steps of 5'
 Assert ((Get-Body $text.overrides 'static\s+int\s+FromEntry\s*\(') -match 'if \(entry <= 0\)\s*return UNSET;' -and (Get-Body $text.overrides 'static\s+int\s+ToEntry\s*\(') -match 'if \(value < 0\)\s*return 0;') 'entry 0 means no override'
 $read = Get-Body $base 'override\s+SCR_BaseEditorAttributeVar\s+ReadVariable\s*\('
-Assert ($read -match '(?s)if \(!manager\)\s*\{[^}]*if \(value < 0\)\s*return null;' -and $read -match 'ESR_SurrenderModule\.ActiveCount\(\) <= 0') 'reads: saves only set values; the dialog only while a module exists'
+Assert ($read -match 'bool dialog = manager != null;' -and $read -match 'if \(!dialog && value < 0\)\s*return null;' -and $read -notmatch 'ActiveCount') 'reads: saves only set values; the dialog for every AI squad and soldier, module or not'
 $write = Get-Body $base 'override\s+void\s+WriteVariable\s*\('
 Assert ($write -match 'Replication\.IsServer\(\)' -and $write -match 'if \(playerID != -1\)' -and $write -match 'editor\.IsLimited\(\)' -and $write -match 'EEditorMode\.EDIT' -and $write -match 'editor\.GetPlayerID\(\) != playerID') 'writes: server, session-load contract or the editing Game Master'
 Assert ((Get-Body $text.esrAttributes 'static\s+SCR_AIGroup\s+GroupTarget\s*\(') -match 'EEditableEntityType\.GROUP' -and (Get-Body $text.esrAttributes 'static\s+SCR_AIGroup\s+GroupTarget\s*\(') -match 'IsPlayable\(\)') 'squad attributes: AI groups only'
@@ -152,13 +155,13 @@ Assert ((Get-Body $egsCombat 'void\s+EGS_OnUnitTimer\s*\(') -match 'EGS_Manager\
 Assert ((Get-Body $text.unitRoe 'bool\s+EGS_IsEndangered\s*\(') -match 'Math\.MinInt\(m_Perception\.m_aTargetClusters\.Count\(\), EGS_MAX_CLUSTERS\)') 'endangered check bounded'
 Assert ($egsGroup -match 'EAIGroupCombatMode EGS_ReturnFireMode\(\)' -and $egsGroup -match 'EAIGroupCombatMode EGS_VanillaMode\(\)') 'group helpers for soldier ROE'
 $applyUnit = Get-Body $egsManager 'protected\s+static\s+void\s+ApplyUnit\s*\('
-Assert ($applyUnit -match 'combat\.EGS_SetUnitRoe\(EGS_UnitRoe\.FOLLOW\);' -and $applyUnit -match 'combat\.EGS_SetUnitRoe\(EGS_UnitRoe\.Effective\(unitOverride\)\);') 'soldier ROE recomputed with the unit (module, settings, membership, attribute events)'
+Assert ($applyUnit -match 'ResetUnit\(combat\);' -and (Get-Body $egsManager 'protected\s+static\s+void\s+ResetUnit\s*\(') -match 'combat\.EGS_SetUnitRoe\(EGS_UnitRoe\.FOLLOW\);' -and $applyUnit -match 'combat\.EGS_SetUnitRoe\(EGS_UnitRoe\.Effective\(unitOverride\)\);') 'soldier ROE recomputed with the unit (module, settings, membership, attribute events)'
 $setUnit = Get-Body $egsManager 'static\s+void\s+SetUnitRoe\s*\('
 Assert ($setUnit -match 'MAX_OVERRIDE_UNITS' -and $setUnit -match 'ApplyUnit\(soldier\);' -and $setUnit -match 'PrintFormat\("\[EXPBG AI SKILLS\] unit=%1 roeOverride=%2"') 'soldier ROE writer: bounded registry, applied at once, logged'
-Assert ($egsPersistence -match 'protected static const int VERSION = 2;' -and $egsPersistence -match 'VERSION_GROUPS_ONLY = 1;' -and $egsPersistence -match '\(version != VERSION && version != VERSION_GROUPS_ONLY\)' -and $egsPersistence -match 'if \(version >= VERSION\)' -and $egsPersistence -match 'EGS_Manager\.ImportUnitOverrides\(unitIds, unitRoe\);' -and $egsPersistence -match '(?s)if \(unitIds\.IsEmpty\(\)\)\s*version = VERSION_GROUPS_ONLY;') 'EGS state version 2 with soldier overrides, written as version 1 without them; version 1 still loads'
+Assert ($egsPersistence -match 'protected static const int VERSION = 2;' -and $egsPersistence -match 'VERSION_GROUPS_ONLY = 1;' -and $egsPersistence -match '\(version != VERSION && version != VERSION_GROUPS_ONLY && version != VERSION_SKILLS\)' -and $egsPersistence -match 'if \(version >= VERSION\)' -and $egsPersistence -match 'EGS_Manager\.ImportUnitOverrides\(unitIds, unitRoe\);' -and $egsPersistence -match '(?s)if \(unitIds\.IsEmpty\(\)\)\s*version = VERSION_GROUPS_ONLY;') 'EGS state version 2 with soldier overrides, written as version 1 without them; version 1 still loads'
 Assert ($egsSaved -match 'class EGS_SavedUnitRoeAttribute : EGS_SavedAttribute' -and (Get-Body $egsSaved 'class\s+EGS_SavedUnitRoeAttribute') -match 'IsSessionLoad\(manager, playerID, var\)') 'attribute-based saves keep soldier ROE'
 $groupRoe = [regex]::Match($egsList, '(?s)  EGS_GroupRoeAttribute \{(.*?)\n  \}').Groups[1].Value
-Assert ($groupRoe -match 'Name "Rules of engagement \(squad\)"' -and $groupRoe -match 'EGS_Roe\.conf' -and $groupRoe -notmatch 'Group\.conf') 'squad ROE moved to the EXPBG Rules of Engagement tab'
+Assert ($groupRoe -match 'Name "Rules of engagement \(squad\)"' -and $groupRoe -match 'EGS_Roe\.conf' -and $groupRoe -notmatch 'Group\.conf') 'squad ROE moved to the EXPBG AI Skill & ROE tab'
 $unitList = [regex]::Match($egsList, '(?s)  EGS_UnitRoeAttribute \{(.*?)\n  \}\n  EGS_').Groups[1].Value
 Assert ($unitList -match 'Name "Rules of engagement \(soldier\)"' -and $unitList -match 'EGS_Roe\.conf' -and $unitList -match 'm_sEntryName "Use squad setting"' -and $unitList -match 'm_sEntryName "Exempt \(vanilla\)"') 'soldier ROE in the same tab with the squad choices'
 Assert ($egsList -match '(?m)^  EGS_SavedUnitRoeAttribute \{') 'saved soldier ROE attribute listed'

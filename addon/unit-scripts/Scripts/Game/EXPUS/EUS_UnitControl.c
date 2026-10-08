@@ -11,10 +11,20 @@
 // look stays claimed so vanilla idle glances cannot turn him either. He is put
 // back once he is 0.35 m off his spot or his body turned more than about 75
 // degrees (beyond the head cone, so it never fights the head tracking).
-// Animation: Freeze locks plus one vanilla loiter from EUS_AnimationCatalog,
-// re-issued a bounded number of times if the native command ends on its own.
-// Never snapped back; pushed out of the pose, or furniture in the way of a pose
-// that needs room, ends it.
+// Animation: Freeze locks plus one vanilla loiter from EUS_AnimationCatalog. A
+// pose whose own sequence ends (Smoke, Stand at ease) plays again inside the same
+// loiter command (EUS_PoseLoop.c), so there is no exit, no gap and no locomotion
+// between two cycles. If the command still ends (falling, a native interruption),
+// he is put back on his spot and heading and the pose is issued again; only an
+// entry that never starts counts against LOITER_ATTEMPTS. Pushed out of the pose,
+// furniture in the way of a pose that needs room, or damage ends it.
+//
+// Freeze and Hold hold until the Game Master releases them: damage, unconsciousness
+// and ragdoll never end them (corrections pause while he is down or ragdolled and
+// resume when he is up). Death, a player taking control, entering any vehicle or
+// compartment (also ACE captive and carry helpers) and losing the AI end every
+// script, each with its own EUS_EEndReason. While Unit Caching pauses the soldier
+// (SetCachePaused or a Simulation-cached actor) the control does nothing at all.
 //
 // The spot only changes when a Game Master moves the unit (the editor transform,
 // SCR_EditableCharacterComponent.SetTransform, see EditorMoved), when he drops
@@ -25,8 +35,39 @@
 // 2026-10-07: a frozen lone officer drifted 0.78 m in 35 s).
 //
 // Every native effect is owned by reference and undone by Release, which is
-// idempotent. Damage, death, player possession and leaving AI control release
-// through native callbacks; the manager tick is only a bounded safety net.
+// idempotent. Damage (animations only), death, player possession and leaving AI
+// control release through native callbacks; the manager tick is only a bounded
+// safety net.
+
+// Why a unit control ended (EUS_UnitControl.GetEnd). Stable values: other modules
+// (Unit Caching) and persistence bridges read them; append only.
+enum EUS_EEndReason
+{
+ // Still bound, or never bound.
+ NONE = 0,
+ // Released by the Game Master (Release action, Normal AI).
+ GAME_MASTER = 1,
+ // Replaced by another unit script.
+ REPLACED = 2,
+ // An animation was interrupted by damage (Freeze and Hold never end on damage).
+ DAMAGE = 3,
+ DEATH = 4,
+ // A player possessed or took control of the soldier.
+ POSSESSED = 5,
+ // He entered a vehicle or a compartment (also helper compartments of other mods).
+ VEHICLE = 6,
+ // The actor was deleted or the AI agent no longer controls him.
+ REMOVED = 7,
+ // An animation was pushed off its spot.
+ POSE_PUSHED = 8,
+ // No room for the pose (Sit on a chair) where it is issued.
+ POSE_NO_ROOM = 9,
+ // The pose entry never started after LOITER_ATTEMPTS attempts.
+ LOITER_FAILED = 10,
+ // Silent release: the manager or the world ended.
+ SILENT = 11
+}
+
 class EUS_UnitControl
 {
  static const float FREEZE_LOOK_RANGE = 25;
@@ -57,6 +98,11 @@ class EUS_UnitControl
  static const float MOVE_NOTE_SECONDS = 10;
  // Room re-check while a pose that needs room is held (one trace per interval).
  static const float ROOM_SECONDS = 10;
+ // Before a pose is issued again he is put back on his spot when he stands farther
+ // than this off it (m) or turned more than about 6 degrees (cosine), so repeated
+ // cycles never walk or turn him away.
+ static const float POSE_SNAP = 0.05;
+ static const float POSE_TURN_DOT = 0.995;
 
  protected SCR_ChimeraCharacter m_Actor;
  protected SCR_AIGroup m_Group;
@@ -74,11 +120,16 @@ class EUS_UnitControl
  protected vector m_Forward;
  protected EMovementType m_PreviousMovement;
  protected float m_PreviousPerception = -1;
+ // Pose entries issued since the pose was last seen playing.
  protected int m_LoiterAttempts;
  protected bool m_LoiterLogged;
  protected float m_NextLoiter;
- protected float m_LoiterSince = -1;
  protected float m_PendingSince = -1;
+ // Unit Caching pause (SetCachePaused), and whether the previous tick was paused
+ // (by that call or by a Simulation-cached actor).
+ protected bool m_CachePaused;
+ protected bool m_WasPaused;
+ protected EUS_EEndReason m_End;
  protected float m_SettleUntil = -1;
  // What already stood on the spot when he settled there (an officer at a desk):
  // never a reason by itself to give the spot up.
@@ -105,6 +156,68 @@ class EUS_UnitControl
  vector GetForward() { return m_Forward; }
  int GetCorrections() { return m_TotalCorrections; }
  string GetEndReason() { return m_EndReason; }
+ // Why it ended (NONE while bound). Stable for other modules; see EUS_EEndReason.
+ EUS_EEndReason GetEnd() { return m_End; }
+ bool IsCachePaused() { return m_CachePaused; }
+
+ // Unit Caching: while paused this control does nothing (no correction, no pose
+ // retry, no look); the hidden soldier is never moved and no attempt is spent. On
+ // un-pause the retry allowance is fresh and an ended pose starts again at once at
+ // his spot. A Simulation-cached actor (EBG_IsSimulationCached) is paused the same
+ // way without this call. Idempotent.
+ void SetCachePaused(bool paused)
+ {
+  if (m_CachePaused == paused)
+  {
+   return;
+  }
+  m_CachePaused = paused;
+  if (!paused && m_Bound && !Paused())
+  {
+   Unpause(EUS_Codes.WorldSeconds());
+  }
+ }
+
+ protected bool Paused()
+ {
+  if (m_CachePaused)
+  {
+   return true;
+  }
+  return m_Actor && m_Actor.EBG_IsSimulationCached();
+ }
+
+ // Back from a pause: fresh allowance; an ended pose starts again now.
+ protected void Unpause(float now)
+ {
+  m_WasPaused = false;
+  m_JustCorrected = false;
+  m_LoiterAttempts = 0;
+  m_PendingSince = -1;
+  m_NextLoiter = now;
+  m_NextRoom = now;
+  if (!EUS_Codes.IsAnimation(m_Code) || !IsOwnedActor() || Down() || m_Controller.IsLoitering())
+  {
+   return;
+  }
+  SCR_ScriptedCharacterInputContext input = m_Controller.GetScrInputContext();
+  if (input && input.m_iLoiteringType >= 0)
+  {
+   return;
+  }
+  StartLoiter(now);
+ }
+
+ // Unconscious or ragdolled: nothing is held, looked at or re-issued until he is up.
+ protected bool Down()
+ {
+  if (m_Controller.GetLifeState() != ECharacterLifeState.ALIVE)
+  {
+   return true;
+  }
+  CharacterAnimationComponent animation = m_Controller.GetAnimationComponent();
+  return animation && animation.IsRagdollActive();
+ }
 
  // Empty when the character may receive a unit script, otherwise the reason.
  static string Eligibility(SCR_ChimeraCharacter actor)
@@ -122,6 +235,47 @@ class EUS_UnitControl
   // EXPBG Garrison owns its squads' posts and patrols; never stack controls.
   if (group && group.EXPG_Active) return "the unit belongs to an EXPBG Garrison (use Release Garrison first)";
   return string.Empty;
+ }
+
+ // Eligibility plus the native AI components Bind needs: empty when a restored
+ // soldier can take his saved script now (right after a load his AI may still be
+ // initializing).
+ static string Readiness(SCR_ChimeraCharacter actor)
+ {
+  string reason = Eligibility(actor);
+  if (!reason.IsEmpty())
+  {
+   return reason;
+  }
+  AIAgent agent = actor.GetAIControlComponent().GetAIAgent();
+  SCR_AIUtilityComponent utility = SCR_AIUtilityComponent.Cast(agent.FindComponent(SCR_AIUtilityComponent));
+  if (!utility || !utility.m_CombatMoveState || utility.m_OwnerEntity != actor || !agent.FindComponent(SCR_AICharacterSettingsComponent))
+  {
+   return "the unit's AI is not ready";
+  }
+  return string.Empty;
+ }
+
+ // Server: puts a soldier on a spot and heading the way Restore does (the editor's
+ // owner teleport). Used before a saved script binds.
+ static void PlaceAt(notnull SCR_ChimeraCharacter actor, vector anchor, vector forward)
+ {
+  vector transform[4];
+  actor.GetWorldTransform(transform);
+  vector previous = transform[3];
+  transform[0] = Vector(forward[2], 0, -forward[0]);
+  transform[1] = Vector(0, 1, 0);
+  transform[2] = forward;
+  transform[3] = anchor;
+  actor.Teleport(transform);
+  Physics physics = actor.GetPhysics();
+  if (physics)
+  {
+   physics.SetVelocity(vector.Zero);
+   physics.SetAngularVelocity(vector.Zero);
+  }
+  RplComponent rpl = actor.GetRplComponent();
+  if (rpl) rpl.ForceNodeMovement(previous);
  }
 
  bool Bind(SCR_ChimeraCharacter actor, int code, float now, out string reason)
@@ -198,7 +352,9 @@ class EUS_UnitControl
   // The utility forwards to its combat move state, which re-filters a running request.
   m_Utility.EUS_SetControl(this);
   m_Controller.EUS_SetControl(this);
-  if (m_Damage) m_Damage.GetOnDamage().Insert(OnDamage);
+  m_End = EUS_EEndReason.NONE;
+  // Only a pose ends on damage; Freeze and Hold hold until the Game Master releases them.
+  if (m_Damage && EUS_Codes.IsAnimation(code)) m_Damage.GetOnDamage().Insert(OnDamage);
   m_Movement.SetMovementTypeWanted(EMovementType.IDLE);
   // Native idle/formation motion can bypass the wanted speed; the character's
   // own speed cap gates locomotion. Other owners' slowdowns stay intact.
@@ -213,22 +369,88 @@ class EUS_UnitControl
   return true;
  }
 
+ // True while this control still owns a living AI soldier (he may be unconscious).
  bool IsOwnedActor()
  {
-  if (!m_Bound || !m_Actor || m_Actor.IsDeleted() || !m_Agent || !m_Utility || !m_Settings || !m_Controller || !m_Movement) return false;
-  if (m_Controller.IsDead() || m_Controller.GetLifeState() != ECharacterLifeState.ALIVE || m_Controller.IsPlayerControlled() || m_Actor.IsInVehicle()) return false;
+  EUS_EEndReason end;
+  return m_Bound && Lost(end).IsEmpty();
+ }
+
+ // Empty while he is still a living AI soldier of this agent outside any vehicle;
+ // otherwise why not, with its end code. Unconsciousness is not a loss.
+ protected string Lost(out EUS_EEndReason end)
+ {
+  end = EUS_EEndReason.REMOVED;
+  if (!m_Actor || m_Actor.IsDeleted() || !m_Agent || !m_Utility || !m_Settings || !m_Controller || !m_Movement)
+  {
+   return "the unit was removed";
+  }
+  if (m_Controller.IsDead())
+  {
+   end = EUS_EEndReason.DEATH;
+   return "the unit died";
+  }
+  if (m_Controller.IsPlayerControlled())
+  {
+   end = EUS_EEndReason.POSSESSED;
+   return "a player took control of the unit";
+  }
+  if (m_Actor.IsInVehicle())
+  {
+   end = EUS_EEndReason.VEHICLE;
+   return "the unit entered a vehicle or compartment (" + Compartment() + ")";
+  }
   AIControlComponent control = m_Actor.GetAIControlComponent();
-  return control && control.GetAIAgent() == m_Agent && m_Agent.GetControlledEntity() == m_Actor;
+  if (!control || control.GetAIAgent() != m_Agent || m_Agent.GetControlledEntity() != m_Actor)
+  {
+   return "the unit left AI control";
+  }
+  return string.Empty;
+ }
+
+ // Name of the vehicle or helper entity whose compartment he occupies.
+ protected string Compartment()
+ {
+  CompartmentAccessComponent access = m_Actor.GetCompartmentAccessComponent();
+  if (!access || !access.GetCompartment())
+  {
+   return "unknown";
+  }
+  return EUS_Codes.Name(access.GetCompartment().GetOwner());
  }
 
  // Bounded manager tick. False once released.
  bool Tick(float now, notnull array<IEntity> players)
  {
-  if (!m_Bound) return false;
-  if (!IsOwnedActor())
+  if (!m_Bound)
   {
-   Release("the unit died, left AI control or was removed");
    return false;
+  }
+  EUS_EEndReason end;
+  string lost = Lost(end);
+  if (!lost.IsEmpty())
+  {
+   ReleaseBy(end, lost);
+   return false;
+  }
+  // Unit Caching holds him: nothing moves him and no pose attempt is spent.
+  if (Paused())
+  {
+   m_WasPaused = true;
+   return true;
+  }
+  if (m_WasPaused)
+  {
+   Unpause(now);
+   if (!m_Bound)
+   {
+    return false;
+   }
+  }
+  if (Down())
+  {
+   m_JustCorrected = false;
+   return true;
   }
   if (m_SettleUntil >= 0)
   {
@@ -346,6 +568,7 @@ class EUS_UnitControl
  {
   if (drift > ANIMATION_TOLERANCE)
   {
+   m_End = EUS_EEndReason.POSE_PUSHED;
    Release(string.Format("pushed %1 m off its spot while animating (no room for this pose here)", Math.Round(drift * 10) * 0.1));
    return false;
   }
@@ -355,6 +578,7 @@ class EUS_UnitControl
   // covers both his spot and the seat in front of it.
   string blocked = PoseRoom(m_Code - EUS_Codes.ANIMATION, m_Anchor, m_Forward);
   if (blocked.IsEmpty()) return true;
+  m_End = EUS_EEndReason.POSE_NO_ROOM;
   Release(blocked);
   return false;
  }
@@ -492,6 +716,14 @@ class EUS_UnitControl
   PrintFormat("[EUS] unit=%1 %2", m_Actor, text);
  }
 
+ // The module's line without a bound unit (save and restore summaries). Every
+ // caller is bounded: one line per save, per drained restore batch, per refused
+ // saved row.
+ static void Log(string text)
+ {
+  Print("[EUS] " + text);
+ }
+
  // Server: a Game Master moved the unit (editor drag, squad move, position
  // attribute). He takes the new spot; the owner teleport may land a frame later,
  // so the hold settles first. A pose gets a fresh retry allowance and room check.
@@ -561,7 +793,10 @@ class EUS_UnitControl
  {
   int index = m_Code - EUS_Codes.ANIMATION;
   m_NextLoiter = now + 2;
-  if (m_Controller.IsChangingStance()) return true;
+  if (m_Controller.IsChangingStance() || m_Controller.IsFalling())
+  {
+   return true;
+  }
   if (m_Controller.GetStance() != ECharacterStance.STAND)
   {
    SCR_AIStanceHandling.SetStance(m_Controller, ECharacterStance.STAND);
@@ -569,10 +804,14 @@ class EUS_UnitControl
   }
   ELoiteringType type = EUS_AnimationCatalog.Type(index);
   if (!m_Controller.CanPlayLoiterAnimation(type)) return true;
+  // Every entry starts on the held spot and heading: cycles and re-issues never
+  // carry him away (the first entry and a Game Master move start where he stands).
+  if (vector.DistanceXZ(m_Actor.GetOrigin(), m_Anchor) > POSE_SNAP || vector.Dot(EUS_Codes.Forward(m_Actor), m_Forward) < POSE_TURN_DOT) Restore(true);
   // Where the loiter below is issued: his current transform.
   string blocked = RoomHere(index);
   if (!blocked.IsEmpty())
   {
+   m_End = EUS_EEndReason.POSE_NO_ROOM;
    Release(blocked);
    return false;
   }
@@ -598,12 +837,11 @@ class EUS_UnitControl
   if (m_Controller.IsLoitering())
   {
    m_PendingSince = -1;
-   if (m_LoiterSince < 0) m_LoiterSince = now;
-   // A loiter that held for a while earns a fresh retry allowance.
-   if (now - m_LoiterSince > 20) m_LoiterAttempts = 0;
+   // It plays: a later end is the pose's own end (or an interruption), never a
+   // failed entry. Only entries that never start count against LOITER_ATTEMPTS.
+   m_LoiterAttempts = 0;
    return true;
   }
-  m_LoiterSince = -1;
   SCR_ScriptedCharacterInputContext input = m_Controller.GetScrInputContext();
   if (input && input.m_iLoiteringType >= 0)
   {
@@ -617,19 +855,25 @@ class EUS_UnitControl
   if (now < m_NextLoiter) return true;
   if (m_LoiterAttempts >= LOITER_ATTEMPTS)
   {
+   m_End = EUS_EEndReason.LOITER_FAILED;
    Release(string.Format("the animation could not be kept after %1 attempts", LOITER_ATTEMPTS));
    return false;
   }
   return StartLoiter(now);
  }
 
- // Native damage callback (server). Healing, regeneration and bleeding ticks
- // of an existing wound do not count as new damage.
+ // Native damage callback (server), subscribed for animations only: a pose ends
+ // when he is hit. Healing, regeneration and bleeding ticks of an existing wound
+ // do not count as new damage. Freeze and Hold never end on damage.
  void OnDamage(BaseDamageContext damageContext)
  {
-  if (!m_Bound || !damageContext || damageContext.damageValue <= 0) return;
+  if (!m_Bound || !EUS_Codes.IsAnimation(m_Code) || !damageContext || damageContext.damageValue <= 0)
+  {
+   return;
+  }
   EDamageType type = damageContext.damageType;
   if (type == EDamageType.HEALING || type == EDamageType.REGENERATION || type == EDamageType.BLEEDING) return;
+  m_End = EUS_EEndReason.DAMAGE;
   Release("the unit took damage", true);
  }
 
@@ -638,9 +882,11 @@ class EUS_UnitControl
  SCR_AICombatMoveRequestBase Filter(notnull SCR_AICombatMoveRequestBase request)
  {
   if (!m_Bound) return null;
-  if (!IsOwnedActor())
+  EUS_EEndReason end;
+  string lost = Lost(end);
+  if (!lost.IsEmpty())
   {
-   Release("the unit died, left AI control or was removed");
+   ReleaseBy(end, lost);
    return null;
   }
   if (m_Code == EUS_Codes.HOLD)
@@ -679,18 +925,36 @@ class EUS_UnitControl
   if (!m_Bound) return;
   if (player)
   {
-   Release("a player took control of the unit");
+   ReleaseBy(EUS_EEndReason.POSSESSED, "a player took control of the unit");
    return;
   }
   CharacterInputContext input = controller.GetInputContext();
   if (input) input.SetMovement(0, vector.Zero);
  }
 
+ // Release with its end code (the first code set wins; see GetEnd).
+ void ReleaseBy(EUS_EEndReason end, string reason, bool fast = false)
+ {
+  if (!m_Bound)
+  {
+   return;
+  }
+  if (m_End == EUS_EEndReason.NONE) m_End = end;
+  Release(reason, fast);
+ }
+
+ // A plain Release without an end code counts as a Game Master release, or as
+ // SILENT without a reason (destructor, manager stop).
  void Release(string reason, bool fast = false)
  {
   if (!m_Bound) return;
   m_Bound = false;
   m_EndReason = reason;
+  if (m_End == EUS_EEndReason.NONE)
+  {
+   if (reason.IsEmpty()) m_End = EUS_EEndReason.SILENT;
+   else m_End = EUS_EEndReason.GAME_MASTER;
+  }
   if (m_Damage) m_Damage.GetOnDamage().Remove(OnDamage);
   if (m_Actor) m_Actor.SetSpeedLimit(this, 1);
   if (m_Controller && m_Controller.EUS_GetControl() == this) m_Controller.EUS_SetControl(null);
@@ -823,7 +1087,7 @@ modded class SCR_CharacterControllerComponent
  override protected void OnControlledByPlayer(IEntity owner, bool controlled)
  {
   EUS_UnitControl possessed = m_EUS_Control;
-  if (controlled && possessed) possessed.Release("a player took control of the unit");
+  if (controlled && possessed) possessed.ReleaseBy(EUS_EEndReason.POSSESSED, "a player took control of the unit");
   super.OnControlledByPlayer(owner, controlled);
  }
 }
@@ -836,8 +1100,41 @@ modded class SCR_EditableCharacterComponent
 {
  override bool SetTransform(vector transform[4], bool changedByUser = false)
  {
-  bool moved = super.SetTransform(transform, changedByUser);
+  bool moved = EUS_LeaveLooseCompartment(transform, changedByUser);
+  if (!moved) moved = super.SetTransform(transform, changedByUser);
   if (moved) EUS_UnitControl.EditorMoved(GetOwner(), transform);
   return moved;
+ }
+
+ // Vanilla moves a seated character out of his compartment and, 100 ms later,
+ // unregisters the compartment's vehicle from his AI group through GetVehicle(),
+ // the vehicle's editable entity. A compartment without one (ACE Captives surrender
+ // and tied helpers, other mods' animation helper compartments) made vanilla
+ // dereference a null GetVehicle() and later RemoveUsableVehicle(null) (production
+ // server 2026-10-08, every Game Master move of such a unit). Same move here, minus
+ // the unregister: a helper without an editable vehicle was never one of the
+ // group's usable vehicles. True when this handled the move.
+ protected bool EUS_LeaveLooseCompartment(vector transform[4], bool changedByUser)
+ {
+  IEntity owner = GetOwner();
+  if (!owner || !IsServer())
+  {
+   return false;
+  }
+  CompartmentAccessComponent access = CompartmentAccessComponent.Cast(owner.FindComponent(CompartmentAccessComponent));
+  if (!access || !access.IsInCompartment() || GetVehicle())
+  {
+   return false;
+  }
+  RplComponent rpl = RplComponent.Cast(owner.FindComponent(RplComponent));
+  if (!rpl)
+  {
+   return false;
+  }
+  // As vanilla: never below the ground, feedback for a moved player, the owner leaves.
+  transform[3][1] = Math.Max(transform[3][1], owner.GetWorld().GetSurfaceY(transform[3][0], transform[3][2]));
+  if (changedByUser && IsPlayerOrPossessed()) Rpc(PlayerTeleportedFeedback, false);
+  Rpc(GetOutVehicleOwner, rpl.Id(), transform);
+  return true;
  }
 }

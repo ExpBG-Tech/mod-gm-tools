@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{867D8E3D247F48BF}Configs/Editor/AttributeLists/EXPSR/ESR_SquadSoldier.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

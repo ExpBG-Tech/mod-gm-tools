@@ -1,0 +1,9 @@
+MetaFileClass {
+ Name "{A4BB2BF355CA2A33}Configs/Editor/AttributeLists/EXPGS/EGS_SquadSoldier.conf"
+ Configurations {
+  CONFResourceClass PC {
+  }
+  CONFResourceClass HEADLESS : PC {
+  }
+ }
+}

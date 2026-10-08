@@ -624,13 +624,18 @@ class EGS_Settings
 
 	//------------------------------------------------------------------------------------------------
 	//! Effective rules of engagement for a group (pure, used by the manager and the fixture).
+	//! A squad's own choice applies with or without a module (active); the module default
+	//! only while a module exists.
 	static int EffectiveRoe(bool active, int groupOverride, int globalRoe)
 	{
-		if (!active || groupOverride == GROUP_ROE_EXEMPT)
+		if (groupOverride == GROUP_ROE_EXEMPT)
 			return ROE_VANILLA;
 
 		if (groupOverride >= ROE_RETURN_FIRE && groupOverride <= ROE_WARNING_SHOTS)
 			return groupOverride;
+
+		if (!active)
+			return ROE_VANILLA;
 
 		return Math.ClampInt(globalRoe, ROE_VANILLA, ROE_WARNING_SHOTS);
 	}

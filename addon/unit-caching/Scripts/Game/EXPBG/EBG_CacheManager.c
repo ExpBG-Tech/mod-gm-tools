@@ -989,17 +989,29 @@ class EBG_CacheManager
      tally.AddExternal(externalModule, externalState);
      continue;
     }
-    // Text only: a module that also publishes a keep-awake reason (Unit Scripts) names itself.
-    string holder = KeepAwakeReason(group);
-    if (holder.IsEmpty()) skip = "held by another EXPBG module (Unit Scripts, ambient crowds) or a pending cache transfer";
-    else skip = "held by another EXPBG module (" + holder + ")";
+    // Unit Scripts soldiers (Hold, Freeze, animation) keep their live script on the
+    // same actors in Simulation, so a Simulation zone enrolls the squad when those
+    // scripts are its only hold (EBG_ScriptedUnits.SimulationOnly). Full would respawn
+    // them: a Full zone keeps it awake and says so. The checks below still apply.
+    if (zone.Mode != 0 || !EBG_ScriptedUnits.SimulationOnly(this, group))
+    {
+     // Text only: a module that also publishes a keep-awake reason (Unit Scripts) names itself.
+     string holder = KeepAwakeReason(group);
+     if (holder.IsEmpty()) skip = "held by another EXPBG module (Unit Scripts, ambient crowds) or a pending cache transfer";
+     else skip = "held by another EXPBG module (" + EBG_ScriptedUnits.FullHolder(group, holder, zone.Mode) + ")";
+    }
    }
-   else if (group.EBG_Exclude) skip = "marked Exclude from EXPBG optimization";
-   else if (!group.EBG_HasCompletedInitialSpawn()) skip = "still spawning members";
-   else if (group.GetPlayerCount() > 0) skip = "containing a player";
-   else if (group.IsSlave() || group.GetMaster() || group.IsCreatedByCommander()) skip = "commanded by another group or the commander";
-   else if (group.GetLifecyclePolicy() == SCR_EAIGroupLifecyclePolicy.ProximityDriven) skip = "run by the vanilla proximity spawner";
-   else skip = MemberSkip(members, enrollmentPersistence);
+   // Empty here: neither reserved nor waiting for saved ownership, or a Simulation
+   // zone's Unit Scripts squad that nothing else holds.
+   if (skip.IsEmpty())
+   {
+    if (group.EBG_Exclude) skip = "marked Exclude from EXPBG optimization";
+    else if (!group.EBG_HasCompletedInitialSpawn()) skip = "still spawning members";
+    else if (group.GetPlayerCount() > 0) skip = "containing a player";
+    else if (group.IsSlave() || group.GetMaster() || group.IsCreatedByCommander()) skip = "commanded by another group or the commander";
+    else if (group.GetLifecyclePolicy() == SCR_EAIGroupLifecyclePolicy.ProximityDriven) skip = "run by the vanilla proximity spawner";
+    else skip = MemberSkip(members, enrollmentPersistence);
+   }
    // Soldiers only: a civilian-faction group inside the zone is never enrolled.
    // Civilians are cached by EXPBG Ambient Civilians. The first skipped group of a
    // zone is named in the server log so a Game Master can see why it stayed awake;
@@ -1293,9 +1305,12 @@ class EBG_CacheManager
    minY = Math.Min(minY, member.Position[1]);
    maxY = Math.Max(maxY, member.Position[1]);
    if (entity.EBG_WasPlayerControlled()) member.WasPlayer = true;
+   // Names the actual state: a Unit Scripts animation is a loiter, never a vehicle.
+   string mount = EBG_StaticEmplacement.Unsupported(entity);
    if (member.WasPlayer) record.Reason = "Player-controlled or previously possessed member";
-   else if (!EBG_StaticEmplacement.Unsupported(entity).IsEmpty() || !controller || controller.IsUnconscious() || controller.IsFalling() || controller.IsSwimming() || controller.IsClimbing())
-    record.Reason = "Unsupported vehicle, medical or movement state";
+   else if (!mount.IsEmpty()) record.Reason = "Unsupported vehicle state: " + mount;
+   else if (!controller || controller.IsUnconscious() || controller.IsFalling() || controller.IsSwimming() || controller.IsClimbing())
+    record.Reason = "Unsupported medical or movement state (unconscious, falling, swimming or climbing)";
    else if (entity.GetCharacterGroup() != record.Group) record.Reason = "Group roster changed; automatic reconciliation pending";
    SCR_CharacterDamageManagerComponent damage = SCR_CharacterDamageManagerComponent.Cast(entity.GetDamageManager());
    if (!damage || damage.IsBleeding()) record.Reason = "Medically unstable member: active bleeding";
@@ -1365,7 +1380,8 @@ class EBG_CacheManager
   if (record.PersistenceIssue != "") record.Reason = "Saved ownership held: " + record.PersistenceIssue;
   if (record.RegroupReason != "") record.Reason = record.RegroupReason;
   // Lowest-priority reason; any reason skips sleep and wakes a suspended record.
-  string keepAwake = KeepAwakeReason(record.Group);
+  // Unit Scripts soldiers: no hold in a Simulation zone, a named Full refusal otherwise.
+  string keepAwake = EBG_ScriptedUnits.KeepAwake(record, KeepAwakeReason(record.Group));
   if (keepAwake != record.KeepAwake)
   {
    if (keepAwake != "") PrintFormat("[EBG KEEP AWAKE] group=%1 native=%2 anchor=%3 held: %4", record.Id, record.Group, record.Anchor, keepAwake);

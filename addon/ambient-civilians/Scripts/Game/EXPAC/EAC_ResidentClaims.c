@@ -73,6 +73,22 @@ class EAC_ResidentClaims
   return false;
  }
 
+ // Per-module accounting (0.1.18): every claim, live, pending or cached, is charged
+ // to the module whose area holds its home. A claim whose home is in no area any
+ // more (its module was deleted) is charged to none and is retired by the
+ // spawner's area sweep. At most 200 claims, once per scheduler tick.
+ void ChargePopulationAreas()
+ {
+  foreach (int id, EAC_ResidentClaim claim : m_Claims)
+  {
+   if (!claim || !claim.Home)
+    continue;
+   EAC_AmbientModule areaModule = EAC_AmbientModule.FindPopulationArea(claim.Home.Position);
+   if (areaModule)
+    areaModule.ChargeAreaResident();
+  }
+ }
+
  EBG_CacheMember FindOptimizerMember(IEntity entity)
  {
   if (!entity || !Replication.IsServer() || entity.GetWorld() != m_World) return null;

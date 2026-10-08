@@ -1,8 +1,12 @@
 // "EXPBG Surrender & Intel" tab of an AI squad's and an AI soldier's Edit properties
 // (ESR_Overrides): surrender chance, reveal squad, identity and reveal intel items, each
 // "use the module setting" (squad) or "use the squad or module setting" (soldier), or
-// 0-100 % in steps of 5. Shown while an EXPBG AI Surrender module is placed; values are
-// read and written on the server only, so nothing is replicated for the dialog.
+// 0-100 % in steps of 5. Shown for every AI squad and AI soldier of any faction or mod
+// (vanilla, RHS and others), with or without a module, so values can be set before the
+// EXPBG AI Surrender module is placed; surrenders themselves need the module (it decides
+// when a squad breaks). The squad values are also shown when one of the squad's soldiers is
+// edited, like the vanilla Group tab. Values are read and written on the server only, so
+// nothing is replicated for the dialog.
 // Session saves: attribute-based savers (CDF Game Master Save) read set overrides with a
 // null manager and write them back on load with playerID -1. CDF keys an attribute by its
 // class name and occurrence, so every slot and target has its own class.
@@ -23,12 +27,13 @@ class ESR_OverrideAttribute : SCR_BaseEditorAttribute
  }
 
  // True when the item is a valid target; value is its current override (UNSET for none).
- protected bool ReadOverride(Managed item, out int value)
+ // dialog: a Game Master dialog (true) or a session save (false).
+ protected bool ReadOverride(Managed item, bool dialog, out int value)
  {
   return false;
  }
 
- protected void WriteOverride(Managed item, int value, string origin)
+ protected void WriteOverride(Managed item, int value, string origin, bool dialog)
  {
  }
 
@@ -63,18 +68,13 @@ class ESR_OverrideAttribute : SCR_BaseEditorAttribute
   if (!IsSerializable())
    return null;
   int value;
-  if (!ReadOverride(item, value))
+  bool dialog = manager != null;
+  if (!ReadOverride(item, dialog, value))
    return null;
-  if (!manager)
-  {
-   // Session save: only overrides that are set.
-   if (value < 0)
-    return null;
-  }
-  else if (ESR_SurrenderModule.ActiveCount() <= 0)
-  {
+  // Session save: only overrides that are set. The dialog shows every AI squad and soldier,
+  // module or not.
+  if (!dialog && value < 0)
    return null;
-  }
   return SCR_BaseEditorAttributeVar.CreateInt(ESR_Overrides.ToEntry(value));
  }
 
@@ -96,43 +96,55 @@ class ESR_OverrideAttribute : SCR_BaseEditorAttribute
     return;
    origin = "Game Master";
   }
-  WriteOverride(item, ESR_Overrides.FromEntry(var.GetInt()), origin);
+  WriteOverride(item, ESR_Overrides.FromEntry(var.GetInt()), origin, manager != null);
  }
 }
 
 //------------------------------------------------------------------------------------------------
-//! AI squads: not playable and without players.
+//! AI squads of any faction or mod: not playable and without players. viaSoldier (dialog
+//! only) also takes the squad of an edited soldier, like the vanilla Group tab; session saves
+//! keep to the squad itself so each squad is saved once.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class ESR_GroupOverrideAttribute : ESR_OverrideAttribute
 {
- static SCR_AIGroup GroupTarget(Managed item)
+ static SCR_AIGroup GroupTarget(Managed item, bool viaSoldier = false)
  {
   SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
-  if (!editable || editable.GetEntityType() != EEditableEntityType.GROUP)
+  if (!editable)
    return null;
-  SCR_AIGroup squad = SCR_AIGroup.Cast(editable.GetOwner());
+  SCR_AIGroup squad;
+  if (editable.GetEntityType() == EEditableEntityType.GROUP)
+  {
+   squad = SCR_AIGroup.Cast(editable.GetOwner());
+  }
+  else if (viaSoldier && editable.GetEntityType() == EEditableEntityType.CHARACTER)
+  {
+   SCR_EditableEntityComponent squadEditable = editable.GetAIGroup();
+   if (squadEditable)
+    squad = SCR_AIGroup.Cast(squadEditable.GetOwner());
+  }
   if (!squad || squad.IsPlayable() || squad.GetPlayerCount(true) > 0)
    return null;
   return squad;
  }
 
- override protected bool ReadOverride(Managed item, out int value)
+ override protected bool ReadOverride(Managed item, bool dialog, out int value)
  {
-  SCR_AIGroup squad = GroupTarget(item);
+  SCR_AIGroup squad = GroupTarget(item, dialog);
   if (!squad)
    return false;
   value = squad.ESR_GetOverride(Slot());
   return true;
  }
 
- override protected void WriteOverride(Managed item, int value, string origin)
+ override protected void WriteOverride(Managed item, int value, string origin, bool dialog)
  {
-  ESR_Overrides.SetGroup(GroupTarget(item), Slot(), value, origin);
+  ESR_Overrides.SetGroup(GroupTarget(item, dialog), Slot(), value, origin);
  }
 }
 
 //------------------------------------------------------------------------------------------------
-//! AI soldiers: an AI-controlled character nobody plays or possesses.
+//! AI soldiers of any faction or mod: an AI-controlled character nobody plays or possesses.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class ESR_UnitOverrideAttribute : ESR_OverrideAttribute
 {
@@ -152,7 +164,7 @@ class ESR_UnitOverrideAttribute : ESR_OverrideAttribute
   return "Use squad or module setting";
  }
 
- override protected bool ReadOverride(Managed item, out int value)
+ override protected bool ReadOverride(Managed item, bool dialog, out int value)
  {
   SCR_ChimeraCharacter soldier = UnitTarget(item);
   if (!soldier)
@@ -161,7 +173,7 @@ class ESR_UnitOverrideAttribute : ESR_OverrideAttribute
   return true;
  }
 
- override protected void WriteOverride(Managed item, int value, string origin)
+ override protected void WriteOverride(Managed item, int value, string origin, bool dialog)
  {
   ESR_Overrides.SetUnit(UnitTarget(item), Slot(), value, origin);
  }

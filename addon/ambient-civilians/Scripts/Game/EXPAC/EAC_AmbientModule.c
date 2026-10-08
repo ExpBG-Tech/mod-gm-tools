@@ -177,12 +177,35 @@ class EAC_AmbientModule : GenericEntity
   if (level >= 1) PrintFormat("[EAC faction] %1 resolved ai_limit=%2", key, civLimit);
  }
  static int GetDebugLevelMirror() { return s_DebugLevel; }
- // Duplicate-module notice (readiness plan S3). Set on both the duplicate and the
- // module that already owns the world, so whichever one a Game Master opens says
- // duplicate=1 rather than reporting a healthy mission.
- protected bool m_Duplicate;
- void MarkDuplicate() { m_Duplicate = true; }
- bool IsDuplicated() { return m_Duplicate; }
+ // Several modules (0.1.18; production report 2026-10-08, "I placed a second
+ // module and it's not spawning any civs"). Until 0.1.17 only the first placed
+ // module admitted residents and every further one was refused as a duplicate.
+ // Now every placed module is a population AREA with its own centre, radius,
+ // civilian limit, neighbourhood limits, residents per house, theme and faction.
+ // The first placed module (GetActive) remains the COORDINATOR: it runs the one
+ // shared 2 Hz scheduler, spawner and traffic director for all areas, and its
+ // shared-behaviour settings (activities, timings, sounds, cars, diagnostics)
+ // apply mission-wide. The coordinator recounts every area from the claim ledger
+ // once per tick (RefreshPopulationAreas); nothing here runs per frame.
+ // At most this many areas are served; a further module is reported, never silent.
+ static const int MAX_POPULATION_AREAS = 32;
+ // The hard ceiling the spawner already enforces (200 tracked activations, the
+ // PopulationLimit clamp). When the modules together ask for more, each gets a
+ // share proportional to its own limit and the capped state is reported.
+ static const int WORLD_POPULATION_CEILING = 200;
+ protected static int s_NextAreaId;
+ protected int m_AreaId;
+ protected int m_AreaPopulation;
+ protected int m_AreaLimit;
+ protected bool m_AreaShared;
+ protected bool m_AreaCapped;
+ protected bool m_AreaIgnored;
+ protected int m_WorldPopulationLimit;
+ protected int m_NextArea;
+ // Coordinator only, rebuilt every scheduler tick; no allocation in the tick.
+ protected ref array<EAC_AmbientModule> m_AreaModules = {};
+ protected ref array<vector> m_AreaCentres = {};
+ protected ref array<int> m_AreaRadii = {};
  // Terrain safety valve (readiness plan S2). One sticky line per world.
  protected bool m_EmptyIndexReported;
 
@@ -196,7 +219,7 @@ class EAC_AmbientModule : GenericEntity
  [Attribute("0", UIWidgets.EditBox, "Theme index: 0 mixed, 1 workers, 2 urban in default catalog", "0 31 1", category: "Population"), RplProp()]
  int ThemeIndex;
 
- [Attribute("24", UIWidgets.EditBox, "Global active civilian limit, including vehicle occupants", "0 200 1", category: "Population"), RplProp()]
+ [Attribute("24", UIWidgets.EditBox, "Active civilian limit of this module's area; with several modules the mission total is their sum, at most 200, and traffic occupants count against it", "0 200 1", category: "Population"), RplProp()]
  int PopulationLimit;
  [Attribute("1", UIWidgets.EditBox, "Residents assigned per small house", "0 20 1", category: "Population"), RplProp()]
  int SmallHouseResidents;
@@ -467,17 +490,16 @@ class EAC_AmbientModule : GenericEntity
   }
   NormalizeSettings();
   s_Modules.Insert(this);
-  // Duplicate-module notice (readiness plan S3). GetActive returns the first
-  // module placed in this world, so a second one silently admits nothing: its
-  // budget calls are refused by the GetActive() == this guard on every entry
-  // point. That refusal used to be invisible. One line at any DebugLevel, once
-  // per surplus module, plus a member both modules carry into the GM snapshot.
-  EAC_AmbientModule admitting = GetActive();
-  if (admitting != this)
+  s_NextAreaId++;
+  m_AreaId = s_NextAreaId;
+  // A further module is a further population area, served by the coordinator's
+  // scheduler from its next tick (no longer refused as a duplicate). One line at
+  // any DebugLevel, once per added module, so the admin sees it was accepted.
+  EAC_AmbientModule coordinator = GetActive();
+  if (coordinator && coordinator != this)
   {
-   m_Duplicate = true;
-   if (admitting) admitting.MarkDuplicate();
-   Print("[EAC] a second Ambient Civilians module is placed; only the first placed module admits residents");
+   coordinator.m_ConfigDirty = true;
+   ReportArea("added: this module populates its own area; the first placed module runs the shared scheduler");
   }
   // Outside the world block below on purpose: the ledger is a static and must
   // notice a world change even on a module that arrives after the one that
@@ -596,6 +618,8 @@ class EAC_AmbientModule : GenericEntity
   ReportEnvironment();
   int indexTick = System.GetTickCount();
   EAC_AutoExclusions.Prepare();
+  // Every placed module's area, limit and theme, recounted from the claim ledger.
+  RefreshPopulationAreas();
   bool themeReady = PrepareTheme();
   if (themeReady) s_HomeIndex.GetRegistry().SetCharacterPool(m_ThemeSelection.GetCharacters());
   // Isolation policy before Reconcile, so a rule change is applied on the very
@@ -607,7 +631,8 @@ class EAC_AmbientModule : GenericEntity
   // same way the isolation policy does: pushed from the module each tick rather
   // than read back out of it. At 0 the classifier behaves exactly as before.
   EAC_HomeIndex.SetHouseFilter(HouseFilter);
-  s_HomeIndex.SetPopulationArea(GetOrigin(), SettlementRadius);
+  // The union of every module's disc; unchanged discs clear nothing.
+  s_HomeIndex.SetPopulationAreas(m_AreaCentres, m_AreaRadii);
   if (HomeIsolationRule >= 2) EAC_SettlementIndex.Prepare();
   // The incremental reconcile re-sweeps the whole registry forever at eight
   // households a call. At 2 Hz that is sixteen records a second which, on a
@@ -684,8 +709,8 @@ class EAC_AmbientModule : GenericEntity
    // Preserve unknown/GM/spectator slots so destructive admission fails closed.
    observers.Insert(observedCharacter);
   }
-  // Index only the controller's area. Players activate residents inside it;
-  // travelling to another town never relocates the population boundary.
+  // Index only the modules' areas. Players activate residents inside them;
+  // travelling to another town never relocates a population boundary.
   s_HomeIndex.RetainPlayers(players);
   bool discovered;
   if (themeReady && !players.IsEmpty() && CanAdmitNewWork())
@@ -694,10 +719,7 @@ class EAC_AmbientModule : GenericEntity
    int playerId = players[m_NextPlayer++];
    IEntity character = manager.GetPlayerControlledEntity(playerId);
    if (ChimeraCharacter.Cast(character))
-   {
-    if (vector.DistanceXZ(character.GetOrigin(), GetOrigin()) <= SettlementRadius + WakeDistance)
-     discovered = s_HomeIndex.DiscoverNearPlayer(playerId, GetOrigin(), SettlementRadius, SmallHouseResidents, LargeHouseResidents);
-   }
+    discovered = DiscoverAreasNear(character.GetOrigin());
   }
   EAC_SchedulerStats.Record(EAC_SchedulerStats.STEP_INDEX, indexTick);
   // House discovery keeps absolute priority; the survey consumes only the ticks
@@ -849,7 +871,7 @@ class EAC_AmbientModule : GenericEntity
   return m_ThemeSelection;
  }
 
- protected bool PrepareTheme()
+ bool PrepareTheme()
  {
   if (!m_CatalogAttempted)
   {
@@ -916,10 +938,235 @@ class EAC_AmbientModule : GenericEntity
   return radius > 0 && dx * dx + dz * dz <= radius * radius;
  }
 
+ // The mission population area: the union of every placed module's disc. Every
+ // caller asks it of the coordinator (spawner sweep, scene survey, traffic, route
+ // verdict), so a second town is inside it exactly as the first one is. Off the
+ // server, or for a module not registered in play, it is this module's own disc.
  bool ContainsPopulationPosition(vector position)
+ {
+  if (FindPopulationArea(position))
+   return true;
+  return ContainsOwnArea(position);
+ }
+
+ bool ContainsOwnArea(vector position)
  {
   vector centre = GetOrigin();
   return ContainsPopulationPoint(position[0], position[2], centre[0], centre[2], SettlementRadius);
+ }
+
+ // The module whose disc holds this position, nearest centre first where discs
+ // overlap, or null. Server only; at most MAX_POPULATION_AREAS distance tests.
+ static EAC_AmbientModule FindPopulationArea(vector position)
+ {
+  EXPBG_LazyStatics_EAC_AmbientModule();
+  if (!Replication.IsServer() || !GetGame())
+   return null;
+  BaseWorld currentWorld = GetGame().GetWorld();
+  EAC_AmbientModule found;
+  float bestDistance;
+  int served;
+  foreach (EAC_AmbientModule module : s_Modules)
+  {
+   if (!module || module.GetWorld() != currentWorld)
+    continue;
+   if (served >= MAX_POPULATION_AREAS)
+    break;
+   served++;
+   vector centre = module.GetOrigin();
+   float dx = position[0] - centre[0];
+   float dz = position[2] - centre[2];
+   float distanceSq = dx * dx + dz * dz;
+   float radius = module.SettlementRadius;
+   if (radius <= 0 || distanceSq > radius * radius)
+    continue;
+   if (!found || distanceSq < bestDistance)
+   {
+    found = module;
+    bestDistance = distanceSq;
+   }
+  }
+  return found;
+ }
+
+ // Coordinator only, once per scheduler tick: every module in this world becomes
+ // an area (placement order, MAX_POPULATION_AREAS at most), each area's civilians
+ // are recounted from the claim ledger, the mission ceiling is split fairly and
+ // every area's theme is advanced. Capped/ignored transitions are logged once each.
+ void RefreshPopulationAreas()
+ {
+  EXPBG_LazyStatics_EAC_AmbientModule();
+  m_AreaModules.Clear();
+  m_AreaCentres.Clear();
+  m_AreaRadii.Clear();
+  BaseWorld currentWorld = GetWorld();
+  int requested;
+  foreach (EAC_AmbientModule module : s_Modules)
+  {
+   if (!module || module.GetWorld() != currentWorld)
+    continue;
+   if (m_AreaModules.Count() >= MAX_POPULATION_AREAS)
+   {
+    module.SetAreaState(0, true, true, true);
+    continue;
+   }
+   m_AreaModules.Insert(module);
+   m_AreaCentres.Insert(module.GetOrigin());
+   m_AreaRadii.Insert(module.SettlementRadius);
+   module.m_AreaPopulation = 0;
+   requested += module.PopulationLimit;
+  }
+  bool areasShared = m_AreaModules.Count() > 1;
+  bool capped = requested > WORLD_POPULATION_CEILING;
+  m_WorldPopulationLimit = Math.Min(requested, WORLD_POPULATION_CEILING);
+  if (s_Claims && s_IndexWorld == currentWorld)
+   s_Claims.ChargePopulationAreas();
+  foreach (EAC_AmbientModule areaModule : m_AreaModules)
+  {
+   int limit = areaModule.PopulationLimit;
+   // Proportional share, rounded down, so the shares never exceed the ceiling.
+   if (capped && requested > 0)
+    limit = areaModule.PopulationLimit * WORLD_POPULATION_CEILING / requested;
+   bool areaCapped = capped && limit < areaModule.PopulationLimit;
+   areaModule.m_WorldPopulationLimit = m_WorldPopulationLimit;
+   areaModule.SetAreaState(limit, areasShared, areaCapped, false);
+   if (areaModule != this)
+   {
+    // Settings restored by the editor/CDF load hook are applied on this tick
+    // for every area, exactly as the coordinator's own are.
+    areaModule.EAC_FinishSessionSettingsLoad();
+    areaModule.PrepareTheme();
+   }
+  }
+ }
+
+ // Written only by the coordinator's RefreshPopulationAreas.
+ void SetAreaState(int limit, bool areasShared, bool capped, bool ignored)
+ {
+  m_AreaLimit = limit;
+  m_AreaShared = areasShared;
+  if (capped == m_AreaCapped && ignored == m_AreaIgnored)
+   return;
+  m_AreaCapped = capped;
+  m_AreaIgnored = ignored;
+  m_ConfigDirty = true;
+  if (ignored)
+  {
+   ReportArea("ignored: more Ambient Civilians modules than the 32 served; delete one");
+   return;
+  }
+  if (capped)
+  {
+   ReportArea("capped: all modules together ask for more than the 200 civilian mission ceiling; this area gets a proportional share");
+   return;
+  }
+  ReportArea("restored: this area admits up to its own civilian limit again");
+ }
+
+ void ChargeAreaResident()
+ {
+  m_AreaPopulation++;
+ }
+
+ int GetAreaPopulation()
+ {
+  return m_AreaPopulation;
+ }
+
+ int GetAreaId()
+ {
+  return m_AreaId;
+ }
+
+ bool IsAreaCapped()
+ {
+  return m_AreaCapped;
+ }
+
+ bool IsAreaIgnored()
+ {
+  return m_AreaIgnored;
+ }
+
+ // One module: its own PopulationLimit, live, exactly as before 0.1.18.
+ int GetAreaPopulationLimit()
+ {
+  if (m_AreaIgnored)
+   return 0;
+  if (!m_AreaShared)
+   return PopulationLimit;
+  return m_AreaLimit;
+ }
+
+ // Room for one more resident in this module's area. A module whose own saved
+ // settings failed to restore holds its area, as the coordinator holds all.
+ bool HasAreaCapacity()
+ {
+  if (EAC_SessionSettingsBlocked())
+   return false;
+  return m_AreaPopulation < GetAreaPopulationLimit();
+ }
+
+ // The whole mission's ceiling, asked of the coordinator: the sum of every
+ // module's limit up to WORLD_POPULATION_CEILING, or this module's own limit,
+ // live, while it is the only one. Traffic occupants are charged against it too.
+ int GetWorldPopulationLimit()
+ {
+  if (!m_AreaShared)
+   return PopulationLimit;
+  return m_WorldPopulationLimit;
+ }
+
+ // A fresh prefab from this module's own prepared theme/faction, or "" while it
+ // is not ready (the caller then falls back to the coordinator's pool).
+ ResourceName PickAreaCharacter()
+ {
+  EAC_ThemeSelection areaTheme = GetThemeSelection();
+  if (!areaTheme || !areaTheme.IsReady() || m_PreparedFaction != CivilianFaction)
+   return "";
+  EAC_WeightedPool characterPool = areaTheme.GetCharacters();
+  if (!characterPool)
+   return "";
+  return characterPool.Pick();
+ }
+
+ // The coordinator's house discovery for the player picked this tick: the next
+ // area (rotating, so no town starves another) whose wake reach holds the player.
+ // Each area keeps its own scan cursor; an area already fully indexed costs one
+ // map lookup. At most one cell query is issued per call, as before.
+ protected bool DiscoverAreasNear(vector position)
+ {
+  int areaCount = m_AreaModules.Count();
+  for (int attempt = 0; attempt < areaCount; attempt++)
+  {
+   m_NextArea = m_NextArea % areaCount;
+   EAC_AmbientModule areaModule = m_AreaModules[m_NextArea];
+   m_NextArea++;
+   if (!areaModule)
+    continue;
+   vector centre = areaModule.GetOrigin();
+   int radius = areaModule.SettlementRadius;
+   if (vector.DistanceXZ(position, centre) > radius + WakeDistance)
+    continue;
+   int focusKey = EAC_HomeIndex.AREA_FOCUS_BASE + areaModule.m_AreaId;
+   if (s_HomeIndex.DiscoverNearPlayer(focusKey, centre, radius, areaModule.SmallHouseResidents, areaModule.LargeHouseResidents))
+    return true;
+  }
+  return false;
+ }
+
+ // The one notice line for area changes: added, capped, restored or ignored. It
+ // is printed at any DebugLevel because each is a configuration fact the admin
+ // must see, and it fires only on a state change, never per tick.
+ protected void ReportArea(string state)
+ {
+  vector origin = GetOrigin();
+  int areaId = m_AreaId;
+  int radius = SettlementRadius;
+  int limit = GetAreaPopulationLimit();
+  int wanted = PopulationLimit;
+  int areas = s_Modules.Count();
+  PrintFormat("[EAC area] %1 area=%2 position=%3 radius=%4 civilian_limit=%5/%6 modules=%7", state, areaId, origin, radius, limit, wanted, areas);
  }
 
  // No active module already prevents spawning at the ownership gates. Keep
@@ -1005,7 +1252,7 @@ class EAC_AmbientModule : GenericEntity
  bool TryReservePopulation(int partyId, int residents)
  {
   if (!Replication.IsServer() || GetActive() != this || s_IndexWorld != GetWorld() || !s_Budget) return false;
-  return s_Budget.TryReserve(partyId, residents, PopulationLimit);
+  return s_Budget.TryReserve(partyId, residents, GetWorldPopulationLimit());
  }
 
  // Admission policy only; a future spawn transaction must also reserve the budget.
@@ -1051,7 +1298,7 @@ class EAC_AmbientModule : GenericEntity
  EAC_ResidentClaim BeginResidentActivation(EAC_HouseholdRecord home, EAC_ResidentRecord resident, vector position)
  {
   if (!OwnsClaims() || !CanAdmitResident(home, resident, position)) return null;
-  return s_Claims.Begin(home, resident, PopulationLimit);
+  return s_Claims.Begin(home, resident, GetWorldPopulationLimit());
  }
 
  bool TrackResidentCharacter(EAC_ResidentClaim claim, IEntity character)
@@ -1102,6 +1349,17 @@ class EAC_AmbientModule : GenericEntity
   return s_Budget.GetUsed();
  }
 
+ // One area's status for the GM overlay and the console summary.
+ string DescribeArea()
+ {
+  string text = "area " + m_AreaId.ToString() + " civilians " + m_AreaPopulation.ToString() + "/" + GetAreaPopulationLimit().ToString();
+  text += " radius " + SettlementRadius.ToString();
+  if (m_AreaCapped) text += " (capped: shared 200 ceiling)";
+  if (m_AreaIgnored) text += " (ignored: over 32 modules)";
+  if (EAC_SessionSettingsBlocked()) text += " (held: settings restore failed)";
+  return text;
+ }
+
  // Server snapshots are delivered only through the GM/admin-authorized debug view.
  // These methods expose existing state and never discover/spawn entities.
  // What the Game Master overlay shows: six short lines of numbers. The full
@@ -1111,18 +1369,25 @@ class EAC_AmbientModule : GenericEntity
  string BuildOverlayStats()
  {
   if (!Replication.IsServer() || !GetHomeIndex() || !GetSpawner()) return "server snapshot unavailable";
-  if (GetActive() != this) return "inactive duplicate module - delete it";
+  if (GetActive() != this) return DescribeArea();
   EAC_HouseholdRegistry registry = s_HomeIndex.GetRegistry();
   int fps;
   if (m_FrameAverage > 0) fps = Math.Round(1.0 / m_FrameAverage);
-  string stats = "civilians " + GetReservedPopulation().ToString() + "/" + PopulationLimit.ToString();
+  string stats = "civilians " + GetReservedPopulation().ToString() + "/" + GetWorldPopulationLimit().ToString();
   stats += "\nhomes " + registry.GetHomeCount().ToString() + "  residents " + registry.GetResidentCount().ToString();
   stats += "\nserver fps " + fps.ToString();
   if (m_LoadLimited) stats += "  (admission paused)";
   AIWorld aiWorld = GetGame().GetAIWorld();
   if (aiWorld) stats += "\nactive AI " + aiWorld.GetCurrentNumOfActiveAIs().ToString() + "/" + aiWorld.GetLimitOfActiveAIs().ToString();
   if (s_Traffic && GetCarLimit() > 0) stats += "\ncars " + s_Traffic.GetLiveCarCount().ToString() + " | traffic parties " + s_Traffic.GetActiveCount().ToString() + "/" + GetCarLimit().ToString();
-  if (m_Duplicate) stats += "\nsecond module placed - delete it";
+  // Several modules: one line per area, so a capped or ignored area is visible.
+  if (m_AreaShared)
+  {
+   foreach (EAC_AmbientModule areaModule : m_AreaModules)
+   {
+    if (areaModule) stats += "\n" + areaModule.DescribeArea();
+   }
+  }
   stats += "\ndetail: server console log";
   return stats;
  }
@@ -1130,19 +1395,22 @@ class EAC_AmbientModule : GenericEntity
  string BuildDebugSummary()
  {
   if (!Replication.IsServer() || !GetHomeIndex() || !GetSpawner()) return "Ambient diagnostics: server snapshot unavailable";
-  if (GetActive() != this) return "Ambient diagnostics: inactive duplicate module duplicate=1";
+  if (GetActive() != this) return "Ambient diagnostics: " + DescribeArea();
   EAC_HouseholdRegistry registry = s_HomeIndex.GetRegistry();
-  string summary = "players=" + m_DebugPlayers.ToString() + " characters=" + m_DebugCharacters.ToString() + " homes=" + registry.GetHomeCount().ToString() + " residents=" + registry.GetResidentCount().ToString() + " reserved=" + GetReservedPopulation().ToString() + "/" + PopulationLimit.ToString();
+  string summary = "players=" + m_DebugPlayers.ToString() + " characters=" + m_DebugCharacters.ToString() + " homes=" + registry.GetHomeCount().ToString() + " residents=" + registry.GetResidentCount().ToString() + " reserved=" + GetReservedPopulation().ToString() + "/" + GetWorldPopulationLimit().ToString();
   int fps;
   if (m_FrameAverage > 0) fps = Math.Round(1.0 / m_FrameAverage);
   summary += " server_fps~" + fps.ToString() + " load_paused=" + m_LoadLimited.ToString();
-  // Duplicate-module notice (S3). Its own statement rather than a term on the
-  // concat above, which Enforce refuses past a certain chain length. Zero on a
-  // correctly configured mission; one means a surplus module is placed and every
-  // slider on it is doing nothing.
-  int duplicate = 0;
-  if (m_Duplicate) duplicate = 1;
-  summary += " duplicate=" + duplicate.ToString();
+  // Population areas (0.1.18; replaces the 0.1.17 duplicate= term). Its own
+  // statements rather than terms on the concat above, which Enforce refuses past
+  // a certain chain length. areas= counts the placed modules served; each area
+  // then reports its own civilians, limit and capped/ignored state.
+  int areaCount = m_AreaModules.Count();
+  summary += " areas=" + areaCount.ToString();
+  foreach (EAC_AmbientModule areaModule : m_AreaModules)
+  {
+   if (areaModule) summary += " | " + areaModule.DescribeArea();
+  }
   // Engine active-AI budget beside our own reserved count: one group per
   // resident is an agent-shaped object too, and whether it is charged against
   // this limit decides if grouping could ever matter (research 2026-09-16).

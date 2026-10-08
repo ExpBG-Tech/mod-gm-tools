@@ -246,10 +246,19 @@ class EGS_Manager
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! True while any squad or soldier has its own skill or rules of engagement: these apply
+	//! without a module too, so membership changes must still be followed.
+	static bool HasOverrides()
+	{
+		EXPBG_LazyStatics_EGS_Manager();
+		return EGS_SkillOverrides.HasAny() || !s_aOverrideGroups.IsEmpty() || !s_aOverrideUnits.IsEmpty();
+	}
+
+	//------------------------------------------------------------------------------------------------
 	//! Group membership changed: apply the new member and re-check the leader.
 	static void OnMemberChanged(SCR_AIGroup group, AIAgent member)
 	{
-		if (!IsActive())
+		if (!IsActive() && !HasOverrides())
 			return;
 
 		if (member)
@@ -302,7 +311,11 @@ class EGS_Manager
 	//! choice stays, applied on top of the new mode.
 	static void OnGameMasterCombatMode(SCR_AIGroup group)
 	{
-		if (!group || !Replication.IsServer() || !Ensure() || !IsActive() || !group.EGS_IsManaged())
+		if (!group || !Replication.IsServer() || !Ensure() || !group.EGS_IsManaged())
+			return;
+
+		// Without a module only a squad with its own EXPBG rules of engagement is steered.
+		if (!IsActive() && group.EGS_GetRoeOverride() == EGS_Settings.GROUP_ROE_DEFAULT)
 			return;
 
 		if (group.EGS_GameMasterRoeThisSave())
@@ -349,7 +362,7 @@ class EGS_Manager
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Server: per-soldier override (EXPBG Rules of Engagement tab, cache wake, mission save
+	//! Server: per-soldier override (EXPBG AI Skill & ROE tab, cache wake, mission save
 	//! or session load); applied to him at once. Logged once per soldier and change.
 	static void SetUnitRoe(SCR_ChimeraCharacter soldier, int value)
 	{
@@ -384,6 +397,32 @@ class EGS_Manager
 			PrintFormat("[EXPBG AI SKILLS] unit=%1 roeOverride=%2", soldier, current);
 
 		ApplyUnit(soldier);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: re-apply one soldier at once (his own skill changed, EGS_SkillOverrides).
+	static void ApplyUnitNow(IEntity entity)
+	{
+		if (!entity || !Replication.IsServer() || !Ensure())
+			return;
+
+		ApplyUnit(entity);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: re-apply every member of a squad through the budgeted queue (its skill changed).
+	static void QueueMembers(SCR_AIGroup group)
+	{
+		if (!group || !Replication.IsServer() || !Ensure())
+			return;
+
+		array<AIAgent> agents = {};
+		group.GetAgents(agents);
+		foreach (AIAgent agent : agents)
+		{
+			if (agent)
+				QueueUnit(agent.GetControlledEntity());
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -570,6 +609,9 @@ class EGS_Manager
 
 	//------------------------------------------------------------------------------------------------
 	//! Resolve and apply one soldier's skill, aim, spotting and ammunition policy.
+	//! The module's faction values and ammunition policy apply while a module exists; a
+	//! squad's or soldier's own skill and a soldier's own rules of engagement apply with or
+	//! without one (soldier > squad > module).
 	protected static void ApplyUnit(IEntity entity)
 	{
 		ChimeraCharacter character = ChimeraCharacter.Cast(entity);
@@ -582,18 +624,34 @@ class EGS_Manager
 
 		CharacterControllerComponent controller = character.GetCharacterController();
 		bool dead = controller && controller.IsDead();
-		if (!IsActive() || dead || IsPlayerControlled(character))
+		if (dead || IsPlayerControlled(character))
 		{
-			combat.EGS_SetUnitRoe(EGS_UnitRoe.FOLLOW);
-			if (combat.EGS_HasProfile())
-				combat.EGS_ResetProfile();
+			ResetUnit(combat);
+			return;
+		}
 
+		SCR_ChimeraCharacter scripted = SCR_ChimeraCharacter.Cast(character);
+		AIAgent agent = combat.GetAiAgent();
+		SCR_AIGroup squad;
+		if (agent)
+			squad = SCR_AIGroup.Cast(agent.GetParentGroup());
+
+		// Soldier override > squad override > module default (EGS_UnitRoe.c); FOLLOW leaves
+		// him to his squad's combat mode.
+		int unitOverride = EGS_Settings.GROUP_ROE_DEFAULT;
+		if (scripted)
+			unitOverride = scripted.EGS_GetRoeOverride();
+
+		int ownSkill = EGS_SkillOverrides.Resolve(scripted, squad);
+		bool active = IsActive();
+		if (!active && ownSkill == EGS_SkillOverrides.FOLLOW && unitOverride == EGS_Settings.GROUP_ROE_DEFAULT)
+		{
+			ResetUnit(combat);
 			return;
 		}
 
 		array<int> values;
-		SCR_ChimeraCharacter scripted = SCR_ChimeraCharacter.Cast(character);
-		if (scripted)
+		if (active && scripted)
 			values = EGS_Settings.GetFactionValues(scripted.GetFactionKey());
 
 		// Role detection only when the faction has a role override.
@@ -602,34 +660,64 @@ class EGS_Manager
 		if (EGS_Settings.HasRoleOverrides(values))
 		{
 			weaponRole = EGS_Roles.ClassifyWeaponRole(character);
-			leader = EGS_Roles.IsLeader(combat.GetAiAgent());
+			leader = EGS_Roles.IsLeader(agent);
 		}
 
-		int skill = EGS_Settings.ResolveIndex(values, EGS_Settings.SLOT_SKILL, weaponRole, leader);
+		int skill = ownSkill;
+		if (skill == EGS_SkillOverrides.FOLLOW)
+			skill = EGS_Settings.ResolveIndex(values, EGS_Settings.SLOT_SKILL, weaponRole, leader);
+
 		int aim = EGS_Settings.ResolveIndex(values, EGS_Settings.SLOT_AIM, weaponRole, leader);
 
 		combat.EGS_SetProfile(EGS_Settings.SkillFromIndex(skill), EGS_Settings.PerceptionFromIndex(skill), EGS_Settings.AimErrorScaleFromIndex(aim));
-		combat.EGS_SetAmmoPolicy(EGS_Settings.GetAmmoMode(), EGS_Settings.GetRefills());
-		// Soldier override > squad override > module default (EGS_UnitRoe.c); FOLLOW leaves
-		// him to his squad's combat mode.
-		int unitOverride = EGS_Settings.GROUP_ROE_DEFAULT;
-		if (scripted)
-			unitOverride = scripted.EGS_GetRoeOverride();
+		if (active)
+			combat.EGS_SetAmmoPolicy(EGS_Settings.GetAmmoMode(), EGS_Settings.GetRefills());
+		else
+			combat.EGS_SetAmmoPolicy(EGS_Settings.AMMO_VANILLA, 0);
 
 		combat.EGS_SetUnitRoe(EGS_UnitRoe.Effective(unitOverride));
 		// His own Return Fire Only or Warning Shots First holds fire until his squad is fired
 		// upon: the squad is watched for that from now on (EGS_Provocation.c).
 		int own = combat.EGS_GetUnitRoe();
-		if (own == EGS_Settings.ROE_RETURN_FIRE || own == EGS_Settings.ROE_WARNING_SHOTS)
-		{
-			AIAgent agent = combat.GetAiAgent();
-			SCR_AIGroup squad;
-			if (agent)
-				squad = SCR_AIGroup.Cast(agent.GetParentGroup());
+		if ((own == EGS_Settings.ROE_RETURN_FIRE || own == EGS_Settings.ROE_WARNING_SHOTS) && squad)
+			squad.EGS_SetOwnRoeMember(true);
+	}
 
-			if (squad)
-				squad.EGS_SetOwnRoeMember(true);
+	//------------------------------------------------------------------------------------------------
+	//! Back to vanilla: no own rules of engagement, no EXPBG skill, aim or ammunition policy.
+	protected static void ResetUnit(SCR_AICombatComponent combat)
+	{
+		combat.EGS_SetUnitRoe(EGS_UnitRoe.FOLLOW);
+		if (combat.EGS_HasProfile())
+			combat.EGS_ResetProfile();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! True when a member of this squad has Return Fire Only or Warning Shots First as his own
+	//! rules of engagement (bounded by the squad's size; only while soldier overrides exist).
+	protected static bool HasOwnRoeMember(SCR_AIGroup group)
+	{
+		EXPBG_LazyStatics_EGS_Manager();
+		if (s_aOverrideUnits.IsEmpty())
+			return false;
+
+		array<AIAgent> agents = {};
+		group.GetAgents(agents);
+		foreach (AIAgent agent : agents)
+		{
+			if (!agent)
+				continue;
+
+			SCR_ChimeraCharacter member = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
+			if (!member)
+				continue;
+
+			int own = EGS_UnitRoe.Effective(member.EGS_GetRoeOverride());
+			if (own == EGS_Settings.ROE_RETURN_FIRE || own == EGS_Settings.ROE_WARNING_SHOTS)
+				return true;
 		}
+
+		return false;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -640,9 +728,10 @@ class EGS_Manager
 		if (!group)
 			return;
 
-		// No module: nothing is watched for soldier ROE either (ApplyUnit marks it again).
+		// No module: only squads with a soldier who keeps his own Return Fire Only or Warning
+		// Shots First stay watched (ApplyUnit marks them again).
 		if (!IsActive())
-			group.EGS_SetOwnRoeMember(false);
+			group.EGS_SetOwnRoeMember(HasOwnRoeMember(group));
 
 		// A player joined: hand the group back (no-op for untouched groups).
 		if (!group.EGS_IsManaged())

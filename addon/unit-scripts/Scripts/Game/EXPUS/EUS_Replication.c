@@ -1,10 +1,14 @@
 // Replicated read-only state for context-menu visibility and attribute display.
 // The server is the only writer; RplProps reach join-in-progress clients with
-// the entity snapshot. Mission-only: never serialized into saves.
+// the entity snapshot. Never serialized: saves carry running scripts through
+// EUS_UnitState (EUS_State.c).
 modded class SCR_ChimeraCharacter
 {
  // EUS_Codes unit script code (0 = normal AI).
  [RplProp(), NonSerialized()] int EUS_Script;
+ // Local, not replicated: pose cycles this machine played again inside one loiter
+ // command (EUS_PoseLoop.c). Diagnostics and fixtures only.
+ int EUS_PoseCycles;
 
  void EUS_SetScript(int code)
  {

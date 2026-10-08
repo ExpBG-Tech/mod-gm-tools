@@ -90,7 +90,7 @@ $watch = Get-Body $t.group 'bool\s+EGS_WatchesProvocation\s*\('
 Assert ($watch -match 'if \(m_bEGS_OwnRoeMember && EGS_IsManaged\(\)\)' -and $watch -match 'ROE_RETURN_FIRE' -and $watch -match 'ROE_WARNING_SHOTS') 'watched: EXPBG Return Fire Only or Warning Shots First squads and AI squads with such a soldier (never a player''s group: no provocation logs there)'
 $applyUnit = Get-Body $t.manager 'protected\s+static\s+void\s+ApplyUnit\s*\('
 Assert ($applyUnit -match 'combat\.EGS_SetUnitRoe\(EGS_UnitRoe\.Effective\(unitOverride\)\);' -and $applyUnit -match 'squad\.EGS_SetOwnRoeMember\(true\);') 'a soldier with his own Return Fire Only or Warning Shots First makes his squad watched'
-Assert ($applyGroup -match '(?s)if \(!IsActive\(\)\)\s*group\.EGS_SetOwnRoeMember\(false\);') 'no module: nothing is watched'
+Assert ($applyGroup -match '(?s)if \(!IsActive\(\)\)\s*group\.EGS_SetOwnRoeMember\(HasOwnRoeMember\(group\)\);' -and (Get-Body $t.manager 'protected\s+static\s+bool\s+HasOwnRoeMember\s*\(') -match 'if \(s_aOverrideUnits\.IsEmpty\(\)\)\s*return false;') 'no module: only squads with a soldier who keeps his own Return Fire Only or Warning Shots First are watched (scan only while soldier overrides exist)'
 # The hooks: super first, the result unchanged, decorators kept.
 foreach ($reaction in @(@{ c = 'SCR_AIDangerReaction_WeaponFired'; h = 'EGS_Provocation.OnWeaponFired(utility, AIDangerEventWeaponFire.Cast(dangerEvent));' }, @{ c = 'SCR_AIDangerReaction_DamageTaken'; h = 'EGS_Provocation.OnDamageTaken(utility, dangerEvent);' }, @{ c = 'SCR_AIDangerReaction_Explosion'; h = 'EGS_Provocation.OnExplosion(utility, dangerEvent);' })) {
  Assert ($t.provocation -match "\[BaseContainerProps\(\)\]\r?\nmodded class $($reaction.c)\r?\n") "$($reaction.c) keeps its config decorator"
@@ -185,7 +185,7 @@ Assert ($timer -match ': lethal now' -and $timer -match ': re-armed') 'the switc
 Assert ([regex]::Matches($t.group, '\bPrint(Format)?\s*\(').Count -eq 1 -and $t.group -match 'void EGS_Log\(string line\)') 'group logs go through the one EGS_Log line (G4 pin)'
 
 # --- F. AI Surrender ------------------------------------------------------------------------
-$chances = @([regex]::Matches($esrList, 'Name "Surrender chance \(%\)" Description "([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+$chances = @([regex]::Matches($esrList, 'Name "(?:Squad s|Soldier s|S)urrender chance \(%\)" Description "([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
 Assert ($chances.Count -eq 3) 'three surrender chance attributes (module, squad, soldier)'
 Assert ($chances[0] -match 'Squad casualty threshold' -and $chances[0] -match 'Nothing happens before that') 'module chance: nothing before the squad breaks'
 Assert ($chances[1] -match 'Nothing happens until the squad breaks' -and $chances[1] -match 'Squad casualty threshold' -and $chances[1] -match 'not on first contact') 'squad chance: threshold first, 100% is not on contact'

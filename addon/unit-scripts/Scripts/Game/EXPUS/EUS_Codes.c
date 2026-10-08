@@ -64,6 +64,16 @@ class EUS_Codes
   return "EXPBG Unit Scripts";
  }
 
+ // World time in seconds (the manager's clock); 0 without a world.
+ static float WorldSeconds()
+ {
+  if (!GetGame() || !GetGame().GetWorld())
+  {
+   return 0;
+  }
+  return GetGame().GetWorld().GetWorldTime() * 0.001;
+ }
+
  static vector Forward(IEntity entity)
  {
   vector transform[4];

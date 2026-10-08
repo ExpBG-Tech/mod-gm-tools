@@ -63,7 +63,8 @@ $tick = Get-Body $control 'bool\s+Tick\s*\(\s*float\s+now,\s*notnull\s+array<IEn
 Assert (!$control.Contains('re-anchored') -and !$tick.Contains('DistanceSqXZ') -and !$tick.Contains('m_Anchor =')) 'Tick never re-anchors on distance (a displacement is not a Game Master move)'
 Assert ($tick.Contains('if (m_SettleUntil >= 0)') -and $tick.Contains('if (!EUS_Codes.IsAnimation(m_Code)) TakeSpot();') -and $tick.Contains('else if (!HoldSpot(now))')) 'Tick settles after the bind or a Game Master move, then holds'
 Assert ($tick.Contains('if (!EUS_Codes.IsAnimation(m_Code)) m_SpotObstacle = SpotObstacle();') -and $tick.IndexOf('m_SpotObstacle = SpotObstacle();') -gt $tick.IndexOf('m_SettleUntil = -1;')) 'the settled spot records the furniture already on it, once per bind or move'
-Assert ($tick.IndexOf('IsOwnedActor()') -lt $tick.IndexOf('HoldSpot(now)')) 'ownership is tested before the spot is held'
+Assert ($tick.IndexOf('string lost = Lost(end);') -ge 0 -and $tick.IndexOf('string lost = Lost(end);') -lt $tick.IndexOf('HoldSpot(now)')) 'ownership is tested before the spot is held'
+Assert ($tick.IndexOf('if (Paused())') -gt $tick.IndexOf('Lost(end)') -and $tick.IndexOf('if (Down())') -gt $tick.IndexOf('if (Paused())') -and $tick.IndexOf('if (Down())') -lt $tick.IndexOf('HoldSpot(now)')) 'a cache pause and a soldier who is down (unconscious, ragdoll) are skipped before any correction'
 Assert ((Count $controlCode 'm_Anchor =') -eq 3 -and (Count $controlCode 'm_Anchor = m_Actor.GetOrigin();') -eq 1 -and (Count $controlCode 'm_Anchor = actor.GetOrigin();') -eq 1 -and (Count $controlCode 'm_Anchor = transform[3];') -eq 1) 'the spot is written only at bind, by TakeSpot and by a Game Master move'
 $takeSpotCallers = [regex]::Matches($controlCode, '\bTakeSpot\(\)\s*;').Count
 Assert ($takeSpotCallers -eq 2) "TakeSpot is called only while settling and when the spot dropped or is occupied (found $takeSpotCallers)"
@@ -111,11 +112,19 @@ Assert ($control.Contains('vector GetForward() { return m_Forward; }')) 'the hel
 $hook = [regex]::Match($control, '(?s)modded\s+class\s+SCR_EditableCharacterComponent\s*\{(.*)\}\s*$')
 Assert $hook.Success 'the editor transform hook is the last class of EUS_UnitControl.c'
 $setTransform = Get-Body $hook.Groups[1].Value 'override\s+bool\s+SetTransform\s*\(\s*vector\s+transform\[4\],\s*bool\s+changedByUser\s*=\s*false\s*\)'
-Assert ($setTransform.Contains('bool moved = super.SetTransform(transform, changedByUser);') -and $setTransform.Contains('if (moved) EUS_UnitControl.EditorMoved(GetOwner(), transform);') -and $setTransform.Contains('return moved;')) 'SetTransform runs vanilla first and reports only a move the editor accepted'
+Assert ($setTransform.Contains('bool moved = EUS_LeaveLooseCompartment(transform, changedByUser);') -and $setTransform.Contains('if (!moved) moved = super.SetTransform(transform, changedByUser);') -and $setTransform.Contains('if (moved) EUS_UnitControl.EditorMoved(GetOwner(), transform);') -and $setTransform.Contains('return moved;')) 'SetTransform runs vanilla (or the loose-compartment exit) first and reports only a move the editor accepted'
 Assert ($setTransform.IndexOf('super.SetTransform') -lt $setTransform.IndexOf('EditorMoved')) 'vanilla runs before the hook'
 # The flag is only passed through: the hook never filters on it, so squad member moves
 # (vanilla passes changedByUser false for them) count as Game Master moves too.
-Assert ((Count (Get-Code $setTransform) 'changedByUser') -eq 1 -and !$setTransform.Contains('EditorMoved(GetOwner(), transform, changedByUser')) 'squad moves (changedByUser false for members) count as Game Master moves'
+Assert ((Count (Get-Code $setTransform) 'changedByUser') -eq 2 -and !$setTransform.Contains('if (changedByUser') -and !$setTransform.Contains('EditorMoved(GetOwner(), transform, changedByUser')) 'squad moves (changedByUser false for members) count as Game Master moves'
+# Production 2026-10-08: a Game Master move of a unit in a compartment without an editable
+# vehicle (ACE Captives surrender/tied helpers) dereferenced vanilla's null GetVehicle()
+# (SCR_EditableCharacterComponent.SetTransform:533) and then RemoveUsableVehicle(null).
+$loose = Get-Body $hook.Groups[1].Value 'protected\s+bool\s+EUS_LeaveLooseCompartment\s*\(\s*vector\s+transform\[4\],\s*bool\s+changedByUser\s*\)'
+foreach ($needle in 'if (!owner || !IsServer())', 'if (!access || !access.IsInCompartment() || GetVehicle())', 'transform[3][1] = Math.Max(transform[3][1], owner.GetWorld().GetSurfaceY(transform[3][0], transform[3][2]));', 'if (changedByUser && IsPlayerOrPossessed()) Rpc(PlayerTeleportedFeedback, false);', 'Rpc(GetOutVehicleOwner, rpl.Id(), transform);', 'return true;') {
+ Assert $loose.Contains($needle) "a loose compartment (no editable vehicle) is left the vanilla way without the null vehicle: $needle"
+}
+Assert (!$loose.Contains('RemoveUsableVehicle') -and !$loose.Contains('GetVehicle().') -and $loose.IndexOf('GetVehicle())') -lt $loose.IndexOf('Rpc(GetOutVehicleOwner')) 'the loose-compartment path never dereferences or unregisters a vehicle; an editable vehicle keeps the vanilla path'
 $editorMoved = Get-Body $control 'static\s+void\s+EditorMoved\s*\(\s*IEntity\s+owner,\s*vector\s+transform\[4\]\s*\)'
 Assert ($editorMoved.Contains('actor.EUS_Script == EUS_Codes.NONE') -and $editorMoved.Contains('controller.EUS_GetControl()') -and $editorMoved.Contains('EUS_Manager.Current()') -and !$editorMoved.Contains('EUS_Manager.Get()')) 'the hook costs one field test for unscripted characters and never creates a manager'
 $onMoved = Get-Body $control 'void\s+OnEditorMoved\s*\(\s*vector\s+transform\[4\],\s*float\s+now\s*\)'
@@ -154,7 +163,7 @@ $start = Get-Body $control 'protected\s+bool\s+StartLoiter\s*\(\s*float\s+now\s*
 Assert ($start.Contains('string blocked = RoomHere(index);') -and $start.IndexOf('RoomHere(index)') -lt $start.IndexOf('m_Actor.GetWorldTransform(transform);') -and $start.IndexOf('m_Actor.GetWorldTransform(transform);') -lt $start.IndexOf('m_Controller.StartLoitering(') -and $start.Contains('Release(blocked);')) 'every loiter attempt checks room first, where the loiter is issued (his current transform)'
 $manager = Read-Text (Join-Path $scripts 'EUS_Manager.c')
 $apply = Get-Body $manager 'bool\s+ApplyUnit\s*\(\s*SCR_ChimeraCharacter\s+actor,\s*int\s+code,\s*EUS_Report\s+report\s*\)'
-Assert ($apply.Contains('if (existing) reason = existing.RoomFor(code);') -and $apply.IndexOf('existing.RoomFor(code)') -lt $apply.IndexOf('existing.Release("replaced by "')) 'a pose without room is refused before the running script is replaced (the soldier keeps it)'
+Assert ($apply.Contains('if (existing) reason = existing.RoomFor(code);') -and $apply.IndexOf('existing.RoomFor(code)') -lt $apply.IndexOf('existing.ReleaseBy(EUS_EEndReason.REPLACED, "replaced by "')) 'a pose without room is refused before the running script is replaced (the soldier keeps it)'
 Assert ((Count $apply 'PrintFormat(') -eq 1 -and [regex]::Matches((Get-Code $manager), '\bPrint(Format)?\s*\(').Count -eq 1) 'the manager keeps its single refused log'
 $roomFor = Get-Body $control 'string\s+RoomFor\s*\(\s*int\s+code\s*\)'
 Assert ($roomFor.Contains('if (!m_Bound || !m_Actor || !EUS_Codes.IsAnimation(code)) return string.Empty;') -and $roomFor.Contains('return RoomHere(code - EUS_Codes.ANIMATION);')) 'RoomFor checks a running unit where Bind will check him next, so the two always agree'
@@ -170,7 +179,8 @@ $traceSites = [regex]::Matches($controlCode, '\bBlocked\s*\(\s*pose').Count
 Assert ($traceSites -eq 2) "traces run only on a needed correction and for the chair pose (found $traceSites call sites)"
 
 # Logs: three call sites in the unit control, every Note caller bounded.
-Assert ([regex]::Matches($controlCode, '\bPrint(Format)?\s*\(').Count -eq 3) 'EUS_UnitControl.c logs only at bind, through Note and at release'
+Assert ([regex]::Matches($controlCode, '\bPrint(Format)?\s*\(').Count -eq 4) 'EUS_UnitControl.c logs only at bind, through Note, through Log (save and restore summaries) and at release'
+Assert ((Get-Body $control 'static\s+void\s+Log\s*\(\s*string\s+text\s*\)').Trim() -eq 'Print("[EUS] " + text);') 'Log keeps the [EUS] prefix'
 Assert ((Get-Body $control 'protected\s+void\s+Note\s*\(\s*string\s+text\s*\)').Trim() -eq 'PrintFormat("[EUS] unit=%1 %2", m_Actor, text);') 'Note keeps the [EUS] unit= line format'
 $noteCallers = [regex]::Matches($controlCode, '\bNote\s*\(').Count - 1
 Assert ($noteCallers -eq 4) "Note callers: Game Master move, loiter attempt, occupied/dropped spot, held summary (found $noteCallers)"

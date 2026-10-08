@@ -1,4 +1,4 @@
-// EXPBG AI Global Skills: rules of engagement per soldier. The "EXPBG Rules of Engagement"
+// EXPBG AI Global Skills: rules of engagement per soldier. The "EXPBG AI Skill & ROE"
 // tab of an AI soldier's Edit properties sets his own ROE with the squad's choices (Return
 // Fire Only, Fire on Sight, Warning Shots First, Exempt (vanilla)); "Use squad setting"
 // (the default) follows his squad's EXPBG ROE, which follows the module default.
@@ -17,7 +17,8 @@
 //   Exempt (vanilla)     the mode his squad would have without EXPBG
 // His effective ROE is cached on his combat component and recomputed only on events
 // (module placed or removed, settings change, squad membership change, attribute change).
-// Like the squad ROE it needs a module and an AI squad without players; otherwise vanilla.
+// Like the squad ROE it needs an AI squad without players (with or without a module: his own
+// choice applies on its own; the module only adds the default); otherwise vanilla.
 // The override is a plain server field: the dialog reads it on the server.
 class EGS_UnitRoe
 {
@@ -146,8 +147,9 @@ modded class SCR_AISuppressGroupClusterBehavior
 }
 
 //------------------------------------------------------------------------------------------------
-//! "Rules of engagement (soldier)" in the EXPBG Rules of Engagement tab of an AI soldier
-//! (shown while a module exists). Attribute-based savers use EGS_SavedUnitRoeAttribute.
+//! "Rules of engagement (soldier)" in the EXPBG AI Skill & ROE tab of an AI soldier
+//! (any faction or mod, with or without a module). Attribute-based savers use
+//! EGS_SavedUnitRoeAttribute.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class EGS_UnitRoeAttribute : SCR_BaseEditorAttribute
 {
@@ -170,7 +172,7 @@ class EGS_UnitRoeAttribute : SCR_BaseEditorAttribute
 	//------------------------------------------------------------------------------------------------
 	override SCR_BaseEditorAttributeVar ReadVariable(Managed item, SCR_AttributesManagerEditorComponent manager)
 	{
-		if (!manager || !EGS_Module.HasAny())
+		if (!manager)
 			return null;
 
 		SCR_ChimeraCharacter soldier = EGS_UnitRoe.ResolveSoldier(SCR_EditableEntityComponent.Cast(item));

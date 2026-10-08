@@ -1,8 +1,11 @@
 // EXPBG Unit Scripts attributes: unit and squad scripts in the EXPBG Unit Scripts
 // tab, night discipline in the vanilla Group tab. Values are read and written on
 // the server; writes are authorized against the editor owner.
-// Mission-only: ReadVariable answers only inside a live attribute session and
-// IsSerializable is false, so native/CDF Game Master saves never replay them.
+// ReadVariable answers only inside a live attribute session and IsSerializable is
+// false, so native/CDF Game Master saves never replay these attributes: running unit
+// scripts are saved and restored through EUS_UnitState instead (EUS_Persistence.c for
+// native saves, the unit-scripts bridge of EXPBG CDF Compat for CDF). Night
+// discipline stays mission-only.
 
 // AI soldier: Normal AI, Hold position, Freeze or one approved animation.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]

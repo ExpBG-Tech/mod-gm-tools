@@ -36,9 +36,15 @@ class EAC_HomeIndex
  protected int m_Subdivisions;
  // Buildings skipped at registration because they were already destroyed.
  protected int m_Ruined;
- protected vector m_AreaCentre;
- protected int m_AreaRadius;
+ // Every placed module's population disc (0.1.18). A mission may place several
+ // Ambient Civilians modules; each one is its own area and the union is indexed.
+ // Empty means "not set yet", which restricts nothing, as radius 0 did before.
+ protected ref array<vector> m_AreaCentres = {};
+ protected ref array<int> m_AreaRadii = {};
  protected bool m_Aborted;
+ // Area scan cursors share m_Focus with the old per-player keys; anything at or
+ // above this base is an area id, never a player id, and RetainPlayers keeps it.
+ static const int AREA_FOCUS_BASE = 1048576;
 
  // Isolated-house policy (readiness plan section 3). Rule 0 is today's behaviour
  // exactly: IsHomeEnrolled returns true before reading any other field, Visit
@@ -506,22 +512,68 @@ class EAC_HomeIndex
   return m_Cells.Contains(CellKey(x, z));
  }
 
- // Moving/resizing a module must make previously skipped cells eligible again.
- void SetPopulationArea(vector centre, int radius)
+ // Adding, moving, resizing or deleting any module must make previously skipped
+ // cells eligible again. One call per scheduler tick with every placed module's
+ // disc, at most EAC_AmbientModule.MAX_POPULATION_AREAS of them; nothing changes
+ // and nothing is cleared while the set of discs stays the same.
+ void SetPopulationAreas(array<vector> centres, array<int> radii)
  {
-  if (m_AreaRadius == radius && m_AreaCentre[0] == centre[0] && m_AreaCentre[2] == centre[2]) return;
-  m_AreaCentre = centre; m_AreaRadius = radius;
+  if (!centres || !radii || centres.Count() != radii.Count())
+   return;
+  if (SameAreas(centres, radii))
+   return;
+  m_AreaCentres.Clear();
+  m_AreaRadii.Clear();
+  for (int areaIndex = 0; areaIndex < centres.Count(); areaIndex++)
+  {
+   m_AreaCentres.Insert(centres[areaIndex]);
+   m_AreaRadii.Insert(radii[areaIndex]);
+  }
   m_Cells.Clear(); m_Focus.Clear(); m_Pending.Clear();
+ }
+
+ int GetPopulationAreaCount()
+ {
+  return m_AreaCentres.Count();
+ }
+
+ protected bool SameAreas(array<vector> centres, array<int> radii)
+ {
+  if (centres.Count() != m_AreaCentres.Count())
+   return false;
+  for (int areaIndex = 0; areaIndex < centres.Count(); areaIndex++)
+  {
+   vector known = m_AreaCentres[areaIndex];
+   vector wanted = centres[areaIndex];
+   if (m_AreaRadii[areaIndex] != radii[areaIndex] || known[0] != wanted[0] || known[2] != wanted[2])
+    return false;
+  }
+  return true;
+ }
+
+ // Whether a cell touches any module's disc. No disc yet restricts nothing.
+ protected bool CellTouchesArea(vector mins, int size)
+ {
+  if (m_AreaCentres.IsEmpty())
+   return true;
+  for (int areaIndex = 0; areaIndex < m_AreaCentres.Count(); areaIndex++)
+  {
+   int radius = m_AreaRadii[areaIndex];
+   if (radius <= 0)
+    return true;
+   vector centre = m_AreaCentres[areaIndex];
+   float closestX = Math.Clamp(centre[0], mins[0], mins[0] + size);
+   float closestZ = Math.Clamp(centre[2], mins[2], mins[2] + size);
+   if (EAC_AmbientModule.ContainsPopulationPoint(closestX, closestZ, centre[0], centre[2], radius))
+    return true;
+  }
+  return false;
  }
 
  protected void QueryCell(vector mins, int size)
  {
-  if (m_AreaRadius > 0)
-  {
-   float closestX = Math.Clamp(m_AreaCentre[0], mins[0], mins[0] + size);
-   float closestZ = Math.Clamp(m_AreaCentre[2], mins[2], mins[2] + size);
-   if (!EAC_AmbientModule.ContainsPopulationPoint(closestX, closestZ, m_AreaCentre[0], m_AreaCentre[2], m_AreaRadius)) return;
-  }
+  if (!CellTouchesArea(mins, size))
+   return;
   m_Callbacks = 0; m_Aborted = false;
   vector maxs = mins + Vector(size, 11000, size);
   m_Queries++;
@@ -553,7 +605,14 @@ class EAC_HomeIndex
  void RetainPlayers(array<int> players)
  {
   for (int i = m_Focus.Count() - 1; i >= 0; i--)
-   if (!players.Contains(m_Focus.GetKey(i))) m_Focus.Remove(m_Focus.GetKey(i));
+  {
+   int focusKey = m_Focus.GetKey(i);
+   // Area cursors (see AREA_FOCUS_BASE) belong to a module, not a player; they go
+   // when the set of areas changes (SetPopulationAreas).
+   if (focusKey >= AREA_FOCUS_BASE)
+    continue;
+   if (!players.Contains(focusKey)) m_Focus.Remove(focusKey);
+  }
  }
 
  // Center-out square rings cover every cell once; an offset never starts at the
@@ -690,6 +749,14 @@ class EAC_HomeIndex
    EAC_HouseholdRecord home = m_Registry.GetHome(m_ReconcileCursor++);
    int occupancy = small;
    if (home.Large) occupancy = large;
+   // Several modules: a household takes the residents-per-house of the module
+   // whose area holds it, so every module's Density applies to its own town.
+   EAC_AmbientModule areaModule = EAC_AmbientModule.FindPopulationArea(home.Position);
+   if (areaModule)
+   {
+    occupancy = areaModule.SmallHouseResidents;
+    if (home.Large) occupancy = areaModule.LargeHouseResidents;
+   }
    // Growth suppression only. SetOccupancy(home, 0, ...) would clear Wanted, and
    // nothing in this codebase deletes an unwanted committed resident - it would
    // stand forever holding a PopulationLimit slot. A home that later qualifies

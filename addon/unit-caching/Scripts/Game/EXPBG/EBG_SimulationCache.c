@@ -485,6 +485,8 @@ class EBG_SimulationAgent
 {
  ref EBG_SimulationDevices Devices;
  ref EBG_StaticEmplacement Emplacement;
+ // EXPBG Unit Scripts state (Hold, Freeze, animation) of a scripted soldier, else null.
+ ref EBG_ScriptedMember Script;
  bool Restored;
  AIAgent Agent;
  SCR_ChimeraCharacter Character;
@@ -617,6 +619,9 @@ class EBG_SimulationCache
   if (controller.IsDead() || controller.IsUnconscious() || controller.IsFalling() || controller.IsSwimming() || controller.IsClimbing()) return "Unsupported life or movement state";
   string compartment = EBG_StaticEmplacement.Unsupported(character);
   if (!compartment.IsEmpty()) return compartment;
+  // A Unit Scripts animation is a loiter command, not a compartment: paused only while it plays.
+  string scripted = EBG_ScriptedUnits.Unsettled(character);
+  if (!scripted.IsEmpty()) return scripted;
   if (HasActiveOperation(controller)) return "Active trigger, reload, throw, melee or item operation";
   SCR_CharacterDamageManagerComponent damage = SCR_CharacterDamageManagerComponent.Cast(character.GetDamageManager());
   if (!damage || damage.IsBleeding()) return "Active bleeding or unavailable damage state";
@@ -676,6 +681,8 @@ class EBG_SimulationCache
    member.Emplacement = new EBG_StaticEmplacement();
    if (!member.Emplacement.Capture(character)) { reason = "Compartment changed during Simulation capture"; return null; }
    if (!member.Devices.Capture(character)) { reason = "Mod device channel state could not be captured"; return null; }
+   // The bound control, its AI settings and the loiter stay on this same actor.
+   member.Script = EBG_ScriptedMember.Capture(character);
    state.Members.Insert(member);
   }
   foreach (EBG_SimulationAgent member : state.Members)
@@ -727,6 +734,8 @@ class EBG_SimulationCache
     else if (controller && !controller.IsDead()) member.Restore();
     member.Character.EBG_SetSimulationCached(false);
     member.Restored = true;
+    // Presentation and AI are back: the soldier keeps (or restarts) his unit script.
+    if (member.Script && !changedOwner) member.Script.Resume(member.Character);
    }
    // Possession and death transfer presentation ownership away from this cache.
    if (changedOwner && member.Devices) member.Devices.Discard();
@@ -736,6 +745,7 @@ class EBG_SimulationCache
   reason = "Original entities and saved local state restored; no spawn, healing or rearming";
   if (state.PreparationFailed) reason = "Device suspension rolled back; originals remained active";
   if (!complete) reason = "Missing member or device restoration incomplete; retain recovery record";
+  else if (!state.PreparationFailed) reason += EBG_ScriptedUnits.Summary(state);
   return complete;
  }
 }

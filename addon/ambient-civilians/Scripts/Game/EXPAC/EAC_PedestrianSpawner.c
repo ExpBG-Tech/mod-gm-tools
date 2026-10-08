@@ -428,15 +428,29 @@ class EAC_PedestrianSpawner
    minimum = INDOOR_MINIMUM_DISTANCE;
   }
   if (!ValidPosition(module, home, position, observers, null, minimum, indoors)) return false;
-  ResourceName freshPrefab = module.GetHomeIndex().GetRegistry().PickCharacter(resident.CharacterPrefab);
+  // Several modules (0.1.18): the module whose area holds this home supplies the
+  // civilian limit, the neighbourhood limits and the theme/faction for it. The
+  // first placed module still runs the one shared scheduler (module here).
+  EAC_AmbientModule areaModule = EAC_AmbientModule.FindPopulationArea(home.BuildingEntity.GetOrigin());
+  if (!areaModule)
+   return Reject(EAC_ESpawnReason.ISOLATED_HOME, position);
+  ResourceName freshPrefab = areaModule.PickAreaCharacter();
+  if (freshPrefab == "") freshPrefab = module.GetHomeIndex().GetRegistry().PickCharacter(resident.CharacterPrefab);
   if (!QualifiedResource(freshPrefab)) return Reject(EAC_ESpawnReason.BAD_PREFAB, position);
   if (!GetGame().GetFactionManager() || !GetGame().GetFactionManager().GetFactionByKey(EAC_AmbientModule.CIV_FACTION)) return Reject(EAC_ESpawnReason.BAD_FACTION, position);
-  if (module.GetReservedPopulation() >= module.PopulationLimit) return Reject(EAC_ESpawnReason.BUDGET, position);
+  if (module.GetReservedPopulation() >= module.GetWorldPopulationLimit())
+   return Reject(EAC_ESpawnReason.BUDGET, position);
+  if (!areaModule.HasAreaCapacity())
+   return Reject(EAC_ESpawnReason.AREA_BUDGET, position);
   if (!HasEngineAiHeadroom()) return Reject(EAC_ESpawnReason.AI_LIMIT, position);
   if (!module.CanAdmitNewWork()) return Reject(EAC_ESpawnReason.LOAD_PAUSED, position);
-  if (!HasLocalCapacity(module, position)) return Reject(EAC_ESpawnReason.LOCAL_BUDGET, position);
+  if (!HasLocalCapacity(areaModule, position))
+   return Reject(EAC_ESpawnReason.LOCAL_BUDGET, position);
   EAC_ResidentClaim claim = module.BeginResidentActivation(home, resident, position);
   if (!claim) return Reject(EAC_ESpawnReason.RESIDENT_INELIGIBLE, position);
+  // Counted at once, so a second admission in the same tick sees it; the
+  // scheduler recounts every area from the claim ledger on its next tick.
+  areaModule.ChargeAreaResident();
   resident.CharacterPrefab = freshPrefab;
   m_Pending = new EAC_PedestrianActivation(); m_Pending.Claim = claim; m_Tracked.Insert(m_Pending);
   m_Pending.Position = position; m_Pending.Aborting = false; m_Pending.CleanupRequested = false; m_Pending.SettleUntil = 0;
@@ -1510,7 +1524,7 @@ class EAC_PedestrianSpawner
   if (m_World.GetWorldTime() * 0.001 < m_BlockAdmissionUntil) { m_Diagnostics.Record(EAC_ESpawnReason.CACHE_RECOVERY); return; }
   int observerReason = GetObserverReason(m_World, observers);
   if (observerReason != EAC_ESpawnReason.NONE) { m_Diagnostics.Record(observerReason); return; }
-  if (module.GetReservedPopulation() >= module.PopulationLimit) { m_Diagnostics.Record(EAC_ESpawnReason.BUDGET); return; }
+  if (module.GetReservedPopulation() >= module.GetWorldPopulationLimit()) { m_Diagnostics.Record(EAC_ESpawnReason.BUDGET); return; }
   if (!HasEngineAiHeadroom()) { m_Diagnostics.Record(EAC_ESpawnReason.AI_LIMIT); return; }
   EAC_HouseholdRegistry registry = module.GetHomeIndex().GetRegistry();
   if (registry.GetHomeCount() == 0) { m_Diagnostics.Record(EAC_ESpawnReason.NO_HOMES); return; }
@@ -1535,19 +1549,25 @@ class EAC_PedestrianSpawner
    if (reason != EAC_ESpawnReason.NONE) { m_Diagnostics.Record(reason); continue; }
    // One count per candidate, shared by the ceiling and the floor.
    vector neighbourhood = home.BuildingEntity.GetOrigin();
+   // Several modules (0.1.18): this household belongs to the module whose area
+   // holds it. A module at its own limit (or its fair share of the mission
+   // ceiling) skips its households and leaves every other module admitting.
+   EAC_AmbientModule areaModule = EAC_AmbientModule.FindPopulationArea(neighbourhood);
+   if (!areaModule) { m_Diagnostics.Record(EAC_ESpawnReason.ISOLATED_HOME); m_SlotCursor = 0; m_HomeCursor++; continue; }
+   if (!areaModule.HasAreaCapacity()) { m_Diagnostics.Record(EAC_ESpawnReason.AREA_BUDGET); m_SlotCursor = 0; m_HomeCursor++; continue; }
    // Perf plan WP6 (civilians-b-12). The ceiling and the floor below only ask
    // whether the count is under LocalPopulationLimit or MinLocalPopulation, so
    // counting stops one past the larger of the two: both decide exactly as on
    // the full count. With debug on, the count is exact (no stop), so the
    // local_floor figure of the [EAC] summary (m_LastLocalCount) stays the real
-   // occupancy of a saturated neighbourhood.
-   int localStop = module.LocalPopulationLimit;
-   if (module.MinLocalPopulation > localStop) localStop = module.MinLocalPopulation;
+   // occupancy of a saturated neighbourhood. The area module's own limits apply.
+   int localStop = areaModule.LocalPopulationLimit;
+   if (areaModule.MinLocalPopulation > localStop) localStop = areaModule.MinLocalPopulation;
    localStop++;
    if (module.DebugLevel > 0) localStop = -1;
-   int localUsed = CountLocalOccupants(module, neighbourhood, localStop);
+   int localUsed = CountLocalOccupants(areaModule, neighbourhood, localStop);
    m_LastLocalCount = localUsed;
-   if (!HasLocalCapacityFor(module, localUsed, 1))
+   if (!HasLocalCapacityFor(areaModule, localUsed, 1))
    {
     // S4. A saturated neighbourhood used to end the whole scheduler tick, so one
     // full town square could starve every other street in the city. Record the
@@ -1560,7 +1580,7 @@ class EAC_PedestrianSpawner
    // The floor only raises the attempt budget for this tick. It relaxes no gate:
    // CanAdmitNewWork, PopulationLimit, ValidPosition and GetHiddenReason all ran
    // above or run inside Begin, unchanged.
-   if (IsBelowLocalFloor(module, localUsed))
+   if (IsBelowLocalFloor(areaModule, localUsed))
    {
     m_CatchingUp = true;
     int catchUpBudget = Math.Clamp(module.CatchUpAdmissionsPerTick, 1, 8);

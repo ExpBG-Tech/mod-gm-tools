@@ -94,7 +94,24 @@ class EGS_SkillsTest
 	//------------------------------------------------------------------------------------------------
 	static bool RulesOfEngagement()
 	{
-		if (EGS_Settings.EffectiveRoe(false, EGS_Settings.ROE_FIRE_ON_SIGHT, EGS_Settings.ROE_WARNING_SHOTS) != EGS_Settings.ROE_VANILLA)
+		// Without a module the module default is vanilla, but a squad's own choice still applies.
+		if (EGS_Settings.EffectiveRoe(false, EGS_Settings.GROUP_ROE_DEFAULT, EGS_Settings.ROE_WARNING_SHOTS) != EGS_Settings.ROE_VANILLA)
+			return false;
+
+		if (EGS_Settings.EffectiveRoe(false, EGS_Settings.ROE_FIRE_ON_SIGHT, EGS_Settings.ROE_WARNING_SHOTS) != EGS_Settings.ROE_FIRE_ON_SIGHT)
+			return false;
+
+		if (EGS_Settings.EffectiveRoe(false, EGS_Settings.ROE_RETURN_FIRE, EGS_Settings.ROE_VANILLA) != EGS_Settings.ROE_RETURN_FIRE)
+			return false;
+
+		if (EGS_Settings.EffectiveRoe(false, EGS_Settings.GROUP_ROE_EXEMPT, EGS_Settings.ROE_WARNING_SHOTS) != EGS_Settings.ROE_VANILLA)
+			return false;
+
+		// Skill per squad and per soldier: soldier > squad > faction, Novice..Expert only.
+		if (EGS_SkillOverrides.Pick(3, 5) != 3 || EGS_SkillOverrides.Pick(0, 5) != 5 || EGS_SkillOverrides.Pick(0, 0) != EGS_SkillOverrides.FOLLOW)
+			return false;
+
+		if (EGS_SkillOverrides.Normalize(9) != EGS_Settings.SKILL_MAX || EGS_SkillOverrides.Normalize(-2) != EGS_SkillOverrides.FOLLOW)
 			return false;
 
 		if (EGS_Settings.EffectiveRoe(true, EGS_Settings.GROUP_ROE_EXEMPT, EGS_Settings.ROE_WARNING_SHOTS) != EGS_Settings.ROE_VANILLA)

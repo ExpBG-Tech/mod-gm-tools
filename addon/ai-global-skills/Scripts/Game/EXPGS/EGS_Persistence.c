@@ -1,7 +1,9 @@
 // Native mission save of EXPBG AI Global Skills: per-faction skill/aim (by faction key),
-// default ROE, ammunition policy, per-group ROE overrides (by group persistence id) and,
-// from version 2, per-soldier ROE overrides (by soldier persistence id). A mission
-// without soldier overrides is still written as version 1; version 1 saves still load.
+// default ROE, ammunition policy, per-group ROE overrides (by group persistence id),
+// from version 2 per-soldier ROE overrides (by soldier persistence id) and, from version 3,
+// per-squad and per-soldier skill (EGS_SkillOverrides.c). The oldest layout that holds the
+// mission is written (version 1 without soldier ROE or skills, version 2 without skills), so
+// earlier releases still load it; version 1 and 2 saves still load.
 // The module entity itself is saved by the vanilla editable-entity configuration; the
 // settings apply while a module exists. Untouched missions write nothing (DEFAULT).
 // Attribute-based savers (CDF Game Master Save) use EGS_SavedAttributes.c instead. The
@@ -14,6 +16,7 @@ class EGS_SettingsSerializer : ScriptedStateSerializer
 {
 	protected static const int VERSION = 2;
 	protected static const int VERSION_GROUPS_ONLY = 1;
+	protected static const int VERSION_SKILLS = 3;
 
 	//------------------------------------------------------------------------------------------------
 	override static typename GetTargetType()
@@ -42,13 +45,24 @@ class EGS_SettingsSerializer : ScriptedStateSerializer
 		array<int> unitRoe = {};
 		EGS_Manager.ExportUnitOverrides(unitIds, unitRoe);
 
-		if (factionKeys.IsEmpty() && groupIds.IsEmpty() && unitIds.IsEmpty() && EGS_Settings.IsVanilla())
+		array<UUID> skillGroupIds = {};
+		array<int> skillGroupValues = {};
+		array<UUID> skillUnitIds = {};
+		array<int> skillUnitValues = {};
+		EGS_SkillOverrides.Export(skillGroupIds, skillGroupValues, skillUnitIds, skillUnitValues);
+		bool hasSkills = !skillGroupIds.IsEmpty() || !skillUnitIds.IsEmpty();
+
+		if (factionKeys.IsEmpty() && groupIds.IsEmpty() && unitIds.IsEmpty() && !hasSkills && EGS_Settings.IsVanilla())
 			return ESerializeResult.DEFAULT;
 
-		// Without soldier overrides the version 1 layout is written, so 0.1.9 still loads it.
+		// Without soldier overrides the version 1 layout is written, so 0.1.9 still loads it;
+		// without squad or soldier skills version 2, so 0.1.17 still loads it.
 		int version = VERSION;
 		if (unitIds.IsEmpty())
 			version = VERSION_GROUPS_ONLY;
+
+		if (hasSkills)
+			version = VERSION_SKILLS;
 
 		int roe = EGS_Settings.GetRoe();
 		int ammo = EGS_Settings.GetAmmoMode();
@@ -68,6 +82,12 @@ class EGS_SettingsSerializer : ScriptedStateSerializer
 		if (version >= VERSION && (!context.WriteValue("unitIds", unitIds) || !context.WriteValue("unitRoe", unitRoe)))
 			return ESerializeResult.ERROR;
 
+		if (version >= VERSION_SKILLS && (!context.WriteValue("skillGroupIds", skillGroupIds) || !context.WriteValue("skillGroupValues", skillGroupValues)))
+			return ESerializeResult.ERROR;
+
+		if (version >= VERSION_SKILLS && (!context.WriteValue("skillUnitIds", skillUnitIds) || !context.WriteValue("skillUnitValues", skillUnitValues)))
+			return ESerializeResult.ERROR;
+
 		return ESerializeResult.OK;
 	}
 
@@ -75,7 +95,7 @@ class EGS_SettingsSerializer : ScriptedStateSerializer
 	override protected bool Deserialize(notnull Managed instance, notnull LoadContext context)
 	{
 		int version;
-		if (!context.ReadValue("version", version) || (version != VERSION && version != VERSION_GROUPS_ONLY))
+		if (!context.ReadValue("version", version) || (version != VERSION && version != VERSION_GROUPS_ONLY && version != VERSION_SKILLS))
 			return false;
 
 		array<string> factionKeys = {};
@@ -105,9 +125,23 @@ class EGS_SettingsSerializer : ScriptedStateSerializer
 				return false;
 		}
 
+		array<UUID> skillGroupIds = {};
+		array<int> skillGroupValues = {};
+		array<UUID> skillUnitIds = {};
+		array<int> skillUnitValues = {};
+		if (version >= VERSION_SKILLS)
+		{
+			if (!context.ReadValue("skillGroupIds", skillGroupIds) || !context.ReadValue("skillGroupValues", skillGroupValues) || skillGroupIds.Count() != skillGroupValues.Count())
+				return false;
+
+			if (!context.ReadValue("skillUnitIds", skillUnitIds) || !context.ReadValue("skillUnitValues", skillUnitValues) || skillUnitIds.Count() != skillUnitValues.Count())
+				return false;
+		}
+
 		EGS_Settings.ImportPersistent(factionKeys, factionValues, roe, ammo, refills);
 		EGS_Manager.ImportGroupOverrides(groupIds, groupRoe);
 		EGS_Manager.ImportUnitOverrides(unitIds, unitRoe);
+		EGS_SkillOverrides.Import(skillGroupIds, skillGroupValues, skillUnitIds, skillUnitValues);
 		return true;
 	}
 }
