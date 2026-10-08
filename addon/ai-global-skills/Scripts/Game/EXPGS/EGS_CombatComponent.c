@@ -5,7 +5,8 @@
 // - spotting speed is folded into the vanilla perception update;
 // - magazines of the primary firearm are refilled after inventory changes (no grenades;
 //   weapons without a magazine template, such as the RHS M40A5, use the magazine they carry);
-// - warning shots use the vanilla suppress behaviour against a point next to the player.
+// - warning shots use the vanilla suppress behaviour against a point next to the player (or
+//   next to a vehicle with a player inside, kept clear of the vehicle's size).
 modded class SCR_AICombatComponent
 {
 	protected static const int EGS_MAX_MAGAZINES = 12;
@@ -184,7 +185,7 @@ modded class SCR_AICombatComponent
 	//! Server: Warning Shots First of his own; he selected a new hostile target.
 	protected void EGS_OnUnitHostileSelected(IEntity target)
 	{
-		if (m_iEGS_UnitWarn != EGS_UNIT_ARMED || !EGS_Manager.IsPlayerControlled(target))
+		if (m_iEGS_UnitWarn != EGS_UNIT_ARMED || !EGS_Manager.IsPlayerTarget(target))
 			return;
 
 		AIAgent agent = GetAiAgent();
@@ -192,7 +193,8 @@ modded class SCR_AICombatComponent
 		if (agent)
 			group = SCR_AIGroup.Cast(agent.GetParentGroup());
 
-		if (!group || !group.EGS_IsManaged())
+		// His squad already answers fire (EGS_Provocation.c): no warning first.
+		if (!group || !group.EGS_IsManaged() || group.EGS_IsProvoked())
 			return;
 
 		m_iEGS_UnitToken++;
@@ -266,7 +268,7 @@ modded class SCR_AICombatComponent
 			return false;
 
 		EGS_EndWarningShots(false);
-		vector point = EGS_Manager.WarningPoint(owner.GetOrigin(), target.GetOrigin());
+		vector point = EGS_Manager.WarningPoint(owner.GetOrigin(), target.GetOrigin(), EGS_Manager.TargetClearance(target));
 		// Aim sphere at least 3 m (XZ) from the shooter, its sweep clear of the target
 		// (WarningOffset); vanilla aim heights at and beyond its rim are kept finite by
 		// EGS_SuppressionVolume.c.

@@ -33,6 +33,7 @@ class EAS_RadioModule : GenericEntity
  ref EAS_RadioState State = new EAS_RadioState();
  AudioHandle Handle = AudioHandle.Invalid;
  float End;
+ int StartTick; // System.GetTickCount() at the start: the real clock for the eviction test.
 
  bool IsAuthority()
  {

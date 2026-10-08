@@ -701,10 +701,32 @@ class EBG_CacheSnapshot
   s_ImportPrepared = false;
   if (EBG_CacheManager.Instance) EBG_FullSaveGate.CancelUncommittedAcquire(EBG_CacheManager.Instance);
  }
+ // Anything a capture could lose or tear: a registered module, a managed record, or an
+ // import or native restoration in flight. The CDF companion's ownsState in short.
+ static bool HasOptimizerState()
+ {
+  if (Loading || s_ImportPrepared || !EBG_CacheZone.Zones.IsEmpty() || EBG_FullCacheGroup.IsNativeOperationBusy() || SCR_AIGroupSerializer.EBG_HasPendingMemberCallbacks())
+   return true;
+  EBG_CacheManager manager = EBG_CacheManager.Instance;
+  return manager && !manager.Records.IsEmpty();
+ }
  static bool CanSave(out string reason)
  {
   reason = "";
-  if (!Replication.IsServer() || Loading || !EBG_CacheManager.IsPortableWorldReady() || EBG_FullCacheGroup.IsNativeOperationBusy() || SCR_AIGroupSerializer.EBG_HasPendingMemberCallbacks())
+  if (!Replication.IsServer())
+  {
+   reason = "Optimizer state is captured on the server only";
+   return false;
+  }
+  // Mission end, a scenario change or a mode that is not running yet: say that, not
+  // "loading". A mission without Optimizer state has nothing here to protect until its
+  // world cleanup begins, so only the checks below apply to it.
+  if (!EBG_CacheManager.IsPortableWorldReady() && (EBG_CacheManager.IsCleaningUpCurrentWorld() || HasOptimizerState()))
+  {
+   reason = "The mission is ending, changing or not running; capture skipped and the existing save kept";
+   return false;
+  }
+  if (Loading || EBG_FullCacheGroup.IsNativeOperationBusy() || SCR_AIGroupSerializer.EBG_HasPendingMemberCallbacks())
   {
    reason = "Optimizer loading or native restoration is in progress";
    return false;

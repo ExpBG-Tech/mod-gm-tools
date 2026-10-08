@@ -3,9 +3,6 @@
 modded class SCR_ChimeraCharacter
 {
  protected bool m_EBG_EverPlayerControlled;
- protected bool m_EBG_GMCreated;
- void SCR_ChimeraCharacter(IEntitySource src, IEntity parent) { m_EBG_GMCreated = EBG_MissionPersistence.GMSpawnInProgress(); }
- bool EBG_IsGMCreated() { return m_EBG_GMCreated; }
  void EBG_MarkPlayerControlled() { m_EBG_EverPlayerControlled = true; EBG_MissionPlayerHistory.Mark(this); }
  // The latch alone. EBG_MissionPlayerHistory.Contains skips its observed-entity scan for
  // a character without it: only EBG_MarkPlayerControlled lists one, after setting it.
@@ -36,17 +33,6 @@ modded class SCR_ChimeraCharacter
  bool EBG_HasLeftSquad() { return m_EBG_LeftSquad; }
 }
 
-// Native placement only. Every early return stays inside super, so this scope
-// closes synchronously. Neither native loading nor ordinary joins enter it.
-modded class SCR_PlacingEditorComponent
-{
- override protected void CreateEntityServer(SCR_EditorPreviewParams params, RplId prefabID, int playerID, int entityIndex, bool isQueue, array<RplId> recipientIds, bool canBePlayer, RplId holderId)
- {
-  EBG_MissionPersistence.GMSpawnDepth++;
-  super.CreateEntityServer(params, prefabID, playerID, entityIndex, isQueue, recipientIds, canBePlayer, holderId);
-  EBG_MissionPersistence.GMSpawnDepth--;
- }
-}
 modded class SCR_AIGroup
 {
  protected int m_EBG_EmptyPolicyDepth;
@@ -104,14 +90,5 @@ modded class SCR_AIGroup
  void ~SCR_AIGroup()
  {
   if (GetGame()) GetGame().GetCallqueue().Remove(EBG_DeleteWhenStillEmpty);
- }
- protected bool m_EBG_GMCreated;
- void SCR_AIGroup(IEntitySource src, IEntity parent) { m_EBG_GMCreated = EBG_MissionPersistence.GMSpawnInProgress(); }
- override protected bool SpawnGroupMember(bool snapToTerrain, int index, ResourceName res, bool editMode, bool isLast)
- {
-  if (m_EBG_GMCreated) EBG_MissionPersistence.GMSpawnDepth++;
-  bool result = super.SpawnGroupMember(snapToTerrain, index, res, editMode, isLast);
-  if (m_EBG_GMCreated) EBG_MissionPersistence.GMSpawnDepth--;
-  return result;
  }
 }

@@ -248,29 +248,17 @@ class ETW_WTargetAttribute : SCR_BasePresetsEditorAttribute
  }
 
  //------------------------------------------------------------------------------------------------
- // Local preview where the weather can preview (host and single player, like vanilla).
+ // No preview: the target is reached by blending from the sky as it is now. A local preview
+ // showed the new sky at once and Save took it away again (a jump and a reset), so this
+ // only clears a preview something else left.
  override void PreviewVariable(bool setPreview, SCR_AttributesManagerEditorComponent manager)
  {
   TimeAndWeatherManagerEntity weather = ETW_WeatherRunner.Manager();
   if (!weather)
    return;
   BaseWeatherStateTransitionManager transitions = weather.GetTransitionManager();
-  if (!transitions)
-   return;
-  if (!setPreview)
-  {
-   if (transitions.IsPreviewingState())
-    weather.SetWeatherStatePreview(false);
-   return;
-  }
-  SCR_BaseEditorAttributeVar var = GetVariable();
-  if (!var)
-   return;
-  array<ref WeatherState> states = {};
-  weather.GetWeatherStatesList(states);
-  int index = var.GetInt();
-  if (states.IsIndexValid(index) && states[index])
-   weather.SetWeatherStatePreview(true, states[index].GetStateName());
+  if (transitions && transitions.IsPreviewingState())
+   weather.SetWeatherStatePreview(false);
  }
 
  //------------------------------------------------------------------------------------------------

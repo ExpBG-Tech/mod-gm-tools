@@ -7,10 +7,13 @@
 // group's), so a soldier with his own ROE answers that query himself, at the moment the
 // vanilla behaviour asks (EGS_CombatComponent.c):
 //   Fire on Sight        FIRE_AT_WILL
-//   Return Fire Only     HOLD_FIRE until his squad is endangered (the vanilla RETURN_FIRE rule)
-//   Warning Shots First  as Return Fire Only; when he selects a player as target he fires the
-//                        warning burst himself, waits, then FIRE_AT_WILL; he re-arms after the
-//                        contact (one-shot timers on the shared EGS_Manager tick)
+//   Return Fire Only     HOLD_FIRE until his squad is fired upon (the EXPBG rule,
+//                        EGS_Provocation.c); he also stays out of his squad's suppressive
+//                        fire until then (SCR_AISuppressGroupClusterBehavior below)
+//   Warning Shots First  as Return Fire Only; when he selects a player (or a vehicle with a
+//                        player inside) as target he fires the warning burst himself, waits,
+//                        then FIRE_AT_WILL; he re-arms after the contact (one-shot timers on
+//                        the shared EGS_Manager tick); no warning once his squad is fired upon
 //   Exempt (vanilla)     the mode his squad would have without EXPBG
 // His effective ROE is cached on his combat component and recomputed only on events
 // (module placed or removed, settings change, squad membership change, attribute change).
@@ -75,16 +78,35 @@ modded class SCR_ChimeraCharacter
 }
 
 //------------------------------------------------------------------------------------------------
-//! The vanilla RETURN_FIRE rule (EvaluateCombatMode), readable whatever the group's mode.
+//! The actual combat mode of EXPBG Return Fire Only and armed Warning Shots First squads, and
+//! the vanilla RETURN_FIRE rule (EvaluateCombatMode), readable whatever the group's mode.
 modded class SCR_AIGroupUtilityComponent
 {
 	protected static const int EGS_MAX_CLUSTERS = 64;
 
 	//------------------------------------------------------------------------------------------------
-	//! True while a target cluster with living members endangers the group (bounded).
+	//! A squad with EXPBG Return Fire Only, or Warning Shots First before it turned lethal,
+	//! holds fire until it is fired upon (SCR_AIGroup.EGS_ReturnFireMode, EGS_Provocation.c).
+	//! Vanilla would fire as soon as an enemy shot passed within 13 m of the squad leader or
+	//! went off within 15 m of him. Every other group, external mode and Exempt (vanilla) squad
+	//! keeps the vanilla evaluation. One flag check per group update.
+	override void EvaluateCombatMode()
+	{
+		if (m_eCombatModeExternal == EAIGroupCombatMode.RETURN_FIRE && m_Owner && m_Owner.EGS_UsesStrictReturnFire())
+		{
+			m_eCombatModeActual = m_Owner.EGS_ReturnFireMode();
+			return;
+		}
+
+		super.EvaluateCombatMode();
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! True while a target cluster with living members endangers the group (bounded): the
+	//! vanilla rule, also for a squad whose actual mode follows the EXPBG rule above.
 	bool EGS_IsEndangered()
 	{
-		if (m_eCombatModeExternal == EAIGroupCombatMode.RETURN_FIRE)
+		if (m_eCombatModeExternal == EAIGroupCombatMode.RETURN_FIRE && !(m_Owner && m_Owner.EGS_UsesStrictReturnFire()))
 			return m_eCombatModeActual == EAIGroupCombatMode.FIRE_AT_WILL;
 
 		if (!m_Perception || !m_Perception.m_aTargetClusters)
@@ -99,6 +121,27 @@ modded class SCR_AIGroupUtilityComponent
 		}
 
 		return false;
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! Vanilla hands every member his squad's suppressed cluster without asking his own combat
+//! mode, so a soldier holding fire under his own ROE (EGS_CombatComponent.GetCombatMode)
+//! still joined his squad's suppressive fire. He now stays out of it until his own mode
+//! allows firing. Soldiers who follow their squad, and EXPBG warning bursts (the base
+//! suppress behaviour), are unchanged. Chains with other addons' overrides (EXPBG_RO_AI).
+modded class SCR_AISuppressGroupClusterBehavior
+{
+	override float CustomEvaluate()
+	{
+		float priority = super.CustomEvaluate();
+		if (priority <= 0 || !m_CombatComponent || m_CombatComponent.EGS_GetUnitRoe() == EGS_UnitRoe.FOLLOW)
+			return priority;
+
+		if (m_CombatComponent.GetCombatMode() == EAIGroupCombatMode.HOLD_FIRE)
+			return 0;
+
+		return priority;
 	}
 }
 

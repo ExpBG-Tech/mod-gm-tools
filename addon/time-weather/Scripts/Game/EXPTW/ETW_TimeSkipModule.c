@@ -9,7 +9,7 @@ class ETW_TimeSkipModuleClass : GenericEntityClass {}
 class ETW_TimeSkipModule : GenericEntity
 {
  // Non-owning: entries become null when their module is deleted.
- protected static ref array<ETW_TimeSkipModule> s_aModules = {};
+ protected static ref array<ETW_TimeSkipModule> s_aModules;
 
  [Attribute("6", UIWidgets.Slider, "Hours to skip", "0 48 1", category: "EXPBG Time Skip")]
  protected int m_iHours;
@@ -57,6 +57,7 @@ class ETW_TimeSkipModule : GenericEntity
   super.EOnInit(owner);
   if (!GetGame().InPlayMode())
    return;
+  EXPBG_LazyStatics_ETW_TimeSkipModule();
   if (!s_aModules.Contains(this))
    s_aModules.Insert(this);
   if (!Replication.IsServer())
@@ -215,11 +216,21 @@ class ETW_TimeSkipModule : GenericEntity
  {
   if (!Replication.IsServer())
    return;
+  EXPBG_LazyStatics_ETW_TimeSkipModule();
   foreach (ETW_TimeSkipModule module : s_aModules)
   {
    if (module)
     module.SetStatus(text, busy);
   }
+ }
+
+ //------------------------------------------------------------------------------------------------
+ //! Creates the collections on first use (not in the global static initializer, which has a
+ //! per-function instruction limit that large modsets exceed on Windows).
+ protected static void EXPBG_LazyStatics_ETW_TimeSkipModule()
+ {
+  if (!s_aModules)
+   s_aModules = new array<ETW_TimeSkipModule>();
  }
 }
 
@@ -235,7 +246,8 @@ class ETW_TimeSkip
  protected static int s_iPlayer;
  protected static string s_sLastTo;
  static const string STATUS_READY = "Ready. Choose Skip time now and press Save.";
- protected static string s_sStatus = STATUS_READY;
+ // Empty until the first skip: reads as STATUS_READY.
+ protected static string s_sStatus;
  // Evidence for logs and fixtures.
  protected static int s_iBroadcasts;
  protected static int s_iApplied;
@@ -256,6 +268,8 @@ class ETW_TimeSkip
    s_bRunning = false;
    s_sStatus = STATUS_READY;
   }
+  if (s_sStatus.IsEmpty())
+   return STATUS_READY;
   return s_sStatus;
  }
 

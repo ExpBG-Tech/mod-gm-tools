@@ -1,6 +1,6 @@
 // TEST ONLY. EXPBG Time and Weather: Weather Transition and Time Skip on the dedicated
 // fixture server (no players, no GM UI, no client view).
-// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ETW_TimeWeatherGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ETW RESULT\] checks=[1-9]\d* failures=0 rollover=1 skip=1 broadcasts=3 gradual=1 finished=1 interrupt=1 skipFinish=1 foreign=1 smooth=[01] reason=complete'
+// pwsh -File tests/Run-Gameplay.ps1 -SourceSnapshot <indexed pack> -FixturePath tests/ETW_TimeWeatherGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '\[ETW RESULT\] checks=[1-9]\d* failures=0 rollover=1 skip=1 broadcasts=3 gradual=1 finished=1 interrupt=1 skipFinish=1 foreign=1 smooth=1 reason=complete'
 // The runner copies this file to EXPG_GarrisonGameplay.c; the class names are fixed. Judge
 // the run by its one [ETW RESULT] line (-ExpectResult also rejects script errors).
 // Real module prefabs and public server entry points (the attribute writes call the same).
@@ -12,8 +12,10 @@
 //              server.
 //  broadcasts  fade broadcasts sent (three skips); the local RPC handler ran as often.
 //  gradual     Weather Transition to another state (Rainy if the start is not Rainy) in
-//              1 min: rain moves monotonically from its start toward the target, about
-//              half way after 30 s (ease-in-out), never jumping.
+//              1 min at a 1440 s day (the engine's 10-in-game-minute cloud minimum is then
+//              10 s), started 12 s after the day length changed (past the weather's hold):
+//              rain moves monotonically from its start toward the target, a fifth to four
+//              fifths of the way after 30 s (ease-in-out with the clouds), never jumping.
 //  finished    after the minute (plus the clouds' grace): rain at target within 0.02,
 //              wind 8 m/s within 0.1, the target state reached, weather held (looping).
 //  interrupt   a new transition 20 s into another one continues from the rain reached
@@ -21,8 +23,8 @@
 //  skipFinish  a time skip during a transition completes it under the black screen.
 //  foreign     a ForceWeatherTo (what Scenario Properties weather does) stops the
 //              transition and hands rain back to the weather.
-//  smooth      evidence only: 1 when the clouds reached the target through the engine
-//              blend without the end-of-transition snap (needs native acceptance).
+//  smooth      the clouds reached the target through the engine blend without the
+//              end-of-transition snap.
 class EXPG_GarrisonGameplayClass : GenericEntityClass {}
 class EXPG_GarrisonGameplay : GenericEntity
 {
@@ -45,6 +47,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  float m_fNext;
  bool m_bFinished;
  bool m_bAutoAdvance;
+ float m_fDayLength;
  int m_iBroadcastsAtStart;
  int m_iReceivedAtStart;
  int m_iAppliedAtStart;
@@ -130,6 +133,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   ClearEventMask(EntityEvent.FRAME);
   if (m_TimeManager)
    m_TimeManager.SetIsDayAutoAdvanced(m_bAutoAdvance);
+  if (m_TimeManager && m_fDayLength > 0)
+   m_TimeManager.SetDayDuration(m_fDayLength);
   string head = string.Format("[ETW RESULT] checks=%1 failures=%2 rollover=%3 skip=%4 broadcasts=%5 gradual=%6 finished=%7 interrupt=%8 skipFinish=%9", m_iChecks, m_iFailures, Flag(m_bRolloverPass), Flag(m_bSkipPass), ETW_TimeSkip.GetBroadcasts() - m_iBroadcastsAtStart, Flag(m_bGradualPass), Flag(m_bFinishedPass), Flag(m_bInterruptPass), Flag(m_bSkipFinishPass));
   string tail = string.Format(" foreign=%1 smooth=%2 reason=%3", Flag(m_bForeignPass), Flag(m_bSmooth), reason);
   Print(head + tail, LogLevel.NORMAL);
@@ -228,6 +233,8 @@ class EXPG_GarrisonGameplay : GenericEntity
    VerifySkipFinishStartForeign();
   else if (m_iPhase == 9)
    Foreign();
+  else if (m_iPhase == 10)
+   StartWeather();
  }
 
  //------------------------------------------------------------------------------------------------
@@ -376,8 +383,18 @@ class EXPG_GarrisonGameplay : GenericEntity
   bool leap = Check(DateIs(2028, 2, 29, 1), "skip +2 h from 2028-02-28 23:00 lands on 2028-02-29 01:00");
   bool counts = ETW_TimeSkip.GetBroadcasts() - m_iBroadcastsAtStart == 2 && ETW_FadeOverlay.GetReceived() - m_iReceivedAtStart == 2 && ETW_TimeSkip.GetRefused() > 0;
   m_bSkipPass = Check(m_bYearEnd && leap && counts && !ETW_TimeSkip.IsRunning(), "time skips: exact hours with rollover, one broadcast each, overlap refused");
-  // Weather with the clock running, as in a mission.
+  // Weather with the clock running, as in a mission, at one in-game minute per real second;
+  // 12 s on, the weather in place is past the engine's 10 s minimum hold, as in a mission.
   m_TimeManager.SetIsDayAutoAdvanced(true);
+  m_fDayLength = m_TimeManager.GetDayDuration();
+  m_TimeManager.SetDayDuration(1440);
+  m_iPhase = 10;
+  Wait(12);
+ }
+
+ //------------------------------------------------------------------------------------------------
+ void StartWeather()
+ {
   array<ref WeatherState> states = {};
   m_TimeManager.GetWeatherStatesList(states);
   m_sStateA = StateName();

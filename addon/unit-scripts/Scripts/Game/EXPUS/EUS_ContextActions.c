@@ -45,8 +45,8 @@ class EUS_UnitContextAction : SCR_SelectedEntitiesContextAction
  }
 
  // A soldier already running this script does not list it again (re-applying only
- // re-binds him where he stands; a moved unit is re-anchored on its own). A squad
- // always lists it, since its members may differ.
+ // re-binds him where he stands; moving him with the editor sets his new spot). A
+ // squad always lists it, since its members may differ.
  protected bool ShownUnlessRunning(SCR_EditableEntityComponent selectedEntity, int code)
  {
   SCR_ChimeraCharacter actor = AIUnit(selectedEntity);

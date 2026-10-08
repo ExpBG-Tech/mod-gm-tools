@@ -177,14 +177,23 @@ class EUS_Manager
    if (report) report.Refuse("unknown unit script");
    return false;
   }
-  if (existing)
-  {
-   existing.Release("replaced by " + EUS_Codes.Describe(code));
-   RefreshScripted(existing.GetGroup());
-  }
-  EUS_UnitControl control = new EUS_UnitControl();
+  // A pose without room here is refused before the running script is replaced,
+  // so the soldier keeps it (for example Freeze at a desk, then "Sit on a chair").
+  // RoomFor checks where he stands and faces now, exactly as Bind does next.
   string reason;
-  if (!control.Bind(actor, code, Now(), reason))
+  if (existing) reason = existing.RoomFor(code);
+  EUS_UnitControl control;
+  if (reason.IsEmpty())
+  {
+   if (existing)
+   {
+    existing.Release("replaced by " + EUS_Codes.Describe(code));
+    RefreshScripted(existing.GetGroup());
+   }
+   control = new EUS_UnitControl();
+   if (!control.Bind(actor, code, Now(), reason)) control = null;
+  }
+  if (!control)
   {
    if (report) report.Refuse(reason);
    PrintFormat("[EUS] refused unit=%1 script='%2' reason='%3'", actor, EUS_Codes.Describe(code), reason);

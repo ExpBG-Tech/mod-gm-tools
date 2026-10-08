@@ -200,8 +200,10 @@ class EXPG_GarrisonMember
  }
 
  // His post becomes the spot he stands on: the nearest free standing node within
- // 0.5 m keeps a plan reservation, otherwise an off-plan post (NodeIndex -1). He
- // keeps watching the same way (PostLook) and is never moved.
+ // 0.5 m keeps a plan reservation, otherwise an off-plan post (NodeIndex -1) that
+ // patrol claims still keep their spacing from (HoldOffPlan). He keeps watching
+ // the same way (PostLook) and is never moved. A patrol claim of the building
+ // within POST_SPACING of his new post moves on (EXPG_GarrisonManager.YieldClaims).
  void Anchor(vector at)
  {
   if (!Plan || !CacheMember || !CacheMember.Entity) { return; }
@@ -210,6 +212,8 @@ class EXPG_GarrisonMember
   PostPosition = at;
   int node = Plan.NearestNode(at, 0.5, true);
   if (node >= 0 && Plan.ReserveNode(CacheMember.Entity, node)) { NodeIndex = node; }
+  else { Plan.HoldOffPlan(CacheMember.Entity, at); }
+  EXPG_GarrisonManager.YieldClaims(Plan, PostPoint());
  }
 }
 
@@ -484,6 +488,8 @@ class EXPG_GarrisonRecord
     member.Anchor(origin);
    }
    if (member.NodeIndex >= 0 && !Plan.ReserveNode(actor, member.NodeIndex)) { member.Anchor(origin); }
+   // An off-plan post holds no node: patrol claims still keep their spacing from it.
+   if (member.NodeIndex < 0) { Plan.HoldOffPlan(actor, member.PostPosition); }
    member.Post = new EXPG_PostControl();
    if (!member.Post.Bind(actor, member.PostPoint(), member.PostLook))
    {
@@ -749,6 +755,29 @@ class EXPG_GarrisonManager
    released++;
   }
   return released;
+ }
+
+ // A guard's post moved (EXPG_GarrisonMember.Anchor): every patrol claim of the
+ // building within POST_SPACING of the new post moves on to another free stop
+ // (EXPG_PatrolControl.Yield, which keeps alarms and cache settles as they are).
+ // Event-driven, the building's awake garrisons only; no world query.
+ static void YieldClaims(EXPG_BuildingPlan plan, vector post)
+ {
+  if (!plan || !HasActive()) { return; }
+  foreach (EXPG_GarrisonRecord record : s_Instance.m_Records)
+  {
+   if (record.Finished || record.Plan != plan || record.Simulation) { continue; }
+   foreach (EXPG_GarrisonMember walker : record.Members)
+   {
+    EXPG_PatrolControl patrol = walker.Patrol;
+    if (walker.CacheMember.Dead || !patrol) { continue; }
+    int claim = patrol.ClaimedNode();
+    if (claim < 0 || claim >= plan.Nodes.Count() || !EXPG_BuildingPlan.Crowded(post, plan.Nodes[claim].Position, EXPG_BuildingPlan.POST_SPACING)) { continue; }
+    patrol.Yield();
+    // His post follows his new claim at once (floor checks, parking).
+    if (patrol.ClaimedNode() >= 0) { walker.NodeIndex = patrol.ClaimedNode(); }
+   }
+  }
  }
 
  float Now() { return m_World.GetWorldTime() * 0.001; }

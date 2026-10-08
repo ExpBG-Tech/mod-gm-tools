@@ -75,6 +75,17 @@ class EUS_Codes
   return forward;
  }
 
+ // Short prefab name of an entity (or of its root) for replies and logs.
+ static string Name(IEntity entity)
+ {
+  if (!entity) return "an obstacle";
+  IEntity named = entity;
+  if (!named.GetPrefabData()) named = entity.GetRootParent();
+  EntityPrefabData data = named.GetPrefabData();
+  if (!data) return named.ClassName();
+  return FilePath.StripExtension(FilePath.StripPath(data.GetPrefabName().GetPath()));
+ }
+
  static vector Eye(IEntity entity)
  {
   ChimeraCharacter character = ChimeraCharacter.Cast(entity);
@@ -157,6 +168,15 @@ class EUS_AnimationCatalog
   if (index == 1) return SCR_ELoiterItemID.CHAIR;
   if (index == 2) return SCR_ELoiterItemID.CIGAR;
   return SCR_ELoiterItemID.NONE;
+ }
+
+ // The chair pose places its preset chair (LoiterItemPresets.conf CHAIR:
+ // AnimationProp_ChairMilitary_US_01, a mesh without collision) 0.65 m in front of
+ // the unit and seats him on it with root motion, so it needs a clear spot. The
+ // other poses stay where he stands.
+ static bool NeedsRoom(int index)
+ {
+  return Item(index) == SCR_ELoiterItemID.CHAIR;
  }
 
  static SCR_LoiterCustomAnimData CreateData(int index)

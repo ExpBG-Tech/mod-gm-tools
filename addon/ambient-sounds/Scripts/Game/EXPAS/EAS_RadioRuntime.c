@@ -50,7 +50,7 @@ class EAS_RadioRuntime
   if (m_Diagnostics) m_Diagnostics.Stops++;
   if (EAS_Diagnostics.Enabled(module))
   {
-   // remaining > 0 with reason=finished: the native query ended the recording early.
+   // reason=evicted: the engine ended the recording early in range; Tick retries it.
    EAS_Diagnostics.Event("release", module, string.Format("runtime=finite kind=%1 handle=%2 recording=%3 reason=%4 interrupted=%5 remaining=%6", module.AudioKind(), module.Handle, module.State.LastRecording, reason, interrupted, module.End - EAS_Runtime.Now()));
   }
   module.Handle = AudioHandle.Invalid;
@@ -97,17 +97,27 @@ class EAS_RadioRuntime
    // Keep fast updates only where a source can actually be heard. The shared
    // activation snapshot still uses 1000 m and distant devices poll every 2 s.
    if (!outside) nearby = true;
-   if (module.Handle == AudioHandle.Invalid)
-   {
-    module.State.RecoverAfterApproach(distance, module.AudibleRange());
-    continue;
-   }
+   if (module.Handle == AudioHandle.Invalid) continue;
    // Native IsSoundPlayed is true when playback has finished.
    if (now >= module.End || outside || AudioSystem.IsSoundPlayed(module.Handle))
    {
+    // Ended well before its recording while heard in range: the engine evicted the voice
+    // (playing-source limit, or below audibility under louder sounds). Both clocks must agree:
+    // world time can fall behind the audio after a client hitch, and such a natural end keeps
+    // its pause. Retry soon instead of staying silent for the rest of the recording.
+    if (!outside && EAS_RadioState.EndedEarly(now, module.End) && module.State.EndedEarlyHeard(System.GetTickCount(module.StartTick) * 0.001))
+    {
+     Stop(module, false, "evicted");
+     float retry = module.State.Evicted(now);
+     if (m_Diagnostics) m_Diagnostics.Evicted++;
+     if (EAS_Diagnostics.Enabled(module)) EAS_Diagnostics.Event("evicted", module, string.Format("runtime=finite kind=%1 distance=%2 retry_s=%3", module.AudioKind(), distance, retry));
+     continue;
+    }
     string reason = "finished";
     if (outside) reason = "inaudible";
     Stop(module, outside, reason);
+    // Heard to its end: the next eviction starts a new streak.
+    if (!outside) module.State.Completed();
     module.State.NextDue = Math.Max(module.State.NextDue, now);
    }
    else
@@ -133,8 +143,9 @@ class EAS_RadioRuntime
    {
     EAS_RadioModule candidate = EAS_RadioModule.Cast(m_Slots.Get((m_Cursor + n) % count));
     if (!candidate || !candidate.ProximityActive() || candidate.Handle != AudioHandle.Invalid || !candidate.State.CanStart(now, voices)) continue;
+    // Start a margin inside the audible range; a playing voice keeps the full range.
     float range = AudioSystem.GetDistance(candidate.GetOrigin());
-    if (range < 0 || range > candidate.AudibleRange()) continue;
+    if (range < 0 || range > EAS_RadioState.StartRange(candidate.AudibleRange())) continue;
     if (!radio || candidate.State.NextDue < radio.State.NextDue) radio = candidate;
    }
    if (!radio) break;
@@ -156,14 +167,31 @@ class EAS_RadioRuntime
    int callMs = System.GetTickCount(callStarted);
    if (radio.Handle == AudioHandle.Invalid)
    {
-    float failedDistance = AudioSystem.GetDistance(radio.GetOrigin());
-    int failures = radio.State.FailedStart(now, failedDistance);
     if (m_Diagnostics) m_Diagnostics.Dropped++;
-    if (failures == 1 || failures == 3)
-     PrintFormat("[EAS] Radio start failed: event=%1 distance=%2 attempt=%3/3 parked=%4", eventName, failedDistance, failures, failures == 3);
+    float failedDistance = AudioSystem.GetDistance(radio.GetOrigin());
+    // Below the threshold of audibility (listener moved to the edge, or the voice is masked by
+    // louder sounds) is not a failure: retry in 3 s. Other refusals back off 5 ... 30 s.
+    // Neither parks the radio.
+    bool belowAudibility = failedDistance < 0 || failedDistance > EAS_RadioState.StartRange(radio.AudibleRange()) || AudioSystem.IsAudible(radio.AudioProject(), eventName, transform[3]) < 0;
+    int streak;
+    if (belowAudibility) streak = radio.State.Inaudible(now);
+    else streak = radio.State.Refused(now);
+    float retryIn = radio.State.NextDue - now;
+    // A refusal the listener should hear, or ten inaudible ones in a row, spends the normal-log
+    // budget (two lines per placement or settings change); the debug trace notes the rest.
+    bool notice = !belowAudibility || streak == 10;
+    if (notice && radio.State.Notice())
+     PrintFormat("[EAS] Radio start failed: event=%1 distance=%2 attempt=%3 retry_s=%4 inaudible=%5", eventName, failedDistance, streak, retryIn, belowAudibility);
+    else if ((notice || streak == 1) && EAS_Diagnostics.Enabled(radio))
+    {
+     string refusal = "refused";
+     if (belowAudibility) refusal = "inaudible";
+     EAS_Diagnostics.Event(refusal, radio, string.Format("runtime=finite kind=%1 event=%2 distance=%3 attempt=%4 retry_s=%5", radio.AudioKind(), eventName, failedDistance, streak, retryIn));
+    }
     continue;
    }
    radio.End = now + duration + 0.25;
+   radio.StartTick = callStarted;
    radio.State.Started(now, duration, recording);
    voices++;
    if (m_Diagnostics) m_Diagnostics.Starts++;

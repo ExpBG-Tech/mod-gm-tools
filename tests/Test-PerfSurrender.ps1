@@ -200,4 +200,11 @@ foreach ($name in @('ESR_InterrogationPoint.c', 'ESR_SurrenderManager.c')) {
 foreach ($body in @($interval, $fromBone, $prisonerFace, $track, $drop)) {
  Assert (!($body -match 'Math\.RandomFloat|Math\.RandomInt')) 'the new methods draw no random numbers'
 }
+# Casualties the native chain removes from the squad before the life state changes still count:
+# OnAgentRemoved remembers a living leaver (bounded, 2 s), OnLifeState falls back to that squad.
+Assert ($manager -match 'static const float LEFT_WINDOW_S = 2;' -and $manager -match 'static const int MAX_LEFT = 16;' -and $manager -match 'protected static ref array<ref ESR_LeftSquad> s_aLeft;' -and $manager -notmatch 's_aLeft\s*=\s*\{') 'the left-squad memory is a bounded, lazily created list'
+Assert ($manager -match '(?s)if \(controller\.GetLifeState\(\) == ECharacterLifeState\.ALIVE\)\s*\{\s*if \(!FindPrisoner\(character\) && IsCandidateSquad\(group\)\) RememberLeft\(character, group\);\s*return;\s*\}') 'OnAgentRemoved remembers a living soldier who leaves a candidate squad (prisoners excluded)'
+Assert ($manager -match '(?s)group = LeftSquad\(entity\);.*strength = group\.GetAgentsCount\(\) \+ 1;' -and $manager -match 'if \(record && strength > record\.Peak\) record\.Peak = strength;') 'OnLifeState counts a casualty for the squad he had just left, including him in its strength'
+Assert ($manager -match '(?s)if \(s_aLeft\.Count\(\) >= MAX_LEFT\) s_aLeft\.RemoveOrdered\(0\);' -and $manager -match 'if \(!s_aLeft\)\s*s_aLeft = new array<ref ESR_LeftSquad>\(\);') 'the list drops its oldest entry at MAX_LEFT and is created in the lazy statics'
+
 Write-Host 'PASS: AI Surrender WP12: a dedicated server follows the interrogation point at 1 Hz (no local entity; collider kept) and Upkeep calls Point.Follow() before the unchanged 1 m respawn test (and for skipped prisoners); clients follow at 0.1 s within 20 m of the local entity and 1 s farther; the head bone is cached per prisoner entity with the unchanged face math; published markers are capped at 128 through a lazily created FIFO that removes only the oldest still-existing marker via the old RemoveMarker body and is cleared per world. No engine was launched.'

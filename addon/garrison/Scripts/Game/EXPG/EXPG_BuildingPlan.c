@@ -80,6 +80,14 @@ class EXPG_ParkedPost
  vector Position;
 }
 
+// A live guard's post off the sampled plan (no free node within 0.5 m, or a post
+// around the building): no node reservation, yet claims keep their spacing from it.
+class EXPG_HeldPost
+{
+ IEntity Owner;
+ vector Position;
+}
+
 class EXPG_BuildingPlan
 {
  static const float GRID = 0.75;
@@ -143,6 +151,7 @@ class EXPG_BuildingPlan
  protected ref array<ref SCR_InteriorBoundingBox> m_InteriorBounds;
  protected ref array<ref EXPG_BuildingReservation> m_Reservations = {};
  protected ref array<ref EXPG_ParkedPost> m_Parked = {};
+ protected ref array<ref EXPG_HeldPost> m_Held = {};
  protected ref array<float> m_StoreyBases = {};
  protected int m_Turn;
  protected ref array<ref EXPG_DoorLeaf> m_DoorLeaves = {};
@@ -175,12 +184,36 @@ class EXPG_BuildingPlan
   return SetReservation(owner, from, to);
  }
 
+ // Also drops the owner's off-plan post (HoldOffPlan).
  void ReleaseReservation(IEntity owner)
  {
   for (int i = m_Reservations.Count() - 1; i >= 0; i--)
   {
    if (!m_Reservations[i].Owner || m_Reservations[i].Owner == owner) { m_Reservations.RemoveOrdered(i); }
   }
+  for (int h = m_Held.Count() - 1; h >= 0; h--)
+  {
+   if (!m_Held[h].Owner || m_Held[h].Owner == owner) { m_Held.RemoveOrdered(h); }
+  }
+ }
+
+ // A live guard whose post has no node reservation (EXPG_GarrisonMember.Anchor fell
+ // back to the spot he stands on, or a post around the building): StopFree keeps
+ // every claim POST_SPACING from it. One entry per guard, dropped with his
+ // reservation (ReleaseReservation).
+ void HoldOffPlan(IEntity owner, vector point)
+ {
+  if (!owner) { return; }
+  foreach (EXPG_HeldPost existing : m_Held)
+  {
+   if (existing.Owner != owner) { continue; }
+   existing.Position = point;
+   return;
+  }
+  EXPG_HeldPost held = new EXPG_HeldPost();
+  held.Owner = owner;
+  held.Position = point;
+  m_Held.Insert(held);
  }
 
  protected bool SetReservation(IEntity owner, int from, int to)
@@ -287,8 +320,8 @@ class EXPG_BuildingPlan
   return m_DoorLeaves.Count();
  }
 
- // No other guard's post, stop or destination (and no parked post of a
- // Full-cached garrison) within POST_SPACING on the same floor.
+ // No other guard's post (on the plan or off it), stop or destination (and no
+ // parked post of a Full-cached garrison) within POST_SPACING on the same floor.
  bool StopFree(int node, IEntity exceptOwner = null)
  {
   if (node < 0 || node >= Nodes.Count()) return false;
@@ -297,6 +330,11 @@ class EXPG_BuildingPlan
   {
    if (!reservation.Owner || reservation.Owner == exceptOwner) continue;
    if (Crowded(point, Nodes[reservation.From].Position, POST_SPACING) || Crowded(point, Nodes[reservation.To].Position, POST_SPACING)) return false;
+  }
+  foreach (EXPG_HeldPost held : m_Held)
+  {
+   if (!held.Owner || held.Owner == exceptOwner) continue;
+   if (Crowded(point, held.Position, POST_SPACING)) return false;
   }
   foreach (EXPG_ParkedPost parked : m_Parked)
   {
@@ -325,6 +363,36 @@ class EXPG_BuildingPlan
    if (Math.AbsFloat(parked.Position[1] - point[1]) < 2.0 && vector.DistanceXZ(parked.Position, point) < reach) return true;
   }
   return false;
+ }
+
+ // Another living soldier of this building's garrisons standing within reach of the
+ // point (horizontally, under 1.5 m up or down): a guard, or a patroller who is not
+ // walking. Every live guard has a reservation or an off-plan post, so no world
+ // query; called on a patroller's arrival or failed walk only.
+ bool NearStanding(vector point, IEntity exceptOwner, float reach)
+ {
+  foreach (EXPG_BuildingReservation reservation : m_Reservations)
+  {
+   if (StandsNear(reservation.Owner, exceptOwner, point, reach)) return true;
+  }
+  foreach (EXPG_HeldPost held : m_Held)
+  {
+   if (StandsNear(held.Owner, exceptOwner, point, reach)) return true;
+  }
+  return false;
+ }
+
+ protected static bool StandsNear(IEntity owner, IEntity exceptOwner, vector point, float reach)
+ {
+  if (!owner || owner == exceptOwner) return false;
+  vector at = owner.GetOrigin();
+  if (Math.AbsFloat(at[1] - point[1]) >= 1.5 || vector.DistanceXZ(at, point) >= reach) return false;
+  SCR_ChimeraCharacter actor = SCR_ChimeraCharacter.Cast(owner);
+  if (!actor) return false;
+  SCR_CharacterControllerComponent controller = SCR_CharacterControllerComponent.Cast(actor.GetCharacterController());
+  if (!controller || controller.IsDead()) return false;
+  EXPG_PatrolControl patrol = controller.EXPG_GetPatrolControl();
+  return !patrol || !patrol.IsMoving();
  }
 
  // The nearest indoor walking node within reach (horizontal, 0.8 m vertical) in

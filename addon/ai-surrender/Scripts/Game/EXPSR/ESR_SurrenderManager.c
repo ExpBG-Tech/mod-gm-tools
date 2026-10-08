@@ -3,7 +3,19 @@
 // evaluates at most GROUPS_PER_PASS squads. No soldier is polled. The only repeating
 // timer is a 5-second upkeep over the capped prisoner list, and only while prisoners
 // exist; a squad leader who takes a grenade instead of surrendering runs three one-shot
-// timers (place, set live, check after the blast), at most MAX_COMMANDERS at a time.
+// timers (place, set live, check after the blast), at most MAX_COMMANDERS at a time. A
+// casualty taken while the squad's cache state is held is evaluated once the squad is
+// plainly awake (one shared 10-second one-shot check, only while such squads exist).
+
+// A living soldier who just left a squad. The native chain can take a dying soldier's
+// agent out of his squad before his life state changes; his death then still counts for
+// that squad (OnLifeState finds no squad of his own any more).
+class ESR_LeftSquad
+{
+ IEntity Character; // weak
+ SCR_AIGroup Group; // weak
+ float At;
+}
 
 // One squad that has taken a casualty while the module was active.
 class ESR_SquadRecord
@@ -11,6 +23,7 @@ class ESR_SquadRecord
  SCR_AIGroup Group; // weak
  int Peak;
  int LastCasualties;
+ bool HeldRecheck; // a casualty was skipped while its cache state was held
  float Threshold;
  IEntity RolledCommander; // weak; the leader whose grenade chance was rolled
 }
@@ -141,6 +154,10 @@ class ESR_SurrenderManager
  static const int QUEUE_DELAY_MS = 400;
  static const int POSE_DELAY_MS = 1500;
  static const int UPKEEP_MS = 5000;
+ static const int HELD_RECHECK_MS = 10000;
+ // Living soldiers who left a squad are remembered this long (seconds), at most MAX_LEFT.
+ static const float LEFT_WINDOW_S = 2;
+ static const int MAX_LEFT = 16;
  static const int MAX_POSE_TRIES = 6;
  // The interrogation point follows the prisoner's head bone (ESR_InterrogationPoint).
  // Only while no bone can be read: rough face heights of the vanilla sit and of ACE's
@@ -180,6 +197,7 @@ class ESR_SurrenderManager
  protected static bool s_bListening;
  protected static bool s_bQueued;
  protected static bool s_bUpkeep;
+ protected static bool s_bHeldRecheck;
  protected static int s_iCommanderSerial;
  protected static ref array<SCR_AIGroup> s_aQueue;
  protected static ref array<ref ESR_SquadRecord> s_aSquads;
@@ -187,6 +205,8 @@ class ESR_SurrenderManager
  protected static ref array<ref ESR_Commander> s_aCommanders;
  // Server: ids of the markers PublishMarker created in this world, oldest first.
  protected static ref array<int> s_aMarkerIds;
+ // Server: living soldiers who just left a squad, oldest first (ESR_LeftSquad).
+ protected static ref array<ref ESR_LeftSquad> s_aLeft;
 
  //------------------------------------------------------------------------------------------------
  // State and switches
@@ -229,8 +249,10 @@ class ESR_SurrenderManager
   ScriptCallQueue queue = GetGame().GetCallqueue();
   queue.Remove(ESR_SurrenderManager.ProcessQueue);
   queue.Remove(ESR_SurrenderManager.Upkeep);
+  queue.Remove(ESR_SurrenderManager.RecheckHeld);
   s_bQueued = false;
   s_bUpkeep = false;
+  s_bHeldRecheck = false;
   for (int i = s_aQueue.Count() - 1; i >= 0; i--) { if (!s_aQueue[i]) s_aQueue.Remove(i); }
   for (int j = s_aSquads.Count() - 1; j >= 0; j--) { if (!s_aSquads[j] || !s_aSquads[j].Group) s_aSquads.Remove(j); }
   for (int k = s_aPrisoners.Count() - 1; k >= 0; k--) { if (!s_aPrisoners[k] || !s_aPrisoners[k].Character) ReleaseAt(k, "stale"); }
@@ -240,6 +262,10 @@ class ESR_SurrenderManager
   // Commander timers are keyed by record id: a stale one finds no record and ends.
   PruneCommanders();
   if (!s_aQueue.IsEmpty()) ScheduleQueue();
+  foreach (ESR_SquadRecord held : s_aSquads)
+  {
+   if (held && held.HeldRecheck) { ScheduleHeldRecheck(); break; }
+  }
   StartUpkeep();
   // Logs once per world whether ACE Captives' surrender or the vanilla sit is used.
   ESR_AceCaptives.Available();
@@ -299,11 +325,23 @@ class ESR_SurrenderManager
    else if (current == ECharacterLifeState.ALIVE) GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.Reassert, 750, false, entity);
    return;
   }
-  if (!s_bListening || !group || previous != ECharacterLifeState.ALIVE || current == ECharacterLifeState.ALIVE) return;
+  if (!s_bListening || previous != ECharacterLifeState.ALIVE || current == ECharacterLifeState.ALIVE) return;
+  // The native chain may already have taken his agent out of the squad while he was
+  // still alive (OnAgentRemoved remembered it): he still counts for that squad.
+  int strength;
+  if (group) strength = group.GetAgentsCount();
+  else
+  {
+   group = LeftSquad(entity);
+   if (!group) { Trace(string.Format("casualty %1 not counted: no squad when his life state changed", entity)); return; }
+   strength = group.GetAgentsCount() + 1;
+   Trace(string.Format("casualty %1 counted for squad %2 he had just left", entity, group));
+  }
   if (!IsCandidateSquad(group)) return;
-  // The casualty is still a member here; record the strength before he is removed.
+  // The casualty is still a member here (or was a moment ago); record the strength
+  // before he is removed.
   ESR_SquadRecord record = Squad(group, true);
-  if (record && group.GetAgentsCount() > record.Peak) record.Peak = group.GetAgentsCount();
+  if (record && strength > record.Peak) record.Peak = strength;
   Queue(group);
  }
 
@@ -313,12 +351,54 @@ class ESR_SurrenderManager
   SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
   if (!character) return;
   CharacterControllerComponent controller = character.GetCharacterController();
-  // Only casualties count; living soldiers leave groups for many other reasons.
-  if (!controller || controller.GetLifeState() == ECharacterLifeState.ALIVE) return;
+  if (!controller) return;
+  // Only casualties count; living soldiers leave groups for many other reasons. One who
+  // leaves alive is remembered for LEFT_WINDOW_S in case his death follows at once.
+  if (controller.GetLifeState() == ECharacterLifeState.ALIVE)
+  {
+   if (!FindPrisoner(character) && IsCandidateSquad(group)) RememberLeft(character, group);
+   return;
+  }
   if (!IsCandidateSquad(group)) return;
   ESR_SquadRecord record = Squad(group, true);
   if (record && group.GetAgentsCount() + 1 > record.Peak) record.Peak = group.GetAgentsCount() + 1;
   Queue(group);
+ }
+
+ // Server, once per living soldier who leaves a candidate squad: bounded list, oldest
+ // entries dropped, stale ones pruned on each insert.
+ protected static void RememberLeft(IEntity character, SCR_AIGroup group)
+ {
+  EXPBG_LazyStatics_ESR_SurrenderManager();
+  float now = Now();
+  for (int i = s_aLeft.Count() - 1; i >= 0; i--)
+  {
+   ESR_LeftSquad old = s_aLeft[i];
+   if (!old || !old.Character || !old.Group || old.Character == character || now - old.At > LEFT_WINDOW_S || now < old.At) s_aLeft.Remove(i);
+  }
+  if (s_aLeft.Count() >= MAX_LEFT) s_aLeft.RemoveOrdered(0);
+  ESR_LeftSquad left = new ESR_LeftSquad();
+  left.Character = character;
+  left.Group = group;
+  left.At = now;
+  s_aLeft.Insert(left);
+ }
+
+ // The squad a soldier left alive within the last LEFT_WINDOW_S seconds, or null.
+ protected static SCR_AIGroup LeftSquad(IEntity character)
+ {
+  EXPBG_LazyStatics_ESR_SurrenderManager();
+  float now = Now();
+  for (int i = s_aLeft.Count() - 1; i >= 0; i--)
+  {
+   ESR_LeftSquad left = s_aLeft[i];
+   if (!left || left.Character != character) continue;
+   SCR_AIGroup group = left.Group;
+   s_aLeft.Remove(i);
+   if (now - left.At > LEFT_WINDOW_S || now < left.At) return null;
+   return group;
+  }
+  return null;
  }
 
  static bool IsCandidateSquad(SCR_AIGroup group)
@@ -362,6 +442,34 @@ class ESR_SurrenderManager
   GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.ProcessQueue, QUEUE_DELAY_MS, false);
  }
 
+ // Squads whose casualties were skipped while their cache state was held: queued again once
+ // they are plainly awake. One shared one-shot timer, only while such squads exist; bounded
+ // by MAX_SQUADS records per pass.
+ protected static void ScheduleHeldRecheck()
+ {
+  if (s_bHeldRecheck || !GetGame()) return;
+  s_bHeldRecheck = true;
+  GetGame().GetCallqueue().CallLater(ESR_SurrenderManager.RecheckHeld, HELD_RECHECK_MS, false);
+ }
+
+ protected static void RecheckHeld()
+ {
+		EXPBG_LazyStatics_ESR_SurrenderManager();
+  s_bHeldRecheck = false;
+  if (!s_bListening) return;
+  bool waiting;
+  for (int i = s_aSquads.Count() - 1; i >= 0; i--)
+  {
+   ESR_SquadRecord record = s_aSquads[i];
+   if (!record || !record.HeldRecheck) continue;
+   if (!record.Group) { record.HeldRecheck = false; continue; }
+   if (EBG_CacheManager.IsCacheHeld(record.Group)) { waiting = true; continue; }
+   record.HeldRecheck = false;
+   Queue(record.Group);
+  }
+  if (waiting) ScheduleHeldRecheck();
+ }
+
  protected static void ProcessQueue()
  {
 		EXPBG_LazyStatics_ESR_SurrenderManager();
@@ -403,7 +511,14 @@ class ESR_SurrenderManager
   if (record.Peak <= 0) return;
   // A squad whose cached or transitional state is still held (Unit Caching,
   // Garrison) is asleep: its casualties are rolled once it is plainly awake.
-  if (EBG_CacheManager.IsCacheHeld(group)) { Trace(string.Format("squad %1 not rolled: its cache state is held", group)); return; }
+  if (EBG_CacheManager.IsCacheHeld(group))
+  {
+   record.HeldRecheck = true;
+   ScheduleHeldRecheck();
+   Trace(string.Format("squad %1 not rolled: its cache state is held; evaluated again once it is awake", group));
+   return;
+  }
+  record.HeldRecheck = false;
   int casualties = record.Peak - able;
   // Rolls happen once per new casualty, never twice for the same loss.
   if (casualties <= record.LastCasualties) { Trace(string.Format("squad %1 not rolled: peak=%2 able=%3 casualties=%4 already rolled=%5", group, record.Peak, able, casualties, record.LastCasualties)); return; }
@@ -1491,6 +1606,8 @@ class ESR_SurrenderManager
 			s_aCommanders = new array<ref ESR_Commander>();
 		if (!s_aMarkerIds)
 			s_aMarkerIds = new array<int>();
+		if (!s_aLeft)
+			s_aLeft = new array<ref ESR_LeftSquad>();
 	}
 }
 

@@ -1,6 +1,7 @@
 // Pure rules of the Random Garrison module, contract-tested natively by
 // tests/EXPG_RandomGarrisonTest.c: squad size buckets and presets, the building
-// target, the stable building order, the seeded shuffle, the zone token, the
+// target (and the try limit, modelled by tests/Test-RandomGarrisonFill.ps1), the
+// stable building order, the seeded shuffle, the zone token, the
 // faction key packing for attribute saves (CDF) and the support squad file names.
 // No world access.
 class EXPG_RGRules
@@ -89,6 +90,28 @@ class EXPG_RGRules
    target = MAX_TARGET;
   }
   return target;
+ }
+
+ // Buildings one generation may try (analyse): three times the target, at least the
+ // target plus 16, never more than the eligible buildings. A failed building is
+ // replaced by the next one until then (0.1.14 stopped at the target plus 8, too few
+ // for villages where most buildings are sheds or one-room houses).
+ static int AttemptCap(int target, int eligible)
+ {
+  if (target <= 0 || eligible <= 0)
+  {
+   return 0;
+  }
+  int cap = target * 3;
+  if (cap < target + 16)
+  {
+   cap = target + 16;
+  }
+  if (cap > eligible)
+  {
+   cap = eligible;
+  }
+  return cap;
  }
 
  // Integer position (centimetres) and prefab: the eligible list is sorted by it, so

@@ -7,6 +7,12 @@
 // was loaded (the garrison ledger saves GeneratedBy). Casualties are never refilled
 // and the zone never generates again by itself. Server-authoritative; clients only
 // see the replicated radius (GM area mesh) and the status line.
+// A building that fails is replaced by the next one of the seeded order, up to
+// EXPG_RGRules.AttemptCap tries; other buildings of a type that just proved too small
+// or without usable rooms go to a second pass, so shed-heavy villages still reach the
+// target. Every choice depends only on buildings earlier in the order (a seed repeats
+// its generation). When a generation ends, the status and the Game Master who started
+// it get the failures by reason.
 [EntityEditorProps(category: "EXPBG/Garrison", description: "Random Garrison: garrisons random buildings in a radius with random squads (ordinary garrisons)")]
 class EXPG_RandomGarrisonModuleClass : GenericEntityClass
 {
@@ -64,6 +70,12 @@ class EXPG_RGSite
  int RetryBelow = 16;
  bool Reanalysed;
  bool Analysed;
+ // Planned posts once analysed (-1: not analysed), for the logs.
+ int Posts = -1;
+ // Prefab and drawn faction: buildings of one type share their verdict in a run.
+ string TypeKey;
+ // Put back for the second pass (its type had failed when its turn came).
+ bool Deferred;
  float DeferredSince = -1;
  // The squad drawn for the next spawn, kept while the AI limit makes it wait (never
  // drawn again each tick); cleared when it spawns and when the building ends.
@@ -147,6 +159,14 @@ class EXPG_RandomGarrisonModule : GenericEntity
  static const int SETTINGS_PER_TICK = 8;
  static const int DISMISS_PER_TICK = 2;
  static const int MAX_OUTCOMES = 32;
+ // Failure reasons counted per generation (the rest as "other"); the status names
+ // the most frequent ones.
+ static const int MAX_REASONS = 8;
+ static const int STATUS_REASONS = 4;
+ // A building type's verdict in this run (m_mTypes): it took a squad's posts, or it
+ // failed for its posts or rooms and never took one.
+ static const int TYPE_GOOD = 1;
+ static const int TYPE_FAILED = 2;
  static const float NOTICE_SECONDS = 30;
  // Added squads spawn 4 m outside a garrisoned building's bounds.
  static const float SPAWN_MARGIN = 5;
@@ -224,6 +244,11 @@ class EXPG_RandomGarrisonModule : GenericEntity
  protected int m_iAttempts;
  protected int m_iAttemptCap;
  protected int m_iOrderCursor;
+ protected int m_iDeferredCursor;
+ // Buildings owed to the queue (one per failure or skip); m_bPromoteWait while the
+ // next one waits for a building of its type that is still analysed.
+ protected int m_iOwed;
+ protected bool m_bPromoteWait;
  protected int m_iSpawnCursor;
  protected int m_iAnalysed;
  protected int m_iExcludedPlayers;
@@ -243,12 +268,17 @@ class EXPG_RandomGarrisonModule : GenericEntity
  protected string m_sStopReason;
  protected string m_sNotice;
  protected string m_sCatalogProblem;
+ // The outcome in words, made once when a generation ends (DoneText, notice, log).
+ protected string m_sSummary;
  protected ref EXPG_RandomGarrisonCensus m_Census;
  protected ref EXPG_SquadCatalog m_Explicit;
  protected ref array<ref EXPG_RGSite> m_aSites = {};
  // Shuffled order and the sites still at work (weak references into m_aSites).
  protected ref array<EXPG_RGSite> m_aOrder = {};
  protected ref array<EXPG_RGSite> m_aActive = {};
+ // The second pass, in order, and the verdict of each building type in this run.
+ protected ref array<EXPG_RGSite> m_aDeferred = {};
+ protected ref map<string, int> m_mTypes = new map<string, int>();
  protected ref array<ref EXPG_RGPending> m_aPending = {};
  protected ref array<ref EXPG_GarrisonRecord> m_aClear = {};
  protected ref array<ref EXPG_GarrisonRecord> m_aSettingsQueue = {};
@@ -891,9 +921,16 @@ class EXPG_RandomGarrisonModule : GenericEntity
   PrintFormat("[EXPG RANDOM] zone %1: action %2 by player %3 in state %4", m_sToken, action, playerId, m_iState);
   if (action == ACTION_GENERATE)
   {
-   if (m_iState == STATE_CENSUS || m_iState == STATE_CATALOG || m_iState == STATE_RUNNING || m_iState == STATE_CLEARING)
+   // The Game Master sees how far the zone is (it may still be trying buildings); a
+   // clear cannot be stopped, so it is only waited for.
+   if (m_iState == STATE_CLEARING)
    {
-    Refuse("Busy: use Stop first", playerId);
+    Refuse("Busy (" + StateText() + "): wait until it has finished", playerId);
+    return false;
+   }
+   if (m_iState == STATE_CENSUS || m_iState == STATE_CATALOG || m_iState == STATE_RUNNING)
+   {
+    Refuse("Busy (" + StateText() + "): wait for Done or use Stop first", playerId);
     return false;
    }
    if (m_bGenerated)
@@ -928,6 +965,9 @@ class EXPG_RandomGarrisonModule : GenericEntity
     return false;
    }
    StopGeneration("stopped by the Game Master");
+   // StopGeneration told the Game Master who started the generation; another one
+   // who pressed Stop is told too.
+   if (playerId != m_iRunPlayer) { Tell(playerId, DoneText("Stopped (" + m_sStopReason + ")")); }
    return true;
   }
   return false;
@@ -939,14 +979,22 @@ class EXPG_RandomGarrisonModule : GenericEntity
   m_fNoticeUntil = Now() + NOTICE_SECONDS;
   m_fNextStatus = 0;
   PrintFormat("[EXPG RANDOM] zone %1 refused: %2", m_sToken, message);
-  if (playerId > 0)
-  {
-   SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
-   SCR_EditorManagerEntity editor;
-   if (core) { editor = core.GetEditorManager(playerId); }
-   if (editor) { editor.EXPG_Notice("Random Garrison: " + message + "."); }
-  }
+  Tell(playerId, message);
   EXPG_RandomGarrisonDirector.Wake();
+ }
+
+ // One message to a Game Master (hint and chat, EXPG_Notice); none for -1 (mission
+ // start, fixtures) or a player who has left.
+ protected void Tell(int playerId, string message)
+ {
+  if (playerId <= 0)
+  {
+   return;
+  }
+  SCR_EditorManagerCore core = SCR_EditorManagerCore.Cast(SCR_EditorManagerCore.GetInstance(SCR_EditorManagerCore));
+  SCR_EditorManagerEntity editor;
+  if (core) { editor = core.GetEditorManager(playerId); }
+  if (editor) { editor.EXPG_Notice("Random Garrison: " + message + "."); }
  }
 
  protected float Now()
@@ -965,11 +1013,16 @@ class EXPG_RandomGarrisonModule : GenericEntity
   m_aSites.Clear();
   m_aOrder.Clear();
   m_aActive.Clear();
+  m_aDeferred.Clear();
+  m_mTypes.Clear();
   m_aOutcomes.Clear();
   m_iTarget = 0;
   m_iAttempts = 0;
   m_iAttemptCap = 0;
   m_iOrderCursor = 0;
+  m_iDeferredCursor = 0;
+  m_iOwed = 0;
+  m_bPromoteWait = false;
   m_iSpawnCursor = 0;
   m_iAnalysed = 0;
   m_iExcludedPlayers = 0;
@@ -985,6 +1038,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
   m_sAILimit = "";
   m_sStopReason = "";
   m_sCatalogProblem = "";
+  m_sSummary = "";
  }
 
  protected void BeginGenerate(int playerId)
@@ -1031,16 +1085,18 @@ class EXPG_RandomGarrisonModule : GenericEntity
  }
 
  // Stop: pending analyses are cancelled and squads that never deployed are deleted;
- // deployed garrisons stay.
+ // deployed garrisons stay. The Game Master who started the generation is told.
  protected void StopGeneration(string reason)
  {
   StopWork(reason);
   BuildOutcomes();
+  BuildSummary();
   m_bGenerated = PlacedCount() > 0;
   m_sStopReason = reason;
   m_iState = STATE_STOPPED;
   m_fNextStatus = 0;
-  PrintFormat("[EXPG RANDOM] zone %1 stopped (%2): buildings=%3 squads=%4 orphans=%5", m_sToken, reason, PlacedCount(), SquadCount(), m_iOrphans);
+  PrintFormat("[EXPG RANDOM] zone %1 stopped (%2): buildings=%3/%4 squads=%5 tried=%6/%7 orphans=%8 %9", m_sToken, reason, PlacedCount(), m_iTarget, SquadCount(), m_iAttempts, m_aSites.Count(), m_iOrphans, m_sSummary);
+  Tell(m_iRunPlayer, DoneText("Stopped (" + reason + ")"));
  }
 
  // Legacy CDF Prepare for Save (EXPG_RandomGarrisonDirector): nothing pending is left.
@@ -1083,6 +1139,9 @@ class EXPG_RandomGarrisonModule : GenericEntity
    else { site.Stage = EXPG_RGSite.SKIPPED; }
   }
   m_aActive.Clear();
+  // Nothing is owed to the queue any more and no decision waits.
+  m_iOwed = 0;
+  m_bPromoteWait = false;
   m_bStopping = false;
  }
 
@@ -1253,12 +1312,12 @@ class EXPG_RandomGarrisonModule : GenericEntity
   }
   Select();
   m_iState = STATE_RUNNING;
-  PrintFormat("[EXPG RANDOM] zone %1 selection: eligible=%2 target=%3 queued=%4 excludedPlayers=%5 excludedTaken=%6", m_sToken, m_aSites.Count(), m_iTarget, m_aActive.Count(), m_iExcludedPlayers, m_iExcludedTaken);
+  PrintFormat("[EXPG RANDOM] zone %1 selection: eligible=%2 target=%3 queued=%4 tries=%5 excludedPlayers=%6 excludedTaken=%7", m_sToken, m_aSites.Count(), m_iTarget, m_aActive.Count(), m_iAttemptCap, m_iExcludedPlayers, m_iExcludedTaken);
  }
 
  // The seeded shuffle of the sorted list; exclusions are skipped after it, so the
  // order of the rest never changes. The first Target available buildings are queued,
- // the others are reserves.
+ // the others are reserves; at most AttemptCap buildings are tried.
  protected void Select()
  {
   array<int> order = {};
@@ -1267,10 +1326,11 @@ class EXPG_RandomGarrisonModule : GenericEntity
   m_aOrder.Clear();
   foreach (int index : order) { m_aOrder.Insert(m_aSites[index]); }
   m_iOrderCursor = 0;
+  m_iDeferredCursor = 0;
+  m_aDeferred.Clear();
+  m_mTypes.Clear();
   m_iAttempts = 0;
-  int extra = m_iTarget;
-  if (extra < 8) { extra = 8; }
-  m_iAttemptCap = m_iTarget + extra;
+  m_iAttemptCap = EXPG_RGRules.AttemptCap(m_iTarget, m_aSites.Count());
   // Every eligible building near a player is left out (and counted) first.
   RefreshObservers(Now(), true);
   foreach (EXPG_RGSite site : m_aSites)
@@ -1280,13 +1340,30 @@ class EXPG_RandomGarrisonModule : GenericEntity
    site.Note = string.Format("a player was within %1 m", m_iRunPlayerDistance);
    m_iExcludedPlayers++;
   }
-  int queued;
-  while (queued < m_iTarget && PromoteNext()) { queued++; }
+  m_iOwed = m_iTarget;
+  FillQueue();
  }
 
- // Queues the next reserve that is free and away from players. False when none is left.
+ // Queues the buildings owed (the target at first, then one per building that failed
+ // or was skipped) while the next one can be decided; what cannot be queued any more
+ // (none left, the try limit) is forgotten.
+ protected void FillQueue()
+ {
+  while (m_iOwed > 0 && PromoteNext()) { m_iOwed--; }
+  if (!m_bPromoteWait) { m_iOwed = 0; }
+ }
+
+ // Queues the next reserve of the seeded order that is free and away from players.
+ // A building whose type (prefab and drawn faction) failed in this run for its posts
+ // or rooms, and never took a squad, is put back for a second pass, which takes the
+ // put-back buildings in order once the first pass is through. While an earlier
+ // building of its type is still analysed the decision waits (m_bPromoteWait): every
+ // choice depends only on the buildings before it in the order, never on which
+ // analysis finished first, so a seed repeats its generation. False when nothing can
+ // be queued now.
  protected bool PromoteNext()
  {
+  m_bPromoteWait = false;
   if (m_bStopping || m_iAttempts >= m_iAttemptCap)
   {
    return false;
@@ -1295,37 +1372,187 @@ class EXPG_RandomGarrisonModule : GenericEntity
   while (m_iOrderCursor < m_aOrder.Count())
   {
    EXPG_RGSite site = m_aOrder[m_iOrderCursor];
-   m_iOrderCursor++;
-   if (!site || site.Stage != EXPG_RGSite.RESERVE) { continue; }
-   string taken = Unavailable(site, manager);
-   if (!taken.IsEmpty())
+   if (!site || site.Stage != EXPG_RGSite.RESERVE)
    {
-    site.Stage = EXPG_RGSite.SKIPPED;
-    site.Note = taken;
-    m_iExcludedTaken++;
-    continue;
-   }
-   if (NearPlayers(site))
-   {
-    // A player came near since the selection: this reserve waits for no one.
-    site.Stage = EXPG_RGSite.SKIPPED;
-    site.Note = string.Format("a player was within %1 m", m_iRunPlayerDistance);
-    continue;
-   }
-   if (!EXPG_RandomGarrisonDirector.Claim(site.Structure, m_iZoneId))
-   {
-    site.Stage = EXPG_RGSite.SKIPPED;
-    site.Note = "claimed by another Random Garrison zone";
-    m_iExcludedTaken++;
+    m_iOrderCursor++;
     continue;
    }
    Draw(site);
-   site.Stage = EXPG_RGSite.QUEUED;
-   m_aActive.Insert(site);
-   m_iAttempts++;
-   return true;
+   int verdict = m_mTypes.Get(site.TypeKey);
+   if (verdict != TYPE_GOOD && TypeUnresolved(site.TypeKey))
+   {
+    m_bPromoteWait = true;
+    return false;
+   }
+   m_iOrderCursor++;
+   if (verdict == TYPE_FAILED)
+   {
+    site.Deferred = true;
+    m_aDeferred.Insert(site);
+    continue;
+   }
+   if (QueueSite(site, manager))
+   {
+    return true;
+   }
+  }
+  while (m_iDeferredCursor < m_aDeferred.Count())
+  {
+   EXPG_RGSite later = m_aDeferred[m_iDeferredCursor];
+   m_iDeferredCursor++;
+   if (later && later.Stage == EXPG_RGSite.RESERVE && QueueSite(later, manager))
+   {
+    return true;
+   }
   }
   return false;
+ }
+
+ // Queues a reserve when it is free, away from players and claimed for this zone;
+ // otherwise it is skipped (false).
+ protected bool QueueSite(EXPG_RGSite site, EXPG_GarrisonManager manager)
+ {
+  string taken = Unavailable(site, manager);
+  if (!taken.IsEmpty())
+  {
+   site.Stage = EXPG_RGSite.SKIPPED;
+   site.Note = taken;
+   m_iExcludedTaken++;
+   return false;
+  }
+  if (NearPlayers(site))
+  {
+   // A player came near since the selection: this reserve waits for no one.
+   site.Stage = EXPG_RGSite.SKIPPED;
+   site.Note = string.Format("a player was within %1 m", m_iRunPlayerDistance);
+   return false;
+  }
+  if (!EXPG_RandomGarrisonDirector.Claim(site.Structure, m_iZoneId))
+  {
+   site.Stage = EXPG_RGSite.SKIPPED;
+   site.Note = "claimed by another Random Garrison zone";
+   m_iExcludedTaken++;
+   return false;
+  }
+  site.Stage = EXPG_RGSite.QUEUED;
+  m_aActive.Insert(site);
+  m_iAttempts++;
+  return true;
+ }
+
+ // A building of this type is queued or analysed: its verdict is not known yet.
+ protected bool TypeUnresolved(string typeKey)
+ {
+  foreach (EXPG_RGSite site : m_aActive)
+  {
+   if (site && site.TypeKey == typeKey && (site.Stage == EXPG_RGSite.QUEUED || site.Stage == EXPG_RGSite.ANALYSING))
+   {
+    return true;
+   }
+  }
+  return false;
+ }
+
+ // A building's verdict for its type: it took (or can take) a squad, or it failed for
+ // its posts or rooms. A type that took a squad once stays good in this run.
+ protected void NoteType(EXPG_RGSite site, bool good)
+ {
+  if (good)
+  {
+   m_mTypes.Set(site.TypeKey, TYPE_GOOD);
+   return;
+  }
+  if (m_mTypes.Get(site.TypeKey) != TYPE_GOOD) { m_mTypes.Set(site.TypeKey, TYPE_FAILED); }
+ }
+
+ // Analysis failures that come from the building's layout (EXPG_BuildingPlan), so
+ // other buildings of its type would most likely fail the same way.
+ static bool TypeFailure(string reason)
+ {
+  if (reason == "No connected, clear indoor positions were found" || reason == "Structure has too many interior samples")
+  {
+   return true;
+  }
+  return reason == "Structure exceeds the supported sampling bounds";
+ }
+
+ // A failure in the status and notice (BuildSummary): the layout failures in short
+ // words without the comma that would split the list of reasons, others without a
+ // closing full stop. The log and the saved outcomes keep the reason as given.
+ static string ReasonLabel(string reason)
+ {
+  if (reason == "No connected, clear indoor positions were found")
+  {
+   return "without usable rooms";
+  }
+  if (reason == "Structure has too many interior samples")
+  {
+   return "too large inside to analyse";
+  }
+  if (reason == "Structure exceeds the supported sampling bounds")
+  {
+   return "too large to analyse";
+  }
+  if (reason.Length() > 1 && reason.EndsWith("."))
+  {
+   return reason.Substring(0, reason.Length() - 1);
+  }
+  return reason;
+ }
+
+ // The analysis of a building is ready: its posts are known and the first squad is
+ // judged at once, without a draw from the building's generator. When no squad of the
+ // enabled sizes fits (PickSquad's "too small"), the building fails now, and an empty
+ // one marks its type as failed; otherwise its type is good.
+ protected void Analysed(EXPG_RGSite site, EXPG_GarrisonManager manager)
+ {
+  NoteAnalysed(site);
+  site.Stage = EXPG_RGSite.READY;
+  EXPG_BuildingPlan plan = manager.FindPlan(site.Structure);
+  if (!plan || !plan.Done || !plan.Valid() || !plan.Error.IsEmpty())
+  {
+   return;
+  }
+  site.Posts = plan.Slots.Count();
+  if (site.Placed > 0)
+  {
+   return;
+  }
+  int assigned = manager.AssignedSoldiers(site.Structure);
+  if (!TooSmall(site, site.Posts - assigned))
+  {
+   NoteType(site, true);
+   return;
+  }
+  if (assigned == 0) { NoteType(site, false); }
+  EndSite(site, "too small for the chosen squad sizes");
+ }
+
+ // An analysis that failed: a failure of the layout marks the building's type.
+ protected void AnalysisFailed(EXPG_RGSite site, string reason)
+ {
+  NoteAnalysed(site);
+  if (TypeFailure(reason)) { NoteType(site, false); }
+  EndSite(site, reason);
+ }
+
+ // True exactly when PickSquad would find no squad for this budget although the
+ // faction has squads of the enabled sizes (a missing catalog is left to it).
+ protected bool TooSmall(EXPG_RGSite site, int budget)
+ {
+  EXPG_SquadCatalog catalog = CatalogFor(site.FactionId);
+  if (!catalog || !catalog.Ready || catalog.CountUsable(m_iRunSizes, m_bRunExcludeSupport, site.FactionId) == 0)
+  {
+   return false;
+  }
+  foreach (EXPG_SquadEntry entry : catalog.Entries)
+  {
+   if (entry && CanDrawSquad(site, entry, budget))
+   {
+    return false;
+   }
+  }
+  return true;
  }
 
  // Why the building cannot be taken now (empty: it can).
@@ -1387,6 +1614,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
   EXPG_GarrisonManager manager = EXPG_GarrisonManager.Get();
   array<string> held = {};
   if (manager && manager.GarrisonFactions(site.Structure, held) == 1) { site.FactionId = held[0]; }
+  site.TypeKey = site.PrefabName + "|" + site.FactionId;
  }
 
  protected void StepRunning(float now, EXPG_RGBudget budget)
@@ -1397,7 +1625,12 @@ class EXPG_RandomGarrisonModule : GenericEntity
   ServicePending(now, manager);
   m_bPaused = EXPG_GarrisonSpawner.Paused(m_sPause);
   ServiceAnalyses(now, manager);
+  // A building that waited for the verdict of its type is decided now.
+  if (m_iOwed > 0) { FillQueue(); }
   if (!m_bPaused) { ServiceSpawns(now, manager); }
+  // An AI-limit stop (WaitForAILimit) has ended the generation and told the Game Master:
+  // it stays Stopped with its reason, never Done on top of it.
+  if (m_iState != STATE_RUNNING) { return; }
   if (AllSettled()) { FinishGeneration(""); }
  }
 
@@ -1431,7 +1664,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
     if (!site) { continue; }
     site.Placed++;
     site.Prefabs.Insert(pending.Prefab);
-    PrintFormat("[EXPG RANDOM] zone %1: %2 deployed in %3 (%4/%5)", m_sToken, pending.Prefab, site.PrefabName, site.Placed, site.Wanted);
+    PrintFormat("[EXPG RANDOM] zone %1: %2 deployed in %3 (%4/%5, posts %6)", m_sToken, pending.Prefab, site.PrefabName, site.Placed, site.Wanted, site.Posts);
     if (site.Placed >= site.Wanted) { CompleteSite(site, ""); }
     continue;
    }
@@ -1482,14 +1715,12 @@ class EXPG_RandomGarrisonModule : GenericEntity
    }
    if (analysis.Ready)
    {
-    site.Stage = EXPG_RGSite.READY;
-    NoteAnalysed(site);
+    Analysed(site, manager);
     continue;
    }
    if (analysis.Failed)
    {
-    NoteAnalysed(site);
-    EndSite(site, analysis.Failure);
+    AnalysisFailed(site, analysis.Failure);
     continue;
    }
    running++;
@@ -1553,14 +1784,12 @@ class EXPG_RandomGarrisonModule : GenericEntity
   }
   if (analysis.Ready)
   {
-   NoteAnalysed(site);
-   site.Stage = EXPG_RGSite.READY;
+   Analysed(site, manager);
    return false;
   }
   if (analysis.Failed)
   {
-   NoteAnalysed(site);
-   EndSite(site, analysis.Failure);
+   AnalysisFailed(site, analysis.Failure);
    return false;
   }
   return true;
@@ -1849,8 +2078,9 @@ class EXPG_RandomGarrisonModule : GenericEntity
   m_iFailures++;
   m_aActive.RemoveItem(site);
   EXPG_RandomGarrisonDirector.ReleaseClaim(site.Structure, m_iZoneId);
-  PrintFormat("[EXPG RANDOM] zone %1: %2 at %3 failed: %4", m_sToken, site.PrefabName, site.Origin, note);
-  PromoteNext();
+  PrintFormat("[EXPG RANDOM] zone %1: %2 at %3 failed (posts %4, tries %5/%6): %7", m_sToken, site.PrefabName, site.Origin, site.Posts, m_iAttempts, m_iAttemptCap, note);
+  m_iOwed++;
+  FillQueue();
  }
 
  // Not taken (players, garrisoned); the next reserve is queued when nothing was placed.
@@ -1869,12 +2099,13 @@ class EXPG_RandomGarrisonModule : GenericEntity
   site.Note = note;
   m_aActive.RemoveItem(site);
   EXPG_RandomGarrisonDirector.ReleaseClaim(site.Structure, m_iZoneId);
-  PromoteNext();
+  m_iOwed++;
+  FillQueue();
  }
 
  protected bool AllSettled()
  {
-  if (!m_aPending.IsEmpty())
+  if (!m_aPending.IsEmpty() || (m_iOwed > 0 && m_bPromoteWait))
   {
    return false;
   }
@@ -1915,29 +2146,108 @@ class EXPG_RandomGarrisonModule : GenericEntity
   return wanted;
  }
 
+ // The Game Master who started the generation is told how it ended.
  protected void FinishGeneration(string note)
  {
   StopWork("finished");
   BuildOutcomes();
+  BuildSummary();
   m_bGenerated = PlacedCount() > 0;
   m_sStopReason = note;
   m_iState = STATE_DONE;
   m_fNextStatus = 0;
-  PrintFormat("[EXPG RANDOM] zone %1 done: buildings=%2 squads=%3 failed=%4 excludedPlayers=%5 orphans=%6 seed=%7 %8", m_sToken, PlacedCount(), SquadCount(), m_iFailures, m_iExcludedPlayers, m_iOrphans, m_iLastSeed, note);
+  string tail = string.Format("seed=%1 orphans=%2 %3", m_iLastSeed, m_iOrphans, m_sSummary);
+  if (!note.IsEmpty()) { tail += "; " + note; }
+  PrintFormat("[EXPG RANDOM] zone %1 done: buildings=%2/%3 squads=%4 tried=%5/%6 tries=%7 excludedPlayers=%8 %9", m_sToken, PlacedCount(), m_iTarget, SquadCount(), m_iAttempts, m_aSites.Count(), m_iAttemptCap, m_iExcludedPlayers, tail);
+  Tell(m_iRunPlayer, DoneText("Done"));
  }
 
- // "x;z;prefab;squads;outcome" per building that was tried (at most 32).
+ // "x;z;prefab;squads;outcome" per building that was tried (at most 32): the
+ // garrisoned buildings first, then the failed ones, each in sorted order.
  protected void BuildOutcomes()
  {
   m_aOutcomes.Clear();
+  for (int pass = 0; pass < 2; pass++)
+  {
+   foreach (EXPG_RGSite site : m_aSites)
+   {
+    if (m_aOutcomes.Count() >= MAX_OUTCOMES) { break; }
+    if (pass == 0 && site.Placed == 0) { continue; }
+    if (pass == 1 && (site.Placed > 0 || site.Stage != EXPG_RGSite.FAILED)) { continue; }
+    string outcome = "placed";
+    if (site.Stage == EXPG_RGSite.FAILED) { outcome = "failed: " + site.Note; }
+    else if (!site.Note.IsEmpty() && site.Note != "finished") { outcome = site.Note; }
+    m_aOutcomes.Insert(string.Format("%1;%2;%3;%4;%5", Math.Round(site.Origin[0]), Math.Round(site.Origin[2]), site.PrefabName, site.Placed, outcome));
+   }
+  }
+ }
+
+ // The outcome in words, once per generation that ends: when fewer buildings than the
+ // target were garrisoned, how many were tried and why no more were; the failures by
+ // reason, most frequent first (STATUS_REASONS named, the rest as other); and the
+ // buildings that took fewer squads than drawn.
+ protected void BuildSummary()
+ {
+  array<string> reasons = {};
+  array<int> counts = {};
+  int failed;
+  int fewer;
+  int untried;
+  int putBack;
   foreach (EXPG_RGSite site : m_aSites)
   {
-   if (m_aOutcomes.Count() >= MAX_OUTCOMES) { break; }
-   if (site.Placed == 0 && site.Stage != EXPG_RGSite.FAILED) { continue; }
-   string outcome = "placed";
-   if (site.Stage == EXPG_RGSite.FAILED) { outcome = "failed: " + site.Note; }
-   else if (!site.Note.IsEmpty() && site.Note != "finished") { outcome = site.Note; }
-   m_aOutcomes.Insert(string.Format("%1;%2;%3;%4;%5", Math.Round(site.Origin[0]), Math.Round(site.Origin[2]), site.PrefabName, site.Placed, outcome));
+   if (site.Stage == EXPG_RGSite.RESERVE)
+   {
+    untried++;
+    if (site.Deferred) { putBack++; }
+    continue;
+   }
+   if (site.Placed > 0 && site.Note.StartsWith("fewer squads")) { fewer++; }
+   if (site.Stage != EXPG_RGSite.FAILED) { continue; }
+   failed++;
+   int at = reasons.Find(site.Note);
+   if (at >= 0) { counts[at] = counts[at] + 1; }
+   else if (reasons.Count() < MAX_REASONS)
+   {
+    reasons.Insert(site.Note);
+    counts.Insert(1);
+   }
+  }
+  m_sSummary = "";
+  // Only once the selection ran (a stop before it says why in the status head).
+  if (PlacedCount() < m_iTarget && m_iAttemptCap > 0)
+  {
+   m_sSummary = string.Format("tried %1 of %2 eligible buildings", m_iAttempts, m_aSites.Count());
+   if (untried == 0) { m_sSummary += ", none left"; }
+   else if (m_iAttempts >= m_iAttemptCap) { m_sSummary += string.Format(", limit of %1 tries reached", m_iAttemptCap); }
+   if (putBack > 0) { m_sSummary += string.Format(" (%1 untried of types that had failed)", putBack); }
+   if (m_iExcludedTaken > 0) { m_sSummary += string.Format("; %1 already garrisoned or claimed", m_iExcludedTaken); }
+  }
+  if (failed > 0)
+  {
+   string named;
+   int listed;
+   for (int pick = 0; pick < STATUS_REASONS; pick++)
+   {
+    int best = -1;
+    for (int i = 0; i < reasons.Count(); i++)
+    {
+     if (counts[i] > 0 && (best < 0 || counts[i] > counts[best])) { best = i; }
+    }
+    if (best < 0) { break; }
+    if (!named.IsEmpty()) { named += ", "; }
+    named += string.Format("%1 %2", counts[best], ReasonLabel(reasons[best]));
+    listed += counts[best];
+    counts[best] = 0;
+   }
+   if (failed > listed) { named += string.Format(", %1 other", failed - listed); }
+   if (!m_sSummary.IsEmpty()) { m_sSummary += "; "; }
+   m_sSummary += string.Format("%1 failed: %2", failed, named);
+  }
+  if (fewer > 0)
+  {
+   if (!m_sSummary.IsEmpty()) { m_sSummary += "; "; }
+   m_sSummary += string.Format("%1 took fewer squads than drawn", fewer);
   }
  }
 
@@ -2190,7 +2500,7 @@ class EXPG_RandomGarrisonModule : GenericEntity
    int current = m_iAnalysed + 1;
    if (current > m_iTarget) { current = m_iTarget; }
    string failed;
-   if (m_iFailures > 0) { failed = string.Format(", %1 failed", m_iFailures); }
+   if (m_iFailures > 0) { failed = string.Format(", %1 failed, %2 of %3 tries", m_iFailures, m_iAttempts, m_iAttemptCap); }
    string head = string.Format("Analysing %1/%2 buildings (", current, m_iTarget);
    return head + percent.ToString() + "%" + failed + ")";
   }
@@ -2221,25 +2531,17 @@ class EXPG_RandomGarrisonModule : GenericEntity
   return false;
  }
 
+ // "Done: 4 buildings, 6 squads (seed 7884)", or with fewer buildings than the target
+ // "Done: 1 of 4 buildings, ..."; then the summary (BuildSummary).
  protected string DoneText(string head)
  {
-  string text = string.Format("%1: %2 buildings, %3 squads (seed %4)", head, PlacedCount(), SquadCount(), m_iLastSeed);
-  if (m_iFailures > 0) { text += string.Format("; %1 failed: %2", m_iFailures, FirstFailure()); }
+  int placed = PlacedCount();
+  string text = string.Format("%1: %2 buildings, %3 squads (seed %4)", head, placed, SquadCount(), m_iLastSeed);
+  if (placed < m_iTarget) { text = string.Format("%1: %2 of %3 buildings, %4 squads (seed %5)", head, placed, m_iTarget, SquadCount(), m_iLastSeed); }
+  if (!m_sSummary.IsEmpty()) { text += "; " + m_sSummary; }
   if (m_iExcludedPlayers > 0) { text += string.Format("; %1 skipped near players", m_iExcludedPlayers); }
   if (!m_sStopReason.IsEmpty() && head == "Done") { text += "; " + m_sStopReason; }
   return text;
- }
-
- protected string FirstFailure()
- {
-  foreach (EXPG_RGSite site : m_aSites)
-  {
-   if (site.Stage == EXPG_RGSite.FAILED)
-   {
-    return site.Note;
-   }
-  }
-  return "unknown";
  }
 
  protected string LoadedText()

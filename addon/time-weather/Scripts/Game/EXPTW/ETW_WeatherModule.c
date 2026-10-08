@@ -8,8 +8,9 @@ class ETW_WeatherModuleClass : GenericEntityClass {}
 
 class ETW_WeatherModule : GenericEntity
 {
- // Non-owning: entries become null when their module is deleted.
- protected static ref array<ETW_WeatherModule> s_aModules = {};
+ // Non-owning: entries become null when their module is deleted. Kept on clients too, so
+ // the Scenario Properties weather preview knows whether smoothing is on.
+ protected static ref array<ETW_WeatherModule> s_aModules;
 
  [Attribute("", UIWidgets.EditBox, "Target weather state name (Clear, Cloudy, Overcast, Rainy on vanilla terrains); empty keeps the current clouds", category: "EXPBG Weather Transition")]
  protected string m_sTarget;
@@ -25,7 +26,8 @@ class ETW_WeatherModule : GenericEntity
  protected int m_iWindDirection;
  [Attribute("0", UIWidgets.Slider, "After the transition (0 = hold this weather, 1 = automatic weather)", "0 1 1", category: "EXPBG Weather Transition")]
  protected int m_iAfter;
- [Attribute("1", UIWidgets.CheckBox, "Smooth Scenario Properties weather changes", category: "EXPBG Weather Transition")]
+ // Replicated: clients skip the instant Scenario Properties weather preview while it is ON.
+ [Attribute("1", UIWidgets.CheckBox, "Smooth Scenario Properties weather changes", category: "EXPBG Weather Transition"), RplProp()]
  protected bool m_bSmooth;
  [RplProp()]
  protected string m_sStatus;
@@ -59,6 +61,7 @@ class ETW_WeatherModule : GenericEntity
   super.EOnInit(owner);
   if (!GetGame().InPlayMode())
    return;
+  EXPBG_LazyStatics_ETW_WeatherModule();
   if (!s_aModules.Contains(this))
    s_aModules.Insert(this);
   if (!Replication.IsServer())
@@ -106,7 +109,17 @@ class ETW_WeatherModule : GenericEntity
   else if (key == ETW_Settings.W_AFTER)
    m_iAfter = value;
   else if (key == ETW_Settings.W_SMOOTH)
-   m_bSmooth = value != 0;
+   StoreSmooth(value != 0);
+ }
+
+ //------------------------------------------------------------------------------------------------
+ protected void StoreSmooth(bool smooth)
+ {
+  if (smooth == m_bSmooth)
+   return;
+  m_bSmooth = smooth;
+  if (Replication.IsServer())
+   Replication.BumpMe();
  }
 
  //------------------------------------------------------------------------------------------------
@@ -230,6 +243,7 @@ class ETW_WeatherModule : GenericEntity
  {
   if (!Replication.IsServer())
    return;
+  EXPBG_LazyStatics_ETW_WeatherModule();
   foreach (ETW_WeatherModule module : s_aModules)
   {
    if (module)
@@ -238,9 +252,11 @@ class ETW_WeatherModule : GenericEntity
  }
 
  //------------------------------------------------------------------------------------------------
- // The newest module with "Smooth Scenario Properties weather changes" ON, or null.
+ // The newest module with "Smooth Scenario Properties weather changes" ON, or null (server
+ // and clients).
  static ETW_WeatherModule FindSmoothing()
  {
+  EXPBG_LazyStatics_ETW_WeatherModule();
   for (int i = s_aModules.Count() - 1; i >= 0; i--)
   {
    ETW_WeatherModule module = s_aModules[i];
@@ -253,6 +269,15 @@ class ETW_WeatherModule : GenericEntity
     return module;
   }
   return null;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ //! Creates the collections on first use (not in the global static initializer, which has a
+ //! per-function instruction limit that large modsets exceed on Windows).
+ protected static void EXPBG_LazyStatics_ETW_WeatherModule()
+ {
+  if (!s_aModules)
+   s_aModules = new array<ETW_WeatherModule>();
  }
 }
 

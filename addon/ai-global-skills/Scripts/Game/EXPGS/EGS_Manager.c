@@ -24,6 +24,8 @@ class EGS_Manager
 	static const int TIMER_WARNING_END = 1;
 	static const int TIMER_LETHAL = 2;
 	static const int TIMER_REARM = 3;
+	// End of a "fired upon" contact (SCR_AIGroup.EGS_Provoke, EGS_Provocation.c).
+	static const int TIMER_CALM = 4;
 
 	static const int WARNING_ROUNDS = 3;
 	static const float WARNING_WINDOW_S = 4.0;
@@ -35,6 +37,9 @@ class EGS_Manager
 	static const float WARNING_CLEARANCE = 2.0;
 	static const float REARM_DELAY_S = 60.0;
 	static const float REARM_RETRY_S = 30.0;
+	// Warning shots at a vehicle: seats searched for a player, extra clearance for its size.
+	static const int MAX_TARGET_SEATS = 32;
+	static const float MAX_VEHICLE_CLEARANCE = 6.0;
 	static const float PENDING_BIND_S = 120.0;
 	static const float PENDING_RETRY_S = 2.0;
 
@@ -46,6 +51,10 @@ class EGS_Manager
 	protected static int s_iEpoch;
 	protected static float s_fPendingUntil;
 	protected static float s_fNextPendingTry;
+	// Game Master saves (OpenGameMasterSave): the current save's number, and whether it is
+	// still being written.
+	protected static int s_iGameMasterSave;
+	protected static bool s_bGameMasterSaveOpen;
 	protected static ref array<AIAgent> s_aSweep;
 	protected static ref array<IEntity> s_aUnits;
 	protected static ref array<SCR_AIGroup> s_aGroups;
@@ -74,6 +83,9 @@ class EGS_Manager
 
 		s_World = world;
 		GetGame().GetCallqueue().Remove(Tick);
+		GetGame().GetCallqueue().Remove(CloseGameMasterSave);
+		s_bGameMasterSaveOpen = false;
+		s_iGameMasterSave++;
 		s_bTicking = false;
 		s_bFullRefresh = false;
 		s_bPublish = false;
@@ -99,7 +111,8 @@ class EGS_Manager
 	}
 
 	//------------------------------------------------------------------------------------------------
-	protected static float Now()
+	//! World time in seconds (EXPBG AI Global Skills timers).
+	static float Now()
 	{
 		return GetGame().GetWorld().GetWorldTime() * 0.001;
 	}
@@ -111,6 +124,51 @@ class EGS_Manager
 			return false;
 
 		return GetGame().GetPlayerManager().GetPlayerIdFromControlledEntity(entity) > 0;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Warning Shots First target: a player, or a vehicle with a player inside (bounded seat loop).
+	static bool IsPlayerTarget(IEntity target)
+	{
+		if (!target)
+			return false;
+
+		if (IsPlayerControlled(target))
+			return true;
+
+		if (!Vehicle.Cast(target))
+			return false;
+
+		BaseCompartmentManagerComponent compartments = BaseCompartmentManagerComponent.Cast(target.FindComponent(BaseCompartmentManagerComponent));
+		if (!compartments)
+			return false;
+
+		array<BaseCompartmentSlot> seats = {};
+		compartments.GetCompartments(seats);
+		int count = Math.MinInt(seats.Count(), MAX_TARGET_SEATS);
+		for (int i = 0; i < count; i++)
+		{
+			BaseCompartmentSlot seat = seats[i];
+			if (seat && IsPlayerControlled(seat.GetOccupant()))
+				return true;
+		}
+
+		return false;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Extra distance a warning burst keeps from a vehicle target (half its footprint diagonal).
+	static float TargetClearance(IEntity target)
+	{
+		if (!Vehicle.Cast(target))
+			return 0;
+
+		vector mins;
+		vector maxs;
+		target.GetBounds(mins, maxs);
+		float halfX = (maxs[0] - mins[0]) * 0.5;
+		float halfZ = (maxs[2] - mins[2]) * 0.5;
+		return Math.Clamp(Math.Sqrt(halfX * halfX + halfZ * halfZ), 0, MAX_VEHICLE_CLEARANCE);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -206,12 +264,17 @@ class EGS_Manager
 
 	//------------------------------------------------------------------------------------------------
 	//! Server: per-group override (EXPBG ROE group attribute, mission save or session load).
-	//! Logged once per group and change; repeating the current value logs nothing.
-	static void SetGroupRoe(SCR_AIGroup group, int value)
+	//! Logged once per group and change; repeating the current value logs nothing. A Game
+	//! Master's save (gameMaster) also puts the EXPBG combat mode back when something else
+	//! changed it while the effective ROE stayed the same.
+	static void SetGroupRoe(SCR_AIGroup group, int value, bool gameMaster = false)
 	{
 		EXPBG_LazyStatics_EGS_Manager();
 		if (!group || !Replication.IsServer() || !Ensure() || !group.EGS_IsManaged())
 			return;
+
+		if (gameMaster)
+			group.EGS_StampGameMasterRoe();
 
 		int previous = group.EGS_GetRoeOverride();
 		group.EGS_SetRoeOverride(value);
@@ -229,7 +292,60 @@ class EGS_Manager
 		if (current != previous)
 			PrintFormat("[EXPBG AI SKILLS] group=%1 roeOverride=%2", group, current);
 
-		ApplyGroup(group, true);
+		ApplyGroup(group, true, gameMaster);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: a Game Master saved vanilla "Set combat mode" on this group (EGS_Attributes.c).
+	//! While EXPBG steers the group, the new mode becomes its own and its EXPBG ROE switches to
+	//! Exempt (vanilla), so both tabs agree. When the same save also set the EXPBG ROE, that
+	//! choice stays, applied on top of the new mode.
+	static void OnGameMasterCombatMode(SCR_AIGroup group)
+	{
+		if (!group || !Replication.IsServer() || !Ensure() || !IsActive() || !group.EGS_IsManaged())
+			return;
+
+		if (group.EGS_GameMasterRoeThisSave())
+		{
+			group.EGS_AdoptVanillaMode();
+			return;
+		}
+
+		if (!group.EGS_KeepGameMasterMode())
+			return;
+
+		group.EGS_Log(string.Format("group=%1 vanilla combat mode set by the Game Master: EXPBG rules of engagement now Exempt (vanilla)", group));
+		SetGroupRoe(group, EGS_Settings.GROUP_ROE_EXEMPT);
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Server: a Game Master save is writing an EXPBG ROE now; returns the save's number. All
+	//! attributes of one save are written in one call, so the save ends on the next call-queue
+	//! tick (one call per save; the game call queue also runs while a single-player Game Master
+	//! pause stops world time, so a later save never counts as the same one).
+	static int OpenGameMasterSave()
+	{
+		if (!s_bGameMasterSaveOpen && GetGame())
+		{
+			s_bGameMasterSaveOpen = true;
+			GetGame().GetCallqueue().CallLater(CloseGameMasterSave, 0);
+		}
+
+		return s_iGameMasterSave;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! True while the Game Master save with this number is still being written.
+	static bool IsGameMasterSaveOpen(int saveNumber)
+	{
+		return s_bGameMasterSaveOpen && saveNumber == s_iGameMasterSave;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	protected static void CloseGameMasterSave()
+	{
+		s_bGameMasterSaveOpen = false;
+		s_iGameMasterSave++;
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -325,10 +441,10 @@ class EGS_Manager
 
 	//------------------------------------------------------------------------------------------------
 	//! Point for warning rounds: beside and slightly short of the target, on the ground,
-	//! never closer than 3 m to it (further at long range, see WarningOffset).
-	static vector WarningPoint(vector shooter, vector target)
+	//! never closer than 3 m to it (further at long range and for vehicles, see WarningOffset).
+	static vector WarningPoint(vector shooter, vector target, float clearance = 0)
 	{
-		vector point = WarningOffset(shooter, target, Math.RandomFloat01() < 0.5);
+		vector point = WarningOffset(shooter, target, Math.RandomFloat01() < 0.5, clearance);
 		if (GetGame() && GetGame().GetWorld())
 		{
 			float ground = GetGame().GetWorld().GetSurfaceY(point[0], point[2]);
@@ -339,8 +455,9 @@ class EGS_Manager
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Pure geometry used by WarningPoint and the fixture.
-	static vector WarningOffset(vector shooter, vector target, bool leftSide)
+	//! Pure geometry used by WarningPoint and the fixture; extraClearance widens it for a
+	//! target larger than a soldier (a vehicle, TargetClearance).
+	static vector WarningOffset(vector shooter, vector target, bool leftSide, float extraClearance = 0)
 	{
 		vector direction = target - shooter;
 		direction[1] = 0;
@@ -358,7 +475,7 @@ class EGS_Manager
 		// (SCR_AISuppressionVolume.c), so a line end can lie up to the sphere radius plus
 		// tan(2 deg) x distance from the aim point, and rounds aimed above the ground fly on
 		// past it. Keep the target clear of that reach.
-		float reach = WARNING_RADIUS + Math.Tan(2 * Math.DEG2RAD) * distance + WARNING_CLEARANCE;
+		float reach = WARNING_RADIUS + Math.Tan(2 * Math.DEG2RAD) * distance + WARNING_CLEARANCE + Math.Max(extraClearance, 0);
 		float lateral = Math.Max(Math.Clamp(distance * 0.06, 3.0, 8.0), reach);
 		float shortfall = Math.Clamp(distance * 0.05, 2.0, 6.0);
 		return target + side * lateral - direction * shortfall;
@@ -500,14 +617,32 @@ class EGS_Manager
 			unitOverride = scripted.EGS_GetRoeOverride();
 
 		combat.EGS_SetUnitRoe(EGS_UnitRoe.Effective(unitOverride));
+		// His own Return Fire Only or Warning Shots First holds fire until his squad is fired
+		// upon: the squad is watched for that from now on (EGS_Provocation.c).
+		int own = combat.EGS_GetUnitRoe();
+		if (own == EGS_Settings.ROE_RETURN_FIRE || own == EGS_Settings.ROE_WARNING_SHOTS)
+		{
+			AIAgent agent = combat.GetAiAgent();
+			SCR_AIGroup squad;
+			if (agent)
+				squad = SCR_AIGroup.Cast(agent.GetParentGroup());
+
+			if (squad)
+				squad.EGS_SetOwnRoeMember(true);
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------
-	//! Apply the effective ROE once per settings epoch (forced after a per-group override).
-	protected static void ApplyGroup(SCR_AIGroup group, bool force)
+	//! Apply the effective ROE once per settings epoch (forced after a per-group override;
+	//! reassert after a Game Master's save, see SCR_AIGroup.EGS_ApplyRoe).
+	protected static void ApplyGroup(SCR_AIGroup group, bool force, bool reassert = false)
 	{
 		if (!group)
 			return;
+
+		// No module: nothing is watched for soldier ROE either (ApplyUnit marks it again).
+		if (!IsActive())
+			group.EGS_SetOwnRoeMember(false);
 
 		// A player joined: hand the group back (no-op for untouched groups).
 		if (!group.EGS_IsManaged())
@@ -521,7 +656,7 @@ class EGS_Manager
 			return;
 
 		group.EGS_SetEpoch(s_iEpoch);
-		group.EGS_ApplyRoe(EGS_Settings.EffectiveRoe(IsActive(), group.EGS_GetRoeOverride(), EGS_Settings.GetRoe()));
+		group.EGS_ApplyRoe(EGS_Settings.EffectiveRoe(IsActive(), group.EGS_GetRoeOverride(), EGS_Settings.GetRoe()), reassert);
 	}
 
 	//------------------------------------------------------------------------------------------------

@@ -9,7 +9,7 @@ modded class TimeAndWeatherManagerEntity
  // (Scenario Properties weather or automated weather, mission load, other mods).
  override void ForceWeatherTo(bool setLooping, string weatherID = string.Empty, float transitionDuration = 0, float stateDuration = 0.001, int playerThatChangedWeather = 0)
  {
-  ETW_WeatherRunner.OnForeignWeather();
+  ETW_WeatherRunner.OnForeignWeather(playerThatChangedWeather);
   super.ForceWeatherTo(setLooping, weatherID, transitionDuration, stateDuration, playerThatChangedWeather);
  }
 
@@ -61,8 +61,9 @@ modded class TimeAndWeatherManagerEntity
 
 // Scenario Properties weather while a Weather Transition module has "Smooth Scenario
 // Properties weather changes" ON: a Game Master's weather change blends over that module's
-// duration instead of switching at once. Previews, restores (no manager, player -1) and
-// sessions without such a module keep the vanilla instant change.
+// duration instead of switching at once, and picking a weather shows no instant local
+// preview (it jumped to the new sky and back on Save). Restores (no manager, player -1) and
+// sessions without such a module keep the vanilla instant change and preview.
 // A modded config class repeats the vanilla decorator; without it Edit.conf reports "Unknown
 // class" and the vanilla weather attribute disappears from Scenario Properties.
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
@@ -74,6 +75,18 @@ modded class SCR_WeatherInstantEditorAttribute
   if (item && var && manager && playerID > 0 && ETW_WeatherRunner.SmoothVanillaRequest(var.GetInt(), playerID))
    return;
   super.WriteVariable(item, var, manager, playerID);
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // Local, on the Game Master's machine: the module's smoothing switch is replicated.
+ override void PreviewVariable(bool setPreview, SCR_AttributesManagerEditorComponent manager)
+ {
+  if (setPreview && ETW_WeatherModule.FindSmoothing())
+  {
+   super.PreviewVariable(false, manager);
+   return;
+  }
+  super.PreviewVariable(setPreview, manager);
  }
 }
 

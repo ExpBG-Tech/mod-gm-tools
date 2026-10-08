@@ -252,7 +252,42 @@ class EGS_GroupRoeAttribute : SCR_BaseEditorAttribute
 		if (!var || !Replication.IsServer() || !EGS_Attributes.IsEditingGameMaster(manager, playerID))
 			return;
 
-		EGS_Manager.SetGroupRoe(EGS_Manager.ResolveGroup(SCR_EditableEntityComponent.Cast(item)), var.GetInt());
+		EGS_Manager.SetGroupRoe(EGS_Manager.ResolveGroup(SCR_EditableEntityComponent.Cast(item)), var.GetInt(), true);
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! Vanilla "Set combat mode" on an AI squad that EXPBG steers. A Game Master's choice becomes
+//! the squad's own mode and switches its EXPBG ROE to Exempt (vanilla), so both tabs agree
+//! (EGS_Manager.OnGameMasterCombatMode). A session load (CDF Game Master Save: no editor,
+//! player -1) restores the squad's own mode under the EXPBG one (SCR_AIGroup.EGS_AdoptVanillaMode).
+//! Chains with the EXPBG CDF Compat override of ReadVariable.
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+modded class SCR_AIGroupCombatModeAttribute
+{
+	override void WriteVariable(Managed item, SCR_BaseEditorAttributeVar var, SCR_AttributesManagerEditorComponent manager, int playerID)
+	{
+		super.WriteVariable(item, var, manager, playerID);
+		if (!var || !Replication.IsServer() || !GetGame() || !GetGame().InPlayMode())
+			return;
+
+		// Only when vanilla could write the chosen mode (same conversion as vanilla).
+		float written;
+		if (!ConvertIndexToValue(var.GetInt(), written))
+			return;
+
+		SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
+		if (!editable)
+			return;
+
+		SCR_AIGroup group = SCR_AIGroup.Cast(editable.GetOwner());
+		if (!group)
+			return;
+
+		if (!manager && playerID == -1)
+			group.EGS_AdoptVanillaMode();
+		else if (EGS_Attributes.IsEditingGameMaster(manager, playerID))
+			EGS_Manager.OnGameMasterCombatMode(group);
 	}
 }
 

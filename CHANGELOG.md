@@ -7,14 +7,147 @@
   essential on the group were skipped. It now also skips a squad when every
   soldier is a medic, ammo bearer, vehicle or helicopter crewman or driver
   (vanilla ammo teams, FIA's medical section) and, for squads of other mods
-  without such labels, when the prefab's file name says medic, ammo, ammunition,
-  supply or supplies, logistic, crew or pilot (for example
+  without such labels, when the prefab's file name says medic, ammo,
+  ammunition, supply or supplies, logistic, crew or pilot (for example
   REAPER_USSR_HelicopterCrew). Transport and guard teams (labelled essential)
   are skipped as before; rifle squads, machine gun, AT, sniper, recon and
-  special forces squads stay. Each
-  squad is classified once when the faction's catalog is read; the server log
-  line "squad catalog" now also counts the support squads. Saved settings are
-  unchanged.
+  special forces squads stay. Each squad is classified once when the faction's
+  catalog is read; the server log line "squad catalog" now also counts the
+  support squads. Saved settings are unchanged.
+- Unit Scripts: Freeze now really keeps a soldier on his spot, squad leaders
+  and lone soldiers included. He no longer drifts off while his squad has a
+  waypoint or while he stands idle, and he no longer turns round to glance
+  about; only his head follows a nearby player. If anything other than a Game
+  Master move shifts him more than about a third of a metre, or turns him far
+  away, he is put back. Hold position does the same once a soldier is pushed
+  more than 1.5 m.
+- Unit Scripts: moving a soldier who runs Hold, Freeze or an animation with
+  the editor (dragging him, moving his squad, or the position field) sets his
+  new spot. The server log says "moved by the Game Master" only for real
+  editor moves. Other displacements show as "held on its spot", at most once
+  per soldier every 5 minutes, instead of the misleading "re-anchored".
+- Unit Scripts: "Sit on a chair" now needs room. A soldier standing at or in
+  furniture (for example at a desk) is refused with "no room for 'Sit on a
+  chair' here: <object> is in the way" and keeps the script he had. In the
+  2026-10-07 op, one officer sitting in a table cut the server from 240 to 70
+  FPS for an hour. If furniture is placed into a seated soldier later, or
+  anything other than the Game Master pushes an animating soldier more than
+  1.5 m, the animation ends at once instead of retrying four times with server
+  stutters.
+- Random Garrison: when a building is too small for the chosen squads or has
+  no usable rooms, the zone now keeps trying other buildings, up to three
+  times the number you asked for (and at least 16 more). Buildings of a type
+  that just failed are tried last. Villages full of sheds and one-room houses
+  (for example on Chernarus Minus) now get the number of buildings you set,
+  and the same seed still gives the same buildings.
+- Random Garrison: when a generation finishes or is stopped, the Game Master
+  who started it gets a message with the buildings and squads placed. If fewer
+  buildings than asked for were garrisoned, the message also says how many
+  were tried and why the others were skipped.
+- Random Garrison: if a Game Master stops another Game Master's generation,
+  both of them get the Stopped message.
+- Random Garrison: when a generation stops because the AI limit was reached,
+  the zone now stays Stopped and shows that reason. Before, it immediately
+  showed Done instead, which hid why fewer buildings were garrisoned.
+- Random Garrison: the status now lists failed buildings by reason with a
+  count for each, instead of only the first reason. It also says how many
+  buildings took fewer squads than drawn.
+- Random Garrison: pressing Generate while the zone is still working now shows
+  how far it has got. It says to wait or use Stop, or only to wait while the
+  zone is clearing.
+- Time and Weather: the Weather Transition's clouds now really blend over the
+  chosen time. Before, the sky did not move during a transition and jumped to
+  the new weather at the end. Rain, fog and wind now move with the clouds, so
+  everything arrives at the same moment and the weather stays there.
+- Time and Weather: when the weather changed only a short while ago (for
+  example a weather picked in Scenario Properties a few minutes earlier), the
+  clouds start as soon as the game allows, instead of waiting another 10
+  in-game minutes.
+- Time and Weather: picking a target weather, in the Weather Transition module
+  or in Scenario Properties while smoothing is on, no longer shows the new sky
+  at once on the Game Master's screen and then jumps back on Save. The sky
+  only changes by blending from where it is.
+- Time and Weather: the game needs at least 10 in-game minutes to change the
+  clouds (10 real minutes at the normal day length). Right after another
+  weather change, it may first hold the current sky that long. A shorter
+  transition then takes longer than set; the status says when the clouds
+  start, and says so when the transition takes longer.
+- Time and Weather: if another weather mod takes over the weather during a
+  transition, the transition now leaves the clouds to that mod until the end.
+  Rain, fog and wind still arrive, the other mod's weather is no longer frozen
+  at the end, and the status says the clouds were left to another weather
+  source.
+- Ambient Sounds: placed radios keep playing their chatter when lots of other
+  sounds are playing. When the game cut a radio short to make room for other
+  sounds, the radio stayed silent for the rest of its recording (up to 10
+  minutes). It now starts again after about 3 seconds. If it keeps being cut,
+  it waits a little longer each time (up to 30 seconds), but never longer than
+  it would have waited before. Radio and emergency-alert TV recordings now
+  have a higher sound priority, so the game cuts other sounds before them, and
+  being quiet no longer makes them the first to go.
+- Ambient Sounds: radios, TVs, crowds and placed sounds no longer fail to
+  start, or switch themselves off after three tries, when you are at the very
+  edge of their audible distance. They now start once you are within 90% of it
+  (27 m for a 30 m radio) and keep playing out to the full distance. If the
+  game refuses a start, the source tries again later instead of staying quiet
+  until it is placed again.
+- Ambient Sounds: up to four radios, TVs, crowds or placed sounds near you
+  still play at the same time. A radio that was cut or refused now comes back
+  on its own.
+- Ambient Sounds: the "[EAS] Radio start failed" log line now appears at most
+  twice per placed source until its settings change. It shows the retry delay
+  and whether the sound was too quiet to start, instead of "parked". With
+  Debug on, the log also shows 'evicted', 'refused' and 'inaudible' events,
+  and the summary line counts evictions.
+- Unit Caching: when a mission ends, a last CDF save made during shutdown no
+  longer logs the misleading "[EBG CDF HOLD] Optimizer loading or native
+  restoration is in progress". If the mission has cache zones, that late save
+  is still skipped, and the log now says "The mission is ending, changing or
+  not running; capture skipped and the existing save kept". A mission without
+  cache zones is no longer held back by Unit Caching at that moment.
+- Unit Caching: removed an unused hook on every Game Master placement and
+  every squad member spawn. GM Tools no longer shows up in the script stack of
+  placement errors. Nothing read the flag it set, so gameplay is unchanged.
+- Persistent Battlefield: reconnect log lines now show the disconnect cause by
+  name, for example "cause=REPLICATION/SHUTDOWN (1/9)" instead of
+  "cause=0x0x10009 {}". A refused reservation now says why: no controlled
+  entity, character is dead, and so on.
+- AI Global Skills: Return Fire Only and Warning Shots First squads now open
+  fire only when actually fired upon, then return fire until the contact is
+  over. That means a member hit or killed by an enemy, an enemy round within
+  about 4 m of any member, or an enemy explosion within about 10 m. Before,
+  the vanilla rule fired whenever an enemy shot passed within 13 m of the
+  squad leader or a gunshot went off within 15 m of him, even at other
+  targets. It also ignored hits on members other than the leader; any member
+  hit now counts.
+- AI Global Skills: setting vanilla Set combat mode on a squad with EXPBG
+  rules of engagement switches it to Exempt (vanilla), so both tabs agree.
+  After a Unit Caching Full wake, a native load or a CDF load, a squad keeps
+  its own vanilla combat mode, and a woken squad takes its rules of engagement
+  at once. Native saves and Full cache snapshots made before this version
+  store the EXPBG mode as the squad's own. On such a squad, set Set combat
+  mode once and then the EXPBG rules of engagement again.
+- AI Global Skills: a soldier with his own Return Fire Only no longer joins
+  his squad's suppressive fire.
+- AI Global Skills: Warning Shots First also warns a player in a vehicle. If
+  the spotter cannot fire, the next member who sees the target fires the
+  warning. No warning is given once the squad is already being fired upon, and
+  the switch to lethal and the re-arm are logged.
+- AI Surrender: the surrender chance texts say that nothing happens until the
+  squad has lost the casualty threshold (default 50%). A casualty taken while
+  a squad's cache state is held is now rolled once the squad is awake.
+- AI Surrender: a soldier whose death the game reports only after taking him
+  out of his squad still counts as that squad's casualty (the death of a squad
+  member could go uncounted, so the squad never rolled to surrender). With
+  surrender diagnostics on, a casualty that cannot be matched to a squad is
+  logged.
+- Garrison: a guard pushed off his post no longer leaves a patrol claim within
+  1.5 m of his new spot: nearby patrollers move on to another free stop, and
+  posts off the building plan count for claim spacing. A patroller whose walk
+  ends or fails beside a standing soldier moves on instead of dwelling pressed
+  against him.
+- Tests: the fixture runners delete their copy of the pack after each run
+  (each kept about 0.8 GB).
 
 ## 0.1.14
 

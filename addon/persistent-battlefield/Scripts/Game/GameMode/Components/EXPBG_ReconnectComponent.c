@@ -47,12 +47,13 @@ modded class SCR_ReconnectComponent : SCR_BaseGameModeComponent
 	}
 
 	//------------------------------------------------------------------------------------------------
+	//! Every disconnect cause is eligible. Each log line names the check that decided.
 	override bool HandlePlayerDisconnect(int playerId, KickCauseCode cause)
 	{
 		const SCR_ReconnectData data = StoreData(playerId);
 		if (!IsDataRelevant(data))
 		{
-			PrintFormat("[EXPBG Reconnect] Reservation rejected: no living character for playerId=%1 cause=%2", playerId, cause);
+			PrintFormat("[EXPBG Reconnect] Reservation rejected: %1 for playerId=%2 cause=%3", EXPBG_DescribeIrrelevantData(data), playerId, EXPBG_DescribeCause(cause));
 			return false;
 		}
 
@@ -62,14 +63,49 @@ modded class SCR_ReconnectComponent : SCR_BaseGameModeComponent
 
 		if (identity.IsNull())
 		{
-			Print(string.Format("[EXPBG Reconnect] Reservation rejected: identity unavailable for playerId=%1 cause=%2", playerId, cause), LogLevel.WARNING);
+			Print(string.Format("[EXPBG Reconnect] Reservation rejected: identity unavailable for playerId=%1 cause=%2", playerId, EXPBG_DescribeCause(cause)), LogLevel.WARNING);
 			return false;
 		}
 
 		m_mReconnectData.Set(identity, data);
 		UpdateExpieryCheck();
-		PrintFormat("[EXPBG Reconnect] Reserved living character for playerId=%1 cause=%2", playerId, cause);
+		PrintFormat("[EXPBG Reconnect] Reserved living character for playerId=%1 cause=%2", playerId, EXPBG_DescribeCause(cause));
 		return true;
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! Which part of IsDataRelevant refused the reservation.
+	protected string EXPBG_DescribeIrrelevantData(notnull SCR_ReconnectData data)
+	{
+		if (!data.m_ReservedEntity)
+			return "no controlled entity";
+
+		const ChimeraCharacter character = ChimeraCharacter.Cast(data.m_ReservedEntity);
+		if (!character)
+			return "controlled entity is not a character";
+
+		CharacterControllerComponent controller = character.GetCharacterController();
+		if (!controller)
+			return "character has no controller";
+
+		if (controller.IsDead())
+			return "character is dead";
+
+		return "character refused by IsDataRelevant";
+	}
+
+	//------------------------------------------------------------------------------------------------
+	//! KickCauseCode is an opaque handle: name its group and reason, e.g. "REPLICATION/SHUTDOWN (1/9)".
+	protected string EXPBG_DescribeCause(KickCauseCode cause)
+	{
+		if (!cause)
+			return "none";
+
+		KickCauseGroup2 groupInt;
+		int reasonInt;
+		string group, reason;
+		GetGame().GetFullKickReason(cause, groupInt, reasonInt, group, reason);
+		return string.Format("%1/%2 (%3/%4)", group, reason, groupInt, reasonInt);
 	}
 
 	//------------------------------------------------------------------------------------------------

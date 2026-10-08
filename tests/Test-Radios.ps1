@@ -10,6 +10,8 @@
 #   recording resolves in EXPBG_Radio.acp (sound, shader, the radios' fixed 30 m amplitude, mixer,
 #   exactly one RadioTransmissions sample with a matching .meta, Duration equal to the WAV length)
 #   and is credited. Random groups only name bank recordings.
+# - Every radio and TV event keeps priority 80-100 and bypassVolumeTest 1 in Workbench key order
+#   (no noInAudible), so busy scenes do not evict quiet chatter first. Crowd events are unchanged.
 # - The radios' GM Recording selector offers every radio recording and random group and nothing
 #   else (no Nokia, church bell, firefight ...). Rows map to durable IDs; saves store the IDs.
 # - The 28 placed sounds stay as they are: listed, invisible EAS_SoundModule prefabs named
@@ -149,12 +151,12 @@ $radioRange = [int]$fixed.Groups[1].Value
 # Audio project graph: one class per line.
 $acpPath = Assert-Meta $project.Groups[1].Value $project.Groups[2].Value
 $acp = Read-Text $acpPath
-$soundIds = @{}; $soundShader = @{}; $shaderAmp = @{}; $shaderBank = @{}; $ampRange = @{}; $bankSamples = @{}; $nodeIds = @{}
+$soundIds = @{}; $soundLine = @{}; $soundShader = @{}; $shaderAmp = @{}; $shaderBank = @{}; $ampRange = @{}; $bankSamples = @{}; $nodeIds = @{}
 foreach ($line in $acp -split "`n") {
  if ($line -match '^\s*\w+Class \{ id (\d+) ') { Assert (!$nodeIds.ContainsKey($Matches[1])) "duplicate node id $($Matches[1]) in $($project.Groups[2].Value)"; $nodeIds[$Matches[1]] = $true }
  if ($line -match '^\s*SoundClass \{ id (\d+) name "([^"]+)"') {
   Assert (!$soundIds.ContainsKey($Matches[2])) "duplicate sound $($Matches[2])"
-  $soundIds[$Matches[2]] = [int]$Matches[1]
+  $soundIds[$Matches[2]] = [int]$Matches[1]; $soundLine[$Matches[2]] = $line.TrimEnd()
   $soundShader[[int]$Matches[1]] = [int][regex]::Match($line, 'connections \{ id 64 links \{ ConnectionClass connection \{ id (\d+) port 65').Groups[1].Value
  } elseif ($line -match '^\s*ShaderClass \{ id (\d+) ') {
   $shaderAmp[[int]$Matches[1]] = [int][regex]::Match($line, 'connections \{ id 1 links \{ ConnectionClass connection \{ id (\d+) port 65').Groups[1].Value
@@ -167,9 +169,23 @@ foreach ($line in $acp -split "`n") {
 }
 $mixer = @([regex]::Matches(([regex]::Match($acp, '(?m)^\s*MixerClass \{.*$').Value), 'connection \{ id (\d+) port 65 \}') | ForEach-Object { [int]$_.Groups[1].Value })
 $credits = Read-Text (Join-Path $sounds 'Credits/AUDIO_CREDITS.txt')
+# Workbench writes SoundClass keys in this order: pi, priority, outState, outStatePort, bypassVolumeTest,
+# speedOfSoundSimulation (vanilla Weapons_UnderbarrelGrenadeHits.acp). The engine keeps higher-priority
+# voices when the playing-source limit is exceeded; bypassVolumeTest stops it choosing by loudness.
+function Assert-Kept([string]$Name) {
+ Assert $soundLine.ContainsKey($Name) "missing event $Name in $($project.Groups[2].Value)"
+ $kept = [regex]::Match($soundLine[$Name], ' pi \{ [^}]*\} priority (\d+) outState \d+ outStatePort \d+ bypassVolumeTest 1 speedOfSoundSimulation 0 \}$')
+ Assert ($kept.Success -and [int]$kept.Groups[1].Value -ge 80 -and [int]$kept.Groups[1].Value -le 100) "$Name must keep priority 80-100 and bypassVolumeTest 1 in Workbench key order"
+ Assert ($soundLine[$Name] -notmatch '\bnoInAudible\b') "$Name must keep the engine's inaudible-start refusal (no noInAudible key)"
+}
+$tvBank = Read-Text (Join-Path $sounds 'Scripts/Game/EXPAS/EAS_TVBank.c')
+$tvEvents = @([regex]::Matches((Get-Body $tvBank 'static\s+string\s+Event\s*\('), 'case\s+\d+\s*:\s*return\s+"([A-Za-z0-9_]+)"\s*;') | ForEach-Object { $_.Groups[1].Value })
+Assert ($tvEvents.Count -ge 1 -and $tvBank.Contains('"{' + $project.Groups[1].Value + '}' + $project.Groups[2].Value + '"')) 'EAS_TVBank must play its events from the radio project'
+foreach ($name in $tvEvents) { Assert-Kept $name }
 foreach ($id in @($recordings.Keys | Sort-Object)) {
  $name = $recordings[$id]
  Assert $soundIds.ContainsKey($name) "missing radio event $name in $($project.Groups[2].Value)"
+ Assert-Kept $name
  $sound = $soundIds[$name]; $shader = $soundShader[$sound]
  Assert ($mixer -contains $sound) "$name is not routed to the mixer"
  Assert ($shaderAmp.ContainsKey($shader) -and $ampRange[$shaderAmp[$shader]] -eq $radioRange) "$name does not use the radios' $radioRange m amplitude"
@@ -223,4 +239,4 @@ foreach ($item in $placed) {
  $used[$value] = $true
 }
 
-"PASS: browser lists 3 radios ($(@($radios | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.Path) }) -join ', ')) and 28 placed sounds; Radio Red stays loadable and unlisted; $($recordings.Count) radio recordings + $($groups.Count) random groups resolve to radio transmissions and match the radio selector."
+"PASS: browser lists 3 radios ($(@($radios | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.Path) }) -join ', ')) and 28 placed sounds; Radio Red stays loadable and unlisted; $($recordings.Count) radio recordings + $($groups.Count) random groups resolve to radio transmissions, keep priority and bypassVolumeTest (with $($tvEvents.Count) TV event) and match the radio selector."

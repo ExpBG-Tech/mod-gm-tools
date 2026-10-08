@@ -141,9 +141,6 @@ class EBG_IdMirror
 
 class EBG_MissionPersistence
 {
- // Only explicit native GM creation stacks authorize a new entity, never load timing.
- static int GMSpawnDepth;
- static bool GMSpawnInProgress() { return Replication.IsServer() && GMSpawnDepth > 0; }
  static bool MayEnroll(SCR_ChimeraCharacter character)
  {
   if (!character || character.EBG_WasPlayerControlled()) return false;

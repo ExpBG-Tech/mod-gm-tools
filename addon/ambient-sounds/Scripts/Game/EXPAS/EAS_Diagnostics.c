@@ -51,7 +51,7 @@ class EAS_Diagnostics
 // Integer-ms zeros are below timer resolution, not proof of zero work.
 class EAS_DiagnosticWindow
 {
- int Calls, TotalMS, MaxMS, Starts, Stops, Dropped, Scheduled;
+ int Calls, TotalMS, MaxMS, Starts, Stops, Dropped, Scheduled, Evicted;
  protected float m_NextReport;
  void EAS_DiagnosticWindow(float now = 0) { Reset(now); }
  bool Due(float now) { return now >= m_NextReport || now < m_NextReport - 5; }
@@ -63,14 +63,14 @@ class EAS_DiagnosticWindow
  }
  void Reset(float now)
  {
-  Calls = 0; TotalMS = 0; MaxMS = 0; Starts = 0; Stops = 0; Dropped = 0; Scheduled = 0;
+  Calls = 0; TotalMS = 0; MaxMS = 0; Starts = 0; Stops = 0; Dropped = 0; Scheduled = 0; Evicted = 0;
   m_NextReport = now + 5;
  }
  void Report(string runtime, float now, int admitted, int voices, int pending, int interval, bool final = false)
  {
   if (!EAS_Diagnostics.Enabled() || (!final && !Due(now))) return;
   string state = string.Format("runtime=%1 admitted=%2 voices=%3 pending=%4 interval_ms=%5 final=%6", runtime, admitted, voices, pending, interval, final);
-  string counts = string.Format(" calls=%1 total_ms=%2 max_ms=%3 scheduled=%4 starts=%5 stops=%6 rejected=%7", Calls, TotalMS, MaxMS, Scheduled, Starts, Stops, Dropped);
+  string counts = string.Format(" calls=%1 total_ms=%2 max_ms=%3 scheduled=%4 starts=%5 stops=%6 rejected=%7 evicted=%8", Calls, TotalMS, MaxMS, Scheduled, Starts, Stops, Dropped, Evicted);
   EAS_Diagnostics.Event("summary", null, state + counts);
   Reset(now);
  }

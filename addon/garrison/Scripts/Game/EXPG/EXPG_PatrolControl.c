@@ -258,6 +258,7 @@ class EXPG_PatrolControl
 		m_Visited.Insert(m_Node);
 		if (m_Visited.Count() > 3) { m_Visited.RemoveOrdered(0); }
 		m_Look = m_Plan.Nodes[m_Node].WatchLook;
+		LeaveIfCrowded(now);
 	}
 
 	// The walk left the building, lost its path or ran out of time: stop where he
@@ -298,6 +299,33 @@ class EXPG_PatrolControl
 		m_State = STATE_DWELL;
 		m_DwellUntil = now + Math.RandomFloat(5000, 10000);
 		m_Look = m_Plan.Nodes[m_Node].WatchLook;
+		LeaveIfCrowded(now);
+	}
+
+	// Never dwell beside another standing soldier (a guard pushed off his post, a
+	// patroller who stopped short; within 1.2 m on his floor, EXPG_BuildingPlan.
+	// NearStanding): the stop is skipped for two minutes and the next leg starts at
+	// once; with no free stop he dwells (StartLeg). Not while knocked out or while a
+	// cache sleep settles; callers never reach it during an alarm.
+	protected void LeaveIfCrowded(float now)
+	{
+		if (m_Settle || m_Node < 0 || !m_Actor || !m_Controller || m_Controller.IsUnconscious()) { return; }
+		if (!m_Plan.NearStanding(m_Actor.GetOrigin(), m_Actor, 1.2)) { return; }
+		SkipStop(m_Node, now);
+		StartLeg(now);
+	}
+
+	// Not a patrol destination for two minutes (StartLeg).
+	protected void SkipStop(int node, float now)
+	{
+		int at = m_Skipped.Find(node);
+		if (at >= 0)
+		{
+			m_SkipUntil[at] = now + 120000;
+			return;
+		}
+		m_Skipped.Insert(node);
+		m_SkipUntil.Insert(now + 120000);
 	}
 
 	// Native looking stays free in combat; at rest he watches his hallway or post.
@@ -541,6 +569,22 @@ class EXPG_PatrolControl
 		m_State = STATE_DWELL;
 		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + Math.RandomFloat(10000, 30000);
 		m_Look = m_Plan.Nodes[m_Node].WatchLook;
+	}
+
+	// A guard's post moved within POST_SPACING of this claim (EXPG_GarrisonManager.
+	// YieldClaims): the stop is skipped for two minutes and he walks to another free
+	// stop at once (a walk under way stops first). With none free he keeps the claim
+	// and a dwell keeps its end. Never during an alarm, while knocked out or while a
+	// cache sleep settles. Guards are never moved by this.
+	void Yield()
+	{
+		if (!m_Speed || !m_Plan || m_Node < 0 || InAlert() || m_Settle || !IsOwnedActor() || m_Controller.IsUnconscious()) { return; }
+		float now = GetGame().GetWorld().GetWorldTime();
+		int kept = m_Node;
+		float dwellEnd = m_DwellUntil;
+		SkipStop(kept, now);
+		StartLeg(now);
+		if (m_Node == kept) { m_DwellUntil = dwellEnd; }
 	}
 
 	// Woken from Simulation caching: the dwell that ran out while he was paused

@@ -464,6 +464,15 @@ class EBG_CacheManager
   // world whose cleanup is still in progress.
   return !Unloading || s_UnloadingWorld != GetGame().GetWorld() || s_UnloadingMode != mode;
  }
+ // From this world's OnBeforeWorldCleanup until the next world: Optimizer state is
+ // already released, so no capture may vouch for it.
+ static bool IsCleaningUpCurrentWorld()
+ {
+  if (!Unloading || !GetGame() || s_UnloadingWorld != GetGame().GetWorld())
+   return false;
+  SCR_BaseGameMode mode = SCR_BaseGameMode.Cast(GetGame().GetGameMode());
+  return !mode || mode == s_UnloadingMode;
+ }
  static EBG_CacheManager ReadyForPortableImport()
  {
   if (!GetGame()) return null;

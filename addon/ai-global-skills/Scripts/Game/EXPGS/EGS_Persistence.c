@@ -4,7 +4,8 @@
 // without soldier overrides is still written as version 1; version 1 saves still load.
 // The module entity itself is saved by the vanilla editable-entity configuration; the
 // settings apply while a module exists. Untouched missions write nothing (DEFAULT).
-// Attribute-based savers (CDF Game Master Save) use EGS_SavedAttributes.c instead.
+// Attribute-based savers (CDF Game Master Save) use EGS_SavedAttributes.c instead. The
+// vanilla group serializer below saves a group's own combat mode, not the EXPBG one.
 class EGS_SettingsState : PersistentState
 {
 }
@@ -108,5 +109,43 @@ class EGS_SettingsSerializer : ScriptedStateSerializer
 		EGS_Manager.ImportGroupOverrides(groupIds, groupRoe);
 		EGS_Manager.ImportUnitOverrides(unitIds, unitRoe);
 		return true;
+	}
+}
+
+//------------------------------------------------------------------------------------------------
+//! Native mission save of an AI group's vanilla combat mode: the group's own mode, not the one
+//! an EXPBG ROE set (the EXPBG ROE is saved above and applied again after the load). A load
+//! onto a group EXPBG already steers keeps the loaded mode as the group's own and puts the
+//! EXPBG mode back, so Exempt (vanilla) and deleting the module restore the real mode.
+modded class SCR_AIGroupUtilityComponentSerializer
+{
+	override protected ESerializeResult Serialize(notnull IEntity owner, notnull GenericComponent component, notnull SaveContext context)
+	{
+		SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(component);
+		SCR_AIGroup group = SCR_AIGroup.Cast(owner);
+		EAIGroupCombatMode original;
+		if (!utility || !group || !group.EGS_GetOriginalMode(original))
+			return super.Serialize(owner, component, context);
+
+		// Written synchronously: the EXPBG mode is back before anything else reads it.
+		EAIGroupCombatMode current = utility.GetCombatModeExternal();
+		utility.SetCombatMode(original);
+		ESerializeResult result = super.Serialize(owner, component, context);
+		utility.SetCombatMode(current);
+		return result;
+	}
+
+	override protected bool Deserialize(notnull IEntity owner, notnull GenericComponent component, notnull LoadContext context)
+	{
+		SCR_AIGroupUtilityComponent utility = SCR_AIGroupUtilityComponent.Cast(component);
+		SCR_AIGroup group = SCR_AIGroup.Cast(owner);
+		if (!utility || !group || !group.EGS_IsRoeTouched())
+			return super.Deserialize(owner, component, context);
+
+		// Vanilla writes only a mode other than its default: start from that default.
+		utility.SetCombatMode(EAIGroupCombatMode.FIRE_AT_WILL);
+		bool loaded = super.Deserialize(owner, component, context);
+		group.EGS_AdoptVanillaMode();
+		return loaded;
 	}
 }

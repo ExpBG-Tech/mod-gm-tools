@@ -7,6 +7,9 @@
 //   rejoin the squad; portable snapshots hold them too ("egsSurvivorRoe", one value per
 //   survivor in survivor order, only when one is set).
 // Snapshots written before these keys existed have none: no overrides.
+// The squad's vanilla combat mode (snapshot setting 15) is the squad's own mode, not the one
+// an EXPBG ROE set: a Full wake, and an EXPBG ROE applied afterwards, start from it, so
+// Exempt (vanilla), a vanilla module default or deleting the module restore the real mode.
 modded class EBG_SurvivorCarry
 {
 	protected int m_iEGS_Roe;
@@ -43,6 +46,9 @@ modded class EBG_SurvivorCarry
 
 modded class EBG_CacheGroupSnapshot
 {
+	// Index of the external combat mode in EBG_CacheGroupSnapshot.Settings.
+	protected static const int EGS_COMBAT_SETTING = 15;
+
 	protected int m_iEGS_Roe;
 
 	//------------------------------------------------------------------------------------------------
@@ -58,16 +64,26 @@ modded class EBG_CacheGroupSnapshot
 		if (group)
 			m_iEGS_Roe = group.EGS_GetRoeOverride();
 
-		return super.CaptureGroup(group);
+		bool captured = super.CaptureGroup(group);
+		EAIGroupCombatMode original;
+		if (captured && group && Settings && Settings.IsIndexValid(EGS_COMBAT_SETTING) && group.EGS_GetOriginalMode(original))
+			Settings[EGS_COMBAT_SETTING] = original;
+
+		return captured;
 	}
 
 	//------------------------------------------------------------------------------------------------
 	override bool Apply(SCR_AIGroup group)
 	{
 		bool applied = super.Apply(group);
-		if (applied && group && m_iEGS_Roe != EGS_Settings.GROUP_ROE_DEFAULT)
-			EGS_Manager.SetGroupRoe(group, m_iEGS_Roe);
+		if (!applied || !group)
+			return applied;
 
+		// The wake wrote the squad's own mode; a squad EXPBG already steers keeps its EXPBG mode.
+		group.EGS_AdoptVanillaMode();
+		// Applied at once, the module default included: the squad wakes under its EXPBG ROE,
+		// not in its own mode until the next AI Global Skills tick (logs only a change).
+		EGS_Manager.SetGroupRoe(group, m_iEGS_Roe);
 		return applied;
 	}
 
