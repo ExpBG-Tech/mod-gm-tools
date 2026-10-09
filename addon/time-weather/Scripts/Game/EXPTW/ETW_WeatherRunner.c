@@ -35,6 +35,12 @@
 // never leaks into the next mission.
 class ETW_WeatherRunner
 {
+ // Override writes of rain, fog and wind (no per-frame script). The engine moves the rain it
+ // applies to each written value over about 0.75 s; GetRainIntensity() in the frame of a
+ // write returns the value just written, ahead of the applied rain by the ease's slope times
+ // 0.75 s whatever the tick (native 2026-10-09: every such read equal to the value written,
+ // at most 0.019 ahead; the applied rain never moved back). A reader judging the rain every
+ // frame must treat that one-frame read as the engine's, not as a reversal.
  static const int TICK_MS = 500;
  static const int CHANNELS = 4;
  static const int CH_RAIN = 0;

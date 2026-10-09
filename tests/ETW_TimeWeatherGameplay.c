@@ -16,6 +16,11 @@
 //              10 s), started 12 s after the day length changed (past the weather's hold):
 //              rain moves monotonically from its start toward the target, a fifth to four
 //              fifths of the way after 30 s (ease-in-out with the clouds), never jumping.
+//              Rain is checked every frame (printed every 2 s). Engine artefact tolerated:
+//              in the frame of an override write (every 0.5 s) GetRainIntensity() returns
+//              the value just written, while the rain the engine applies reaches it about
+//              0.75 s later; that single-frame read (at most WRITE_FRAME_LIMIT above its
+//              neighbours) is counted as a write-frame read, not as a reversal.
 //  finished    after the minute (plus the clouds' grace): rain at target within 0.02,
 //              wind 8 m/s within 0.1, the target state reached, weather held (looping).
 //  interrupt   a new transition 20 s into another one continues from the rain reached
@@ -29,6 +34,13 @@ class EXPG_GarrisonGameplayClass : GenericEntityClass {}
 class EXPG_GarrisonGameplay : GenericEntity
 {
  static const float FIXTURE_SECONDS = 300;
+ // Largest move back of rain (share of the way) that is not a reversal.
+ static const float RAIN_SLACK = 0.01;
+ // Largest single-frame read above the applied rain in the frame of an override write: the
+ // steepest ease (1.5 / the 50 s cloud blend) times the engine's 0.75 s catch-up is 0.0225.
+ // Native 2026-10-09: 119 write frames, each read equal to the value written (within 2e-6)
+ // and at most 0.019 above its neighbours; the other 3443 frames never moved back.
+ static const float WRITE_FRAME_LIMIT = 0.025;
  static const ResourceName WEATHER_MODULE = "{B291F78787B9F4B0}PrefabsEditable/EXPTW/ETW_WeatherTransition.et";
  static const ResourceName SKIP_MODULE = "{D9EDAB5E98566D9A}PrefabsEditable/EXPTW/ETW_TimeSkip.et";
  vector m_vOrigin = "4773.46 0 7094.57";
@@ -56,6 +68,10 @@ class EXPG_GarrisonGameplay : GenericEntity
  float m_fRainStart;
  float m_fRainTarget;
  float m_fLastProgress;
+ // Highest rain progress confirmed as applied (a write-frame read is never confirmed).
+ float m_fRainHigh;
+ int m_iWriteFrames;
+ float m_fNextPrint;
  int m_iSamples;
  bool m_bMonotonic = true;
  bool m_bMidSeen;
@@ -119,7 +135,10 @@ class EXPG_GarrisonGameplay : GenericEntity
  }
 
  //------------------------------------------------------------------------------------------------
- void Wait(float seconds)
+ // Not named Wait: every Wait() of this fixture was ignored natively (2026-10-09 console: the
+ // next phase ran one frame after Wait(1), Wait(12) and Wait(20); 3633 per-frame samples
+ // instead of one every 2 s), as in the other ETW fixtures.
+ void PauseFor(float seconds)
  {
   m_fNext = Now() + seconds;
  }
@@ -323,7 +342,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   m_iReceivedAtStart = ETW_FadeOverlay.GetReceived();
   m_iAppliedAtStart = ETW_TimeSkip.GetApplied();
   m_iPhase = 1;
-  Wait(1);
+  PauseFor(1);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -338,7 +357,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(ETW_FadeOverlay.GetShown() == 0 && !ETW_FadeOverlay.IsShowing(), "a dedicated server draws no black screen");
   m_iSkipTick = System.GetTickCount();
   m_iPhase = 2;
-  Wait(2.6);
+  PauseFor(2.6);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -352,7 +371,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   m_TimeManager.SetTimeOfTheDay(23, true);
   ConfigureSkip(2, 0);
   m_iPhase = 3;
-  Wait(1);
+  PauseFor(1);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -362,7 +381,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(before && ETW_TimeSkip.Start(m_SkipModule, -1), "second skip started after the first ended");
   m_iSkipTick = System.GetTickCount();
   m_iPhase = 4;
-  Wait(2.6);
+  PauseFor(2.6);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -371,7 +390,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   if (!ETW_TimeSkip.IsRunning() || System.GetTickCount() - m_iSkipTick > 15000)
    return false;
-  Wait(0.25);
+  PauseFor(0.25);
   return true;
  }
 
@@ -389,7 +408,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   m_fDayLength = m_TimeManager.GetDayDuration();
   m_TimeManager.SetDayDuration(1440);
   m_iPhase = 10;
-  Wait(12);
+  PauseFor(12);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -427,8 +446,36 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(started && ETW_WeatherRunner.IsRunning() && ETW_WeatherRunner.GetTarget() == m_sStateB && modes, "transition started toward the target with rain and wind set");
   m_fPhaseAt = Now();
   m_fLastProgress = 0;
+  m_fRainHigh = 0;
+  m_iWriteFrames = 0;
+  m_fNextPrint = 0;
   m_iPhase = 5;
-  Wait(5);
+  PauseFor(5);
+ }
+
+ //------------------------------------------------------------------------------------------------
+ // One rain reading per frame while the transition runs (progress 0-1 toward the target).
+ // A reversal is a reading more than RAIN_SLACK below the highest confirmed one. A reading
+ // that stands at most WRITE_FRAME_LIMIT above the confirmed rain for one frame only (the next
+ // reading drops back more than RAIN_SLACK but not below it) is the value just written by the
+ // runner's tick, read before the engine applies it: counted, never confirmed.
+ void ObserveRain(float progressed)
+ {
+  if (m_iSamples > 0)
+  {
+   float back = m_fLastProgress - progressed;
+   bool writeFrame = back > RAIN_SLACK && progressed >= m_fRainHigh - RAIN_SLACK && m_fLastProgress - m_fRainHigh <= WRITE_FRAME_LIMIT;
+   if (writeFrame)
+    m_iWriteFrames++;
+   else
+    m_fRainHigh = Math.Max(m_fRainHigh, m_fLastProgress);
+   if (progressed < m_fRainHigh - RAIN_SLACK)
+    m_bMonotonic = false;
+  }
+  else
+   m_fRainHigh = progressed;
+  m_fLastProgress = progressed;
+  m_iSamples++;
  }
 
  //------------------------------------------------------------------------------------------------
@@ -440,23 +487,22 @@ class EXPG_GarrisonGameplay : GenericEntity
   bool running = ETW_WeatherRunner.IsRunning();
   if (running)
   {
-   m_iSamples++;
-   if (progressed < m_fLastProgress - 0.01)
-    m_bMonotonic = false;
-   m_fLastProgress = progressed;
+   ObserveRain(progressed);
    if (!m_bMidSeen && elapsed >= 27 && elapsed <= 33)
    {
     m_bMidSeen = true;
     m_bMidOk = progressed > 0.2 && progressed < 0.8;
    }
   }
-  PrintFormat("[ETW SAMPLE] t=%1 rain=%2 progress=%3 wind=%4 overcast=%5 state=%6 running=%7 status=%8", elapsed, rain, progressed, m_TimeManager.GetWindSpeed(), Overcast(), StateName(), running, ETW_WeatherRunner.GetStatus());
-  if (running && elapsed < 100)
+  if (!running || elapsed >= m_fNextPrint)
   {
-   Wait(2);
-   return;
+   m_fNextPrint = elapsed + 2;
+   PrintFormat("[ETW SAMPLE] t=%1 rain=%2 progress=%3 wind=%4 overcast=%5 state=%6 running=%7 status=%8", elapsed, rain, progressed, m_TimeManager.GetWindSpeed(), Overcast(), StateName(), running, ETW_WeatherRunner.GetStatus());
   }
-  m_bGradualPass = Check(m_bMonotonic && m_bMidSeen && m_bMidOk && m_iSamples >= 10, string.Format("rain moved gradually: %1 samples, monotonic %2, half way at 30 s %3", m_iSamples, m_bMonotonic, m_bMidOk));
+  // Every frame until the transition ends (EOnFrame calls again: no pause).
+  if (running && elapsed < 100)
+   return;
+  m_bGradualPass = Check(m_bMonotonic && m_bMidSeen && m_bMidOk && m_iSamples >= 10, string.Format("rain moved gradually: %1 samples, monotonic %2, half way at 30 s %3, write-frame reads %4, highest %5", m_iSamples, m_bMonotonic, m_bMidOk, m_iWriteFrames, m_fRainHigh));
   bool rainEnd = Math.AbsFloat(rain - m_fRainTarget) < 0.02 && m_TimeManager.IsRainIntensityOverridden();
   bool windEnd = Math.AbsFloat(m_TimeManager.GetWindSpeed() - 8) < 0.1;
   bool stateEnd = StateName() == m_sStateB;
@@ -475,7 +521,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   ConfigureWeather(m_sStateA, choiceBack, 0);
   Check(ETW_WeatherRunner.StartFromModule(m_WeatherModule, -1) && ETW_WeatherRunner.GetChannelMode(ETW_WeatherRunner.CH_WIND_SPEED) == ETW_WeatherRunner.MODE_RELEASE, string.Format("transition back to %1 started (rain to %2, wind handed back)", m_sStateA, rainBack));
   m_iPhase = 6;
-  Wait(20);
+  PauseFor(20);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -487,7 +533,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   m_bRestarted = ETW_WeatherRunner.StartFromModule(m_WeatherModule, -1);
   PrintFormat("[ETW INTERRUPT] rainBefore=%1 rainNow=%2 restarted=%3 elapsed01=%4", m_fRainBeforeInterrupt, m_TimeManager.GetRainIntensity(), m_bRestarted, ETW_WeatherRunner.Elapsed01());
   m_iPhase = 7;
-  Wait(1);
+  PauseFor(1);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -502,7 +548,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   Check(ETW_TimeSkip.Start(m_SkipModule, -1), "time skip started during the transition");
   m_iSkipTick = System.GetTickCount();
   m_iPhase = 8;
-  Wait(2.6);
+  PauseFor(2.6);
  }
 
  //------------------------------------------------------------------------------------------------
@@ -519,7 +565,7 @@ class EXPG_GarrisonGameplay : GenericEntity
   m_iForeignBefore = ETW_WeatherRunner.GetForeignStops();
   Check(ETW_WeatherRunner.StartFromModule(m_WeatherModule, -1), "transition started for the foreign change case");
   m_iPhase = 9;
-  Wait(3);
+  PauseFor(3);
  }
 
  //------------------------------------------------------------------------------------------------

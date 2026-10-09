@@ -37,6 +37,9 @@
   Surrender and interrogation chances read "Squad ..." and "Soldier ..."; they can be set before the
   AI Surrender module is placed, but surrenders still need the module. Both modules also add these
   settings in script, so another mod's attribute list override cannot hide them.
+- Garrison: a patroller whose walk fails beside a standing guard no longer sleeps or wakes metres
+  from his stop; he takes the nearest free stop where he stands (failed walk, forced settle,
+  Simulation wake) or walks back to his stop on waking.
 
 ## 0.1.17
 

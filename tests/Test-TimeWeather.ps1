@@ -277,6 +277,8 @@ foreach ($path in $sources) {
  $text = Read-Text $path
  Assert (![regex]::IsMatch($text, '\b(int|float|bool|string|vector|auto|IEntity|ResourceName)\s+(owned|Sleep)\b')) "reserved Enforce name used as a variable in $path"
  Assert (![regex]::IsMatch($text, 'Math\.RandomFloat\(\s*0\s*,\s*0\s*\)')) "Math.RandomFloat(0, 0) logs an engine error: $path"
+ # A method named Wait was ignored natively (the next fixture phase ran one frame later).
+ Assert (![regex]::IsMatch($text, '\b(void|bool|int|float)\s+Wait\s*\(') -and ![regex]::IsMatch($text, '(?m)^\s*Wait\s*\(')) "a method named Wait is ignored natively (use PauseFor): $path"
  Assert (![regex]::IsMatch($text, '(?m)^\s*(protected\s+|private\s+)?(static\s+)?(ref\s+)?\w+(<[^>]*>)?\s+(WeatherState|WeatherVariant|WeatherTransition|LocalWeatherSituation|TimeAndWeatherManagerEntity|FactionKey|ResourceName|Widget|TextWidget)\s*(=|;)')) "a field or variable is named like a vanilla type in $path"
  foreach ($line in $text -split "`n") {
   Assert (!($line -match '\S.*\breturn\s+[^;\s]' -and $line -notmatch '^\s*return\b' -and $line -notmatch '^\s*//')) "non-void return must be on its own line in ${path}: $($line.Trim())"
@@ -301,6 +303,14 @@ Assert ($fixture -match 'class\s+EXPG_GarrisonGameplayClass\s*:\s*GenericEntityC
 $regex = '\[ETW RESULT\] checks=[1-9]\d* failures=0 rollover=1 skip=1 broadcasts=3 gradual=1 finished=1 interrupt=1 skipFinish=1 foreign=1 smooth=1 reason=complete'
 Assert ($fixture.Contains("-FixturePath tests/ETW_TimeWeatherGameplay.c -TimeoutSeconds 420 -OrchestratorSlotGranted -ExpectResult '$regex'") -and !$fixture.Contains('smooth=[01]')) 'fixture header must carry its runner command, with smooth=1 required'
 Assert ($fixture -match 'm_fDayLength = m_TimeManager\.GetDayDuration\(\);\s*m_TimeManager\.SetDayDuration\(1440\);' -and (Get-Body $fixture 'void\s+Finish\s*\(') -match 'if \(m_TimeManager && m_fDayLength > 0\)\s*m_TimeManager\.SetDayDuration\(m_fDayLength\);') 'fixture runs its weather phases at a 1440 s day and restores the day length in Finish'
+# gradual: rain judged every frame against the highest confirmed reading; the one-frame read
+# of the value the runner just wrote (the engine applies it about 0.75 s later) is tolerated
+# up to WRITE_FRAME_LIMIT, never confirmed, and counted; any other move back fails.
+$observe = Get-Body $fixture 'void\s+ObserveRain\s*\('
+$sampleWeather = Get-Body $fixture 'void\s+SampleWeather\s*\('
+Assert ($fixture -match 'static const float RAIN_SLACK = 0\.01;' -and [regex]::Match($fixture, 'static const float WRITE_FRAME_LIMIT = (0\.\d+);').Success -and [double][regex]::Match($fixture, 'static const float WRITE_FRAME_LIMIT = (0\.\d+);').Groups[1].Value -le 0.025) 'fixture tolerates a write-frame read of at most 0.025 and a move back of at most 0.01'
+Assert ($observe -match 'bool writeFrame = back > RAIN_SLACK && progressed >= m_fRainHigh - RAIN_SLACK && m_fLastProgress - m_fRainHigh <= WRITE_FRAME_LIMIT;' -and $observe -match 'if \(writeFrame\)\s*m_iWriteFrames\+\+;\s*else\s*m_fRainHigh = Math\.Max\(m_fRainHigh, m_fLastProgress\);' -and $observe -match 'if \(progressed < m_fRainHigh - RAIN_SLACK\)\s*m_bMonotonic = false;') 'fixture: a reading below the highest confirmed rain fails; only a one-frame write read is skipped'
+Assert ($sampleWeather -match 'ObserveRain\(progressed\);' -and $sampleWeather -match 'if \(running && elapsed < 100\)\s*return;' -and $sampleWeather -notmatch 'PauseFor\(2\)' -and $sampleWeather -match 'write-frame reads %4') 'fixture: rain is judged every frame while the transition runs and the write-frame reads are reported'
 $head = [regex]::Match($fixture, 'string head = string\.Format\("(\[ETW RESULT\][^"]*)"').Groups[1].Value
 $tail = [regex]::Match($fixture, 'string tail = string\.Format\("( foreign=[^"]*)"').Groups[1].Value
 Assert ($head -eq '[ETW RESULT] checks=%1 failures=%2 rollover=%3 skip=%4 broadcasts=%5 gradual=%6 finished=%7 interrupt=%8 skipFinish=%9' -and $tail -eq ' foreign=%1 smooth=%2 reason=%3') "fixture RESULT format changed: $head$tail"

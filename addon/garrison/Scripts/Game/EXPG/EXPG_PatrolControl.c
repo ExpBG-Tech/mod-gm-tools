@@ -298,8 +298,47 @@ class EXPG_PatrolControl
 		}
 		m_State = STATE_DWELL;
 		m_DwellUntil = now + Math.RandomFloat(5000, 10000);
+		// Neither stop reached (the walk back failed too): never dwell, cache or wake
+		// metres from the claim; the nearest free stop where he stands is his claim.
+		ClaimWhereHeStands();
 		m_Look = m_Plan.Nodes[m_Node].WatchLook;
 		LeaveIfCrowded(now);
+	}
+
+	// Within Start's acceptance of his claimed stop (1.5 m across, 1 m up or down).
+	protected bool NearClaim()
+	{
+		if (!m_Actor || !m_Plan || m_Node < 0)
+		{
+			return false;
+		}
+		vector origin = m_Actor.GetOrigin();
+		vector stop = m_Plan.Nodes[m_Node].Position;
+		return vector.DistanceXZ(origin, stop) <= 1.5 && Math.AbsFloat(origin[1] - stop[1]) <= 1.0;
+	}
+
+	// Stopped short of his claim: the nearest free stop within 1.5 m of where he
+	// stands becomes his claim (EXPG_BuildingPlan.ClaimNearStop). True when he now
+	// stands near his claim; false (claim kept) when no stop near him is free.
+	// Event-driven only: a failed walk, a forced settle, a Simulation wake.
+	protected bool ClaimWhereHeStands()
+	{
+		if (!m_Reserved || !m_Actor || !m_Plan || m_Node < 0)
+		{
+			return false;
+		}
+		if (NearClaim())
+		{
+			return true;
+		}
+		int nearStop = m_Plan.ClaimNearStop(m_Actor, m_Actor.GetOrigin(), 1.5);
+		if (nearStop < 0)
+		{
+			return false;
+		}
+		m_Node = nearStop;
+		m_Look = m_Plan.Nodes[nearStop].WatchLook;
+		return true;
 	}
 
 	// Never dwell beside another standing soldier (a guard pushed off his post, a
@@ -587,12 +626,27 @@ class EXPG_PatrolControl
 		if (m_Node == kept) { m_DwellUntil = dwellEnd; }
 	}
 
-	// Woken from Simulation caching: the dwell that ran out while he was paused
-	// starts again, so a restored patroller first stands at his stop.
+	// Woken from Simulation caching (EXPG_GarrisonManager.Wake, after the restore
+	// gave his original actor back): the dwell that ran out while he was paused
+	// starts again, so a restored patroller first stands at his stop. One who slept
+	// off his claim (a walk that failed beside a standing guard, native interior
+	// fixture 0.1.14-0.1.18: 3.3-4.5 m off) claims the nearest free stop where he
+	// stands; with none free he walks back to his claimed stop at once.
 	void RestartDwell()
 	{
-		if (m_State != STATE_DWELL || m_Move) { return; }
+		if (m_State != STATE_DWELL || m_Move)
+		{
+			return;
+		}
 		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + Math.RandomFloat(10000, 30000);
+		if (!m_Speed || !IsOwnedActor() || ClaimWhereHeStands() || m_Node < 0)
+		{
+			return;
+		}
+		m_From = -1;
+		m_Backtrack = true;
+		BeginMove(m_Plan.Nodes[m_Node].Position, EMovementType.WALK, SCR_AIActionBase.PRIORITY_LEVEL_NORMAL, 15000);
+		m_State = STATE_LEG;
 	}
 
 	// Cache sleep pending: finish the walk under way, start no new one.
@@ -605,17 +659,10 @@ class EXPG_PatrolControl
 	void ForceSettle()
 	{
 		if (m_Move) { Block(); }
-		// Stopped half way: the stop he stands at becomes his claim, so he caches (and
-		// wakes, or is saved) on a stop rather than metres away from the one he claimed.
-		if (m_Actor && m_Plan && m_Node >= 0 && vector.DistanceXZ(m_Actor.GetOrigin(), m_Plan.Nodes[m_Node].Position) > 1.5)
-		{
-			int nearStop = m_Plan.NearestNode(m_Actor.GetOrigin(), 1.0, true);
-			if (nearStop >= 0 && nearStop != m_Node && m_Plan.TryClaimStop(m_Actor, nearStop))
-			{
-				m_Node = nearStop;
-				m_Look = m_Plan.Nodes[nearStop].WatchLook;
-			}
-		}
+		// Stopped half way: the nearest free stop where he stands becomes his claim, so
+		// he caches (and wakes, or is saved) on a stop rather than metres away from the
+		// one he claimed.
+		ClaimWhereHeStands();
 		m_State = STATE_DWELL;
 		m_Window = false;
 		m_DwellUntil = GetGame().GetWorld().GetWorldTime() + 10000;

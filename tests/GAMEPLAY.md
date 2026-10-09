@@ -578,10 +578,16 @@ entry points the Game Master attributes call (`ETW_TimeSkip.Start`,
   minute per real second), so the engine's 10-in-game-minute cloud minimum is
   10 s; they start 12 s after the day length changed, past the weather's hold. A
   1-minute transition to another weather (Rainy unless the start is Rainy) with
-  rain to 100% (0% if it starts at 50% or more) and wind 8 m/s. Rain moves
-  monotonically and is one fifth to four fifths of the way after 30 s; at the
-  end rain and wind are at target, the target state is reached and held. The
-  day length is restored at the end.
+  rain to 100% (0% if it starts at 50% or more) and wind 8 m/s. Rain is judged
+  every frame (printed every 2 s): it never moves back more than 0.01 below the
+  highest confirmed reading and is one fifth to four fifths of the way after
+  30 s; at the end rain and wind are at target, the target state is reached and
+  held. The day length is restored at the end. Engine artefact tolerated: in the
+  frame of an override write (every 0.5 s) `GetRainIntensity()` returns the
+  value just written, which the engine applies about 0.75 s later (native
+  2026-10-09: 119 such reads, each equal to the written value, at most 0.019
+  above the applied rain, which never moved back); a one-frame read of at most
+  0.025 is reported as `write-frame reads`, not as a reversal.
 - interrupt: a new transition 20 s into another one continues from the rain
   reached (no jump a second later) with a restarted clock.
 - skipFinish: a time skip during a transition completes it at full black.

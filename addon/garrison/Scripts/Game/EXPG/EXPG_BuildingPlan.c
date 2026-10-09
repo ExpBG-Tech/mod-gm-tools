@@ -428,6 +428,51 @@ class EXPG_BuildingPlan
   return best;
  }
 
+ // A patroller who stopped short of his claim (a failed walk, a forced settle, a
+ // Simulation wake): the nearest free stop within reach of where he stands
+ // (horizontal, 0.8 m vertical), claimed for him; -1 when none is free. Grid
+ // columns around the point only (5 x 5 for 1.5 m), at most four claim attempts:
+ // no world query beyond TryClaimStop's own body test. Event-driven, never per frame.
+ int ClaimNearStop(IEntity owner, vector point, float reach)
+ {
+  if (!owner || !Structure || m_Width < 1 || m_Depth < 1 || reach <= 0)
+  {
+   return -1;
+  }
+  vector local = Structure.CoordToLocal(point);
+  int x = Math.Floor((local[0] - Mins[0]) / GRID);
+  int z = Math.Floor((local[2] - Mins[2]) / GRID);
+  int span = Math.Ceil(reach / GRID);
+  float limit = reach * reach;
+  array<int> picks = {};
+  array<float> scores = {};
+  for (int dz = -span; dz <= span; dz++)
+  {
+   for (int dx = -span; dx <= span; dx++)
+   {
+    int columnX = x + dx;
+    int columnZ = z + dz;
+    if (columnX < 0 || columnZ < 0 || columnX >= m_Width || columnZ >= m_Depth) continue;
+    foreach (int index : Columns[columnZ * m_Width + columnX].Nodes)
+    {
+     EXPG_BuildingNode node = Nodes[index];
+     if (!node.Reachable || !node.IndoorWalk || node.Stair || node.DoorBlock || Math.AbsFloat(node.Position[1] - point[1]) > 0.8) continue;
+     float distance = vector.DistanceSqXZ(node.Position, point);
+     if (distance > limit || !StopFree(index, owner)) continue;
+     KeepBest(picks, scores, index, distance, 4);
+    }
+   }
+  }
+  foreach (int pick : picks)
+  {
+   if (TryClaimStop(owner, pick))
+   {
+    return pick;
+   }
+  }
+  return -1;
+ }
+
  // On the indoor floor: within 0.7 m (about one grid step) of an indoor walking node.
  bool OnIndoorFloor(vector point)
  {
