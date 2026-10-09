@@ -60,18 +60,22 @@ $codeAll = Get-Code ((Get-ChildItem -LiteralPath $scripts -Filter '*.c' -File | 
 Assert ([regex]::Matches($codeAll, 'EUS_Scripted\s*=(?!=)').Count -eq 2 -and ![regex]::IsMatch($codeAll, 'EUS_Script\s*=(?!=)') -and ![regex]::IsMatch($codeAll, 'EUS_Discipline\s*=(?!=)') -and ![regex]::IsMatch($codeAll, 'EUS_Set(Script|Scripted|Discipline)\s*\(')) 'Unit Caching writes no Unit Scripts state except the masked-and-restored squad count'
 $refresh = Get-Body $manager 'void\s+Refresh\s*\(\s*EBG_CacheZone\s+zone'
 $refreshCode = Get-Code $refresh
-Assert ($refreshCode.Contains('if (zone.Mode != 0 || !EBG_ScriptedUnits.SimulationOnly(this, group))')) 'only a Simulation zone lifts the Unit Scripts reservation'
-Get-Ordered $refreshCode @('else if (IsReserved(group))', 'DescribeExternalCache(group, externalModule, externalState)', 'EBG_ScriptedUnits.SimulationOnly(this, group)', 'string holder = KeepAwakeReason(group);', 'EBG_ScriptedUnits.FullHolder(group, holder, zone.Mode)', 'if (skip.IsEmpty())', 'if (group.EBG_Exclude)', 'skip = MemberSkip(members, enrollmentPersistence);') 'Refresh'
+Assert ($refreshCode.Contains('if (!EBG_ScriptedUnits.SimulationOnly(this, group))')) 'every zone lifts the Unit Scripts reservation when scripts are the only hold (a Full zone caches the squad in Simulation)'
+Get-Ordered $refreshCode @('else if (IsReserved(group))', 'DescribeExternalCache(group, externalModule, externalState)', 'EBG_ScriptedUnits.SimulationOnly(this, group)', 'string holder = KeepAwakeReason(group);', 'if (holder.IsEmpty())', 'if (skip.IsEmpty())', 'if (group.EBG_Exclude)', 'skip = MemberSkip(members, enrollmentPersistence);') 'Refresh'
 Assert ([regex]::IsMatch($refreshCode, '(?s)if \(skip\.IsEmpty\(\)\)\s*\{\s*if \(group\.EBG_Exclude\).*?else skip = MemberSkip\(members, enrollmentPersistence\);\s*\}')) 'a lifted reservation still runs every ordinary enrollment check (Exclude, spawning, players, commander, proximity, members)'
 
-# Keep-awake: dropped only in a Simulation zone, only for exactly Unit Scripts' own hold
-# with discipline off; a Full zone keeps the hold and names the Full refusal.
+# Keep-awake: dropped in any zone only for exactly Unit Scripts' own hold with discipline
+# off; the record then sleeps in Simulation (a Full zone's fallback).
 $keep = Get-Body $scripted 'static\s+string\s+KeepAwake\s*\(\s*EBG_CacheGroup\s+record,\s*string\s+reason\s*\)'
-Get-Ordered $keep @('if (CountScripted(record.Group) == 0)', 'if (record.Zone.Mode != 0)', 'return reason + " | " + FULL_NOTE;', 'record.Group.EUS_Discipline == EUS_Codes.DISCIPLINE_OFF && reason == EUS_Manager.HoldReason(record.Group)', 'return string.Empty;') 'KeepAwake'
+Assert (!$keep.Contains('Zone.Mode')) 'the keep-awake filter is the same in Full and Simulation zones'
+Get-Ordered $keep @('if (CountScripted(record.Group) == 0)', 'record.Group.EUS_Discipline == EUS_Codes.DISCIPLINE_OFF && reason == EUS_Manager.HoldReason(record.Group)', 'return string.Empty;') 'KeepAwake'
 Assert ($manager.Contains('string keepAwake = EBG_ScriptedUnits.KeepAwake(record, KeepAwakeReason(record.Group));') -and ([regex]::Matches((Get-Code $manager), 'KeepAwakeReason\(record\.Group\)')).Count -eq 1) 'UpdateRecord reads the keep-awake reason through the Unit Scripts filter only'
-Assert ($scripted.Contains('static const string FULL_NOTE = "Full cache refused for Unit Scripts soldiers') -and !$scripted.Substring($scripted.IndexOf('FULL_NOTE = ')).Split("`n")[0].Contains('scripted')) 'the Full refusal is named (and never says "scripted", which the cache-hold fixture reserves for the hold count)'
-$fullHolder = Get-Body $scripted 'static\s+string\s+FullHolder\s*\(\s*SCR_AIGroup\s+group,\s*string\s+holder,\s*int\s+mode\s*\)'
-Assert ($fullHolder.Contains('if (mode == 0 || CountScripted(group) == 0)') -and $fullHolder.Contains('return holder + "; " + FULL_NOTE;')) 'a Full zone''s enrollment text names the refusal for Unit Scripts soldiers'
+Assert ($scripted.Contains('static const string FALLBACK_NOTE = "Simulation cached instead of Full: Unit Scripts soldiers') -and !$scripted.Substring($scripted.IndexOf('FALLBACK_NOTE = ')).Split("`n")[0].Contains('scripted')) 'the Simulation fallback is named (and never says "scripted", which the cache-hold fixture reserves for the hold count)'
+$uses = Get-Body $scripted 'static\s+bool\s+UsesSimulation\s*\(\s*EBG_CacheGroup\s+record\s*\)'
+Assert ($uses.Contains('return record.Zone.Mode == 0 || CountScripted(record.Group) > 0;')) 'Simulation for a Simulation zone, and for a Full zone''s squad with Unit Scripts soldiers'
+Assert ($manager.Contains('if (EBG_ScriptedUnits.UsesSimulation(record))') -and !$manager.Contains('if (zone.Mode == 0)')) 'the scheduler picks Simulation per record (Full zone fallback), not per zone'
+Assert ($manager.Contains('if (zone.Mode == 1) record.Reason = EBG_ScriptedUnits.FALLBACK_NOTE;')) 'a Full zone''s Simulation-cached squad says why'
+Assert ($manager.Contains('owner.HasPendingSettings() || !EBG_ScriptedUnits.UsesSimulation(dormant);') -and !$manager.Contains('owner.Mode != 0')) 'a Full zone keeps its Simulation-cached Unit Scripts squads asleep (only a squad that no longer uses Simulation wakes for Full)'
 Assert (!(Get-Code (Get-Body (Read-Text (Join-Path $scripts 'EBG_CacheFullCoordinator.c')) 'static\s+bool\s+Sleep\s*\(')).Contains('EBG_ScriptedUnits')) 'Full capture itself is unchanged (the hold refuses it before Sleep runs)'
 
 # Simulation: pause only a playing pose, capture the script, resume it after presentation.
@@ -158,10 +162,10 @@ Assert ([regex]::IsMatch($fixtureCode, '(?s)override\s+void\s+EOnInit\s*\([^)]*\
 Assert ($fixture -match 'Resource\s+resource\s*=\s*Resource\.Load\(prefab\);') 'fixture must keep Resource.Load results in a local'
 Assert ($fixture -match 'modded\s+class\s+EBG_CacheManager' -and $fixture -match 'override\s+protected\s+void\s+UpdatePlayers\(\)') 'fixture injects presence through UpdatePlayers'
 foreach ($needle in 'Manager.ApplyUnit(member, code, Report)', 'scripts.Insert(EUS_Codes.FREEZE);', 'scripts.Insert(EUS_Codes.HOLD);', 'scripts.Insert(EUS_Codes.ANIMATION + 2);', 'scripts.Insert(EUS_Codes.ANIMATION);', 'scripts.Insert(EUS_Codes.ANIMATION + 1);',
- 'zone.SetValue(1, 1);', 'TestZone.EnrollmentNote.Contains(EBG_ScriptedUnits.FULL_NOTE)', 'TestZone.SetValue(1, 0);', 'Held = Record.Simulation;', 'cached.Script.Loitering', 'Record.KeepAwake.IsEmpty()',
+ 'zone.SetValue(1, 1);', 'EBG_ScriptedUnits.UsesSimulation(Record)', 'Record.Reason == EBG_ScriptedUnits.FALLBACK_NOTE', 'Held = Record.Simulation;', 'cached.Script.Loitering', 'Record.KeepAwake.IsEmpty()',
  'Now() - PhaseAt < CACHED_SECONDS', 'Presence(Origin);', 'woken.Script.Outcome', 'vector.DistanceXZ(Actors[wokenIndex].GetOrigin(), woken.Position) <= 0.25', 'Check(Drift[awakeIndex] <= Limits[awakeIndex],',
  'if (Codes[spotIndex] == EUS_Codes.FREEZE) Limits[spotIndex] = 0.5;', 'Spots[spotIndex] = control.GetAnchor();', 'Check(Playing(Actors[awakeIndex]), "animation plays again after the wake: "') {
  Assert $fixture.Contains($needle) "fixture must drive: $needle"
 }
 Assert ($fixture.Contains('static const float CACHED_SECONDS = 30;')) 'the paused window outlasts Unit Scripts'' four loiter retries'
-'PASS: Unit Caching Simulation pauses and resumes EXPBG Unit Scripts soldiers (Hold, Freeze, loiter animations) on the same actors, lifts the Unit Scripts reservation only for Simulation zones when it is the sole hold, restarts an animation only after it ended while paused, keeps Full refused with a named reason; Unit Scripts API pinned; scripted Simulation fixture wired.'
+'PASS: Unit Caching Simulation pauses and resumes EXPBG Unit Scripts soldiers (Hold, Freeze, loiter animations) on the same actors, lifts the Unit Scripts reservation when it is the sole hold, Full zones fall back to Simulation for such squads (named in their status), restarts an animation only after it ended while paused; Unit Scripts API pinned; scripted Simulation fixture wired.'

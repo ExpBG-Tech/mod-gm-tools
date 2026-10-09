@@ -6,11 +6,11 @@
 // six soldiers are scripted: Freeze, Hold, "Smoke", "Sit on the ground", "Sit on a chair"
 // (the three animations are vanilla loiters). Presence is injected through
 // EBG_CacheManager.UpdatePlayers; the server has no players. No GM UI, no save/load.
-//  1. Full zone over the scripted squad: never enrolled for 15 s, and the zone's
-//     enrollment note names the Full refusal for Unit Scripts soldiers.
-//  2. Same zone switched to Simulation: the squad enrolls with no keep-awake hold and is
-//     Simulation cached with all six original actors; every scripted soldier's state is
-//     captured (code, animation playing).
+//  1. Full zone over the scripted squad: it enrolls (six members) with no Full
+//     transaction; Unit Caching falls back to Simulation for it (UsesSimulation).
+//  2. The zone stays Full: the squad is Simulation cached with no keep-awake hold and all
+//     six original actors; every scripted soldier's state is captured (code, animation
+//     playing), and its status names the Simulation fallback.
 //  3. 30 s cached (longer than Unit Scripts' four loiter retries), never woken by a hold.
 //  4. Injected presence wakes it: same entity IDs, each soldier within 0.25 m of where he
 //     was paused, every control still bound with the same script, and the wake outcome
@@ -220,23 +220,15 @@ class EXPG_GarrisonGameplay : GenericEntity
    Advance(20); return;
   }
   if (!TestZone) { Check(false, "cache zone kept across the test"); Finish("zone"); return; }
-  // Full refuses the scripted squad and says why.
+  // A Full zone enrolls the scripted squad and falls back to Simulation for it.
   if (Phase == 20)
   {
-   if (EBG_CacheManager.Get().FindGroup(Squad)) { Check(false, "a Full zone never enrolls a squad with Unit Scripts soldiers"); Finish("full"); return; }
-   if (Now() - PhaseAt < FULL_SECONDS) return;
-   PrintFormat("[EBG SCRIPTED SIM FULL] note='%1' status='%2'", TestZone.EnrollmentNote, TestZone.Status);
-   Check(TestZone.EnrollmentNote.Contains(EBG_ScriptedUnits.FULL_NOTE), "the Full zone's enrollment note names the Full refusal for Unit Scripts soldiers");
-   Check(AllPlaying(), "animations untouched by the refused Full zone");
-   TestZone.SetValue(1, 0);
-   Check(TestZone.Mode == 0, "zone switched to Simulation");
-   Advance(30); return;
-  }
-  if (Phase == 30)
-  {
    Record = EBG_CacheManager.Get().FindGroup(Squad);
-   if (!Record || Record.Members.Count() != 6) { Waited(60, "Simulation zone enrolled the scripted squad; note='" + TestZone.EnrollmentNote + "'"); return; }
+   if (!Record || Record.Members.Count() != 6) { Waited(60, "Full zone enrolled the scripted squad; note='" + TestZone.EnrollmentNote + "'"); return; }
+   Check(TestZone.Mode == 1, "the zone stays Full");
    Check(!Record.Full, "no Full transaction on the scripted squad");
+   Check(EBG_ScriptedUnits.UsesSimulation(Record), "a Full zone's Unit Scripts squad falls back to Simulation");
+   Check(AllPlaying(), "animations untouched by the enrollment");
    Advance(31); return;
   }
   if (!Record) { Check(false, "logical cache record retained across the test"); Finish("record"); return; }
@@ -246,7 +238,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!Record.Simulation || !Record.Simulation.Suspended) { Waited(90, "scripted squad Simulation cached; reason='" + Record.Reason + "' keepAwake='" + Record.KeepAwake + "' rejection='" + Record.LastCacheRejection + "'"); return; }
    Held = Record.Simulation;
    PrintFormat("[EBG SCRIPTED SIM CACHED] latency=%1 keepAwake='%2' members=%3", Now() - PhaseAt, Record.KeepAwake, Held.Members.Count());
-   Check(Record.KeepAwake.IsEmpty(), "no keep-awake hold for Unit Scripts soldiers in a Simulation zone");
+   Check(Record.KeepAwake.IsEmpty(), "no keep-awake hold for Unit Scripts soldiers in the Full zone (Simulation fallback)");
    int captured;
    foreach (EBG_SimulationAgent cached : Held.Members)
    {
@@ -262,6 +254,8 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    if (Record.Simulation != Held || !Held.Suspended) { Check(false, "scripted squad stays Simulation cached; reason='" + Record.Reason + "' keepAwake='" + Record.KeepAwake + "'"); Finish("cached"); return; }
    if (Now() - PhaseAt < CACHED_SECONDS) return;
+   PrintFormat("[EBG SCRIPTED SIM FULL] status='%1' reason='%2'", TestZone.Status, Record.Reason);
+   Check(Record.Reason == EBG_ScriptedUnits.FALLBACK_NOTE, "the cached squad's status names the Simulation fallback from Full");
    int present;
    for (int pausedIndex = 0; pausedIndex < Actors.Count(); pausedIndex++)
    {

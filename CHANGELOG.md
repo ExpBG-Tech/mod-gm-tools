@@ -1,5 +1,15 @@
 # EXPBG GM Tools changelog
 
+## 0.1.19
+
+- Unit Caching: a Full cache zone now caches squads whose soldiers run Unit Scripts (Hold, Freeze
+  or an ambient animation) in Simulation instead of leaving them awake. A Full cycle would respawn
+  those soldiers without their script, so they keep the same actors, scripts and poses paused, and
+  wake exactly as in a Simulation zone. Every other squad in the zone is still Full cached, and a
+  squad whose scripts have all ended goes Full again at its next sleep. Squads that neither mode
+  can cache stay awake as before, with the reason in the zone status. A cached squad's status
+  names the fallback.
+
 ## 0.1.18
 
 - Ambient Civilians: every placed module now populates its own area. Until 0.1.17 a second module

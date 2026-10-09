@@ -7,9 +7,11 @@
 // enrolled one awake (KeepAwakeReason), because a Full cycle deletes and respawns the
 // soldiers and so drops their scripts. Simulation keeps the same actors, their AI
 // settings and their bound controls; only the presentation and AI LOD are paused. So:
-// - Simulation zones enroll and suspend such a squad when the per-soldier scripts are
-//   the only reason it is held (night discipline off, no other module reserves it);
-// - Full zones keep refusing it, and the hold and enrollment texts say why;
+// - every zone enrolls and suspends such a squad in Simulation when the per-soldier
+//   scripts are the only reason it is held (night discipline off, no other module
+//   reserves it): a Full zone falls back to Simulation for it (UsesSimulation) and
+//   Full-caches its other squads; a squad whose scripts all ended goes Full again at
+//   its next sleep;
 // - on wake every scripted soldier is checked: his control must still be bound with
 //   the same script, an animation must still be playing (a loiter that ended while
 //   he was paused is started again through Unit Scripts' own ApplyUnit, which gives
@@ -20,7 +22,18 @@
 // No per-frame work: everything runs inside the existing bounded cache scheduler.
 class EBG_ScriptedUnits
 {
- static const string FULL_NOTE = "Full cache refused for Unit Scripts soldiers (a Full cycle respawns them without their Hold, Freeze or animation; a Simulation zone caches them)";
+ static const string FALLBACK_NOTE = "Simulation cached instead of Full: Unit Scripts soldiers (a Full cycle would respawn them without their Hold, Freeze or animation)";
+
+ // Simulation for this record: a Simulation zone, or a Full zone's squad with Unit
+ // Scripts soldiers (Full would drop their scripts).
+ static bool UsesSimulation(EBG_CacheGroup record)
+ {
+  if (!record || !record.Zone)
+  {
+   return false;
+  }
+  return record.Zone.Mode == 0 || CountScripted(record.Group) > 0;
+ }
 
  // Living AI members of the squad running a unit script (replicated EUS_Script).
  static int CountScripted(SCR_AIGroup group)
@@ -64,10 +77,9 @@ class EBG_ScriptedUnits
   return !other;
  }
 
- // The scheduler's keep-awake reason for a record. A Simulation zone drops the Unit
- // Scripts hold when it is only per-soldier scripts (the effective reason is exactly
- // Unit Scripts' own HoldReason and night discipline is off). A Full zone keeps the
- // hold and names why Full is refused.
+ // The scheduler's keep-awake reason for a record. Any zone drops the Unit Scripts hold
+ // when it is only per-soldier scripts (the effective reason is exactly Unit Scripts'
+ // own HoldReason and night discipline is off): the record then sleeps in Simulation.
  static string KeepAwake(EBG_CacheGroup record, string reason)
  {
   if (reason.IsEmpty() || !record || !record.Group || !record.Zone)
@@ -78,10 +90,6 @@ class EBG_ScriptedUnits
   {
    return reason;
   }
-  if (record.Zone.Mode != 0)
-  {
-   return reason + " | " + FULL_NOTE;
-  }
   if (record.Group.EUS_Discipline == EUS_Codes.DISCIPLINE_OFF && reason == EUS_Manager.HoldReason(record.Group))
   {
    return string.Empty;
@@ -89,15 +97,6 @@ class EBG_ScriptedUnits
   return reason;
  }
 
- // Enrollment text for a squad held by Unit Scripts in a Full zone.
- static string FullHolder(SCR_AIGroup group, string holder, int mode)
- {
-  if (mode == 0 || CountScripted(group) == 0)
-  {
-   return holder;
-  }
-  return holder + "; " + FULL_NOTE;
- }
 
  // Wake reason suffix: how many scripted soldiers kept or restarted their script and
  // how many had it released while paused. Empty without scripted soldiers.

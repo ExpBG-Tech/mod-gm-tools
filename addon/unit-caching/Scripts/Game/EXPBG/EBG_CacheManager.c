@@ -990,15 +990,15 @@ class EBG_CacheManager
      continue;
     }
     // Unit Scripts soldiers (Hold, Freeze, animation) keep their live script on the
-    // same actors in Simulation, so a Simulation zone enrolls the squad when those
-    // scripts are its only hold (EBG_ScriptedUnits.SimulationOnly). Full would respawn
-    // them: a Full zone keeps it awake and says so. The checks below still apply.
-    if (zone.Mode != 0 || !EBG_ScriptedUnits.SimulationOnly(this, group))
+    // same actors in Simulation, so any zone enrolls the squad when those scripts are
+    // its only hold (EBG_ScriptedUnits.SimulationOnly); a Full zone caches it in
+    // Simulation (EBG_ScriptedUnits.UsesSimulation). The checks below still apply.
+    if (!EBG_ScriptedUnits.SimulationOnly(this, group))
     {
      // Text only: a module that also publishes a keep-awake reason (Unit Scripts) names itself.
      string holder = KeepAwakeReason(group);
      if (holder.IsEmpty()) skip = "held by another EXPBG module (Unit Scripts, ambient crowds) or a pending cache transfer";
-     else skip = "held by another EXPBG module (" + EBG_ScriptedUnits.FullHolder(group, holder, zone.Mode) + ")";
+     else skip = "held by another EXPBG module (" + holder + ")";
     }
    }
    // Empty here: neither reserved nor waiting for saved ownership, or a Simulation
@@ -1380,7 +1380,7 @@ class EBG_CacheManager
   if (record.PersistenceIssue != "") record.Reason = "Saved ownership held: " + record.PersistenceIssue;
   if (record.RegroupReason != "") record.Reason = record.RegroupReason;
   // Lowest-priority reason; any reason skips sleep and wakes a suspended record.
-  // Unit Scripts soldiers: no hold in a Simulation zone, a named Full refusal otherwise.
+  // Unit Scripts soldiers: no hold (they sleep in Simulation, also in a Full zone).
   string keepAwake = EBG_ScriptedUnits.KeepAwake(record, KeepAwakeReason(record.Group));
   if (keepAwake != record.KeepAwake)
   {
@@ -1562,7 +1562,8 @@ class EBG_CacheManager
    if (!dormant.Simulation || !dormant.Simulation.Suspended) continue;
    EBG_CacheZone owner = dormant.Zone;
    bool urgent = !owner || dormant.Reason != "";
-   bool wake = urgent || dormant.WakeRequested || dormant.ReleaseRequested || !owner.Enabled || owner.Editing || owner.HasPendingSettings() || owner.Mode != 0;
+   // A Full zone keeps its Unit Scripts squads in Simulation; any other one wakes for Full.
+   bool wake = urgent || dormant.WakeRequested || dormant.ReleaseRequested || !owner.Enabled || owner.Editing || owner.HasPendingSettings() || !EBG_ScriptedUnits.UsesSimulation(dormant);
    if (owner && IsProtected(dormant, false)) wake = true;
    if (!wake) continue;
    float score = EBG_CacheFullCoordinator.Priority(this, dormant);
@@ -1649,6 +1650,7 @@ class EBG_CacheManager
    {
     zone.CachedCount++;
     record.Reason = "Simulation cached";
+    if (zone.Mode == 1) record.Reason = EBG_ScriptedUnits.FALLBACK_NOTE;
     // Corpses of members that died before suspension are not in the snapshot.
     // Cleanup touches no Reason/ClearSince/LastUnsafe, so caching is unchanged.
     if (record.CleanupRegistered && EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.Tick(record, Players, now);
@@ -1706,7 +1708,8 @@ class EBG_CacheManager
     continue;
    }
    if (record.Alive == 0) continue;
-   if (zone.Mode == 0)
+   // Simulation zone, or a Full zone's Unit Scripts squad (Full would drop its scripts).
+   if (EBG_ScriptedUnits.UsesSimulation(record))
    {
     // Native saves may run while zones are enabled. Do not hide AI mid-save;
     // Full captures already wait through the save gate.
