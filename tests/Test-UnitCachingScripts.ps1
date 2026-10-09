@@ -73,9 +73,9 @@ Assert ($manager.Contains('string keepAwake = EBG_ScriptedUnits.KeepAwake(record
 Assert ($scripted.Contains('static const string FALLBACK_NOTE = "Simulation cached instead of Full: Unit Scripts soldiers') -and !$scripted.Substring($scripted.IndexOf('FALLBACK_NOTE = ')).Split("`n")[0].Contains('scripted')) 'the Simulation fallback is named (and never says "scripted", which the cache-hold fixture reserves for the hold count)'
 $uses = Get-Body $scripted 'static\s+bool\s+UsesSimulation\s*\(\s*EBG_CacheGroup\s+record\s*\)'
 Assert ($uses.Contains('return record.Zone.Mode == 0 || CountScripted(record.Group) > 0;')) 'Simulation for a Simulation zone, and for a Full zone''s squad with Unit Scripts soldiers'
-Assert ($manager.Contains('if (EBG_ScriptedUnits.UsesSimulation(record))') -and !$manager.Contains('if (zone.Mode == 0)')) 'the scheduler picks Simulation per record (Full zone fallback), not per zone'
-Assert ($manager.Contains('if (zone.Mode == 1) record.Reason = EBG_ScriptedUnits.FALLBACK_NOTE;')) 'a Full zone''s Simulation-cached squad says why'
-Assert ($manager.Contains('owner.HasPendingSettings() || !EBG_ScriptedUnits.UsesSimulation(dormant);') -and !$manager.Contains('owner.Mode != 0')) 'a Full zone keeps its Simulation-cached Unit Scripts squads asleep (only a squad that no longer uses Simulation wakes for Full)'
+Assert ($manager.Contains('if (SleepsInSimulation(record))') -and !$manager.Contains('if (zone.Mode == 0)')) 'the scheduler picks Simulation per record (Full zone fallback), not per zone'
+Assert ($manager.Contains('if (zone.Mode == 1) record.Reason = SimulationFallbackNote(record);') -and $manager.Contains('return EBG_ScriptedUnits.FALLBACK_NOTE;')) 'a Full zone''s Simulation-cached squad says why'
+Assert ($manager.Contains('owner.HasPendingSettings() || !SleepsInSimulation(dormant);') -and !$manager.Contains('owner.Mode != 0')) 'a Full zone keeps its Simulation-cached Unit Scripts squads asleep (only a squad that no longer uses Simulation wakes for Full)'
 Assert (!(Get-Code (Get-Body (Read-Text (Join-Path $scripts 'EBG_CacheFullCoordinator.c')) 'static\s+bool\s+Sleep\s*\(')).Contains('EBG_ScriptedUnits')) 'Full capture itself is unchanged (the hold refuses it before Sleep runs)'
 
 # Simulation: pause only a playing pose, capture the script, resume it after presentation.

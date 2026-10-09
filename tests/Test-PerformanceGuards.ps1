@@ -161,7 +161,7 @@ $PrintPins = [ordered]@{
  'unit-caching/EXPBG/EBG_CacheCleanup.c' = 72
  'unit-caching/EXPBG/EBG_CacheFullCoordinator.c' = 1
  # Includes the rate-limited soldiers-only summary line (at most once per 300 s per zone).
- 'unit-caching/EXPBG/EBG_CacheManager.c' = 18
+ 'unit-caching/EXPBG/EBG_CacheManager.c' = 19
  'unit-caching/EXPBG/EBG_CacheRegroup.c' = 4
  'unit-caching/EXPBG/EBG_CacheSnapshot.c' = 7
  'unit-caching/EXPBG/EBG_CacheVisuals.c' = 5

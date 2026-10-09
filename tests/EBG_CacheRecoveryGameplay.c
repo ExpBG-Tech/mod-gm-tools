@@ -51,6 +51,7 @@ class EXPG_GarrisonGameplay : GenericEntity
  {
   if (!Replication.IsServer()) { ClearEventMask(EntityEvent.FRAME); return; }
   EBG_DebugChecks.Enabled = true; EBG_DebugChecks.Mismatches = 0; // indexes also run their old full scans
+  ClearHooks();
   Started = Now(); Next = Started + 15;
   // Dry points proven by the unit-cleanup fixture; one case at a time.
   AddCase("seat-untouched", "", 0, 0);
@@ -85,6 +86,9 @@ class EXPG_GarrisonGameplay : GenericEntity
  }
  void ClearHooks()
  {
+  // Seated gunners go to Simulation in play (CDF cannot export them Full); this matrix
+  // exercises the Full static-seat wake that caches from earlier versions still use.
+  EBG_CacheManager.EBG_TestFullMounted = true;
   EBG_StaticEmplacement.EBG_TestAcceptWithoutMount = false;
   EBG_StaticEmplacement.EBG_TestHoldTransition = false;
   EBG_StaticEmplacement.EBG_TestTransition = null;

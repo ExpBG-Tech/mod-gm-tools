@@ -79,6 +79,9 @@ class EBG_CacheFullCoordinator
  {
   EBG_CacheZone zone = record.Zone;
   if (record.WakeRequested || record.ReleaseRequested || !zone || !zone.Enabled || zone.Editing || zone.HasPendingSettings() || zone.Mode != 1) return true;
+  // A gunner Full cached by an earlier version blocks every CDF save: wake for Simulation.
+  EBG_PrefabFullCache prefab = EBG_PrefabFullCache.Cast(record.Full);
+  if (!EBG_CacheManager.EBG_TestFullMounted && prefab && prefab.HasMountedSurvivor()) return true;
   return manager.IsProtected(record, false);
  }
  static float Priority(EBG_CacheManager manager, EBG_CacheGroup record)

@@ -34,7 +34,7 @@ foreach ($needle in 'tally.CountLeftSquad(zoneOrigin, affectedSq);', 'zone.Enrol
  Assert $tail.Contains($needle) "Refresh must finish its pass with: $needle"
 }
 $memberSkip = Get-Body $manager 'string\s+MemberSkip\s*\('
-foreach ($needle in 'EBG_WasPlayerControlled()', 'EBG_HasLeftSquad()', 'EBG_MissionPersistence.MayEnroll', 'HasUnresolvedRelease', 'FindMember(character)', 'Regroup.ReservesMember(character)') {
+foreach ($needle in 'EBG_SimulationCache.PlayerNow(character)', 'EBG_HasLeftSquad()', 'EBG_MissionPersistence.MayEnroll', 'HasUnresolvedRelease', 'FindMember(character)', 'Regroup.ReservesMember(character)') {
  Assert $memberSkip.Contains($needle) "MemberSkip lost an enrollment check: $needle"
 }
 

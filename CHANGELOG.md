@@ -2,13 +2,24 @@
 
 ## 0.1.19
 
-- Unit Caching: a Full cache zone now caches squads whose soldiers run Unit Scripts (Hold, Freeze
-  or an ambient animation) in Simulation instead of leaving them awake. A Full cycle would respawn
-  those soldiers without their script, so they keep the same actors, scripts and poses paused, and
-  wake exactly as in a Simulation zone. Every other squad in the zone is still Full cached, and a
-  squad whose scripts have all ended goes Full again at its next sleep. Squads that neither mode
-  can cache stay awake as before, with the reason in the zone status. A cached squad's status
-  names the fallback.
+- Unit Caching: a Full cache zone now falls back to Simulation for every squad Full cannot take,
+  instead of leaving it awake:
+  - squads whose soldiers run Unit Scripts (Hold, Freeze or an ambient animation): a Full cycle
+    would respawn them without their script; in Simulation they keep the same actors, scripts and
+    poses and wake as in a Simulation zone;
+  - squads with a soldier in a static weapon seat: CDF cannot save a Full-cached gunner and
+    refused the whole save ("Mounted Full survivors require restoration"); in Simulation the gunner
+    stays seated and CDF saves him with his seat. Gunners Full cached by an earlier version wake
+    once and sleep again in Simulation;
+  - a squad whose Full attempt is refused tries Simulation at once (no cooldown) and tries Full
+    again after it next wakes;
+  - every squad of the zone while Full is unavailable in the session.
+  Squads that neither mode can take stay awake with their reason. A Simulation-cached squad in a
+  Full zone names why in its status; each refused Full attempt logs one `[EBG FULL FALLBACK]` line.
+- Unit Caching: a soldier a player controlled once (Game Master "Take control") no longer keeps his
+  squad out of caching forever. Once the player has left him, his squad enrolls again and caches
+  in Simulation (Full still refuses him, and cleanup still never deletes his things). Only a
+  soldier a player controls right now holds his squad awake.
 
 ## 0.1.18
 

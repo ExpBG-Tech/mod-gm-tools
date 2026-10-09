@@ -54,6 +54,8 @@ class EBG_CacheGroup
  string CleanupPhase;
  ref EBG_SimulationState Simulation;
  ref EBG_FullCacheGroup Full;
+ // A Full attempt was refused: the next sleep tries Simulation; cleared when it wakes.
+ bool FullFallback;
  UUID FullGroupId;
  ref array<UUID> FullMemberIds = {};
  ref array<EBG_CacheMember> FullMembers = {};
@@ -761,6 +763,8 @@ class EBG_CacheManager
  }
  bool RestoreRecord(EBG_CacheGroup record)
  {
+  // Awake again: the next sleep tries the zone's own mode first.
+  record.FullFallback = false;
   if (record.PersistentScalarRollbackPending || record.Simulation) record.RecoveryNextAttempt = Now() + 5;
   if (record.PersistentScalarRollbackPending)
   {
@@ -1119,7 +1123,8 @@ class EBG_CacheManager
   {
    SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(memberAgent.GetControlledEntity());
    if (!character || !character.GetCharacterController()) return "with an unsupported member entity";
-   if (character.EBG_WasPlayerControlled()) return "with a member a player controls or once possessed";
+   // A soldier a player controlled once may Simulation cache again; Full never takes him.
+   if (EBG_SimulationCache.PlayerNow(character)) return "with a member a player controls";
    if (character.EBG_HasLeftSquad()) return "still holding a soldier who left his squad";
    if (!EBG_MissionPersistence.MayEnroll(character) || (persistence && EBG_MissionPersistence.HasUnresolvedRelease(persistence.GetId(character)))) return "with an unresolved saved member release";
    if (character.GetCharacterController().IsDead()) continue;
@@ -1307,7 +1312,9 @@ class EBG_CacheManager
    if (entity.EBG_WasPlayerControlled()) member.WasPlayer = true;
    // Names the actual state: a Unit Scripts animation is a loiter, never a vehicle.
    string mount = EBG_StaticEmplacement.Unsupported(entity);
-   if (member.WasPlayer) record.Reason = "Player-controlled or previously possessed member";
+   // Only a member a player controls now holds the squad awake. One controlled before
+   // keeps WasPlayer (Full refuses him, cleanup never deletes his things): Simulation.
+   if (EBG_SimulationCache.PlayerNow(entity)) record.Reason = "Player-controlled member";
    else if (!mount.IsEmpty()) record.Reason = "Unsupported vehicle state: " + mount;
    else if (!controller || controller.IsUnconscious() || controller.IsFalling() || controller.IsSwimming() || controller.IsClimbing())
     record.Reason = "Unsupported medical or movement state (unconscious, falling, swimming or climbing)";
@@ -1562,8 +1569,8 @@ class EBG_CacheManager
    if (!dormant.Simulation || !dormant.Simulation.Suspended) continue;
    EBG_CacheZone owner = dormant.Zone;
    bool urgent = !owner || dormant.Reason != "";
-   // A Full zone keeps its Unit Scripts squads in Simulation; any other one wakes for Full.
-   bool wake = urgent || dormant.WakeRequested || dormant.ReleaseRequested || !owner.Enabled || owner.Editing || owner.HasPendingSettings() || !EBG_ScriptedUnits.UsesSimulation(dormant);
+   // A Full zone keeps its Simulation fallbacks asleep; any other one wakes for Full.
+   bool wake = urgent || dormant.WakeRequested || dormant.ReleaseRequested || !owner.Enabled || owner.Editing || owner.HasPendingSettings() || !SleepsInSimulation(dormant);
    if (owner && IsProtected(dormant, false)) wake = true;
    if (!wake) continue;
    float score = EBG_CacheFullCoordinator.Priority(this, dormant);
@@ -1650,7 +1657,7 @@ class EBG_CacheManager
    {
     zone.CachedCount++;
     record.Reason = "Simulation cached";
-    if (zone.Mode == 1) record.Reason = EBG_ScriptedUnits.FALLBACK_NOTE;
+    if (zone.Mode == 1) record.Reason = SimulationFallbackNote(record);
     // Corpses of members that died before suspension are not in the snapshot.
     // Cleanup touches no Reason/ClearSince/LastUnsafe, so caching is unchanged.
     if (record.CleanupRegistered && EBG_CacheCleanup.Instance) EBG_CacheCleanup.Instance.Tick(record, Players, now);
@@ -1708,8 +1715,8 @@ class EBG_CacheManager
     continue;
    }
    if (record.Alive == 0) continue;
-   // Simulation zone, or a Full zone's Unit Scripts squad (Full would drop its scripts).
-   if (EBG_ScriptedUnits.UsesSimulation(record))
+   // Simulation zone, or a Full zone's squad that Full cannot take (SleepsInSimulation).
+   if (SleepsInSimulation(record))
    {
     // Native saves may run while zones are enabled. Do not hide AI mid-save;
     // Full captures already wait through the save gate.
@@ -1728,6 +1735,15 @@ class EBG_CacheManager
     if (transitioned || EBG_FullCacheGroup.IsNativeOperationBusy()) continue;
     transitioned = true;
     if (EBG_CacheFullCoordinator.Sleep(this, record)) { record.LastCacheRejection = ""; zone.CachedCount++; }
+    else if (!record.Full && record.CacheState() != EBG_CacheRecordState.RECOVERY)
+    {
+     // Full refused before taking the squad: try Simulation at once (no cooldown). If
+     // Simulation refuses too, its own rejection starts the usual cooldown.
+     record.LastCacheRejection = record.Reason;
+     record.FullFallback = true;
+     PrintFormat("[EBG FULL FALLBACK] group=%1 Full refused (%2); trying Simulation", record.Id, record.Reason);
+     CountBlocked(zone, record);
+    }
     else { record.LastCacheRejection = record.Reason; record.LastUnsafe = now; CountBlocked(zone, record); if (record.CacheState() == EBG_CacheRecordState.RECOVERY) zone.RecoveryCount++; }
    }
   }
@@ -1781,6 +1797,63 @@ class EBG_CacheManager
   string loaded = EBG_StandaloneConflict.Loaded(SCR_BaseGameMode.Cast(GetGame().GetGameMode()));
   if (loaded.IsEmpty()) return string.Empty;
   return "old standalone EXPBG mods are loaded next to GM Tools (" + loaded + "); disable them, their duplicate scripts and prefabs make caching unpredictable";
+ }
+ // Simulation for this record: a Simulation zone, a Full zone's Unit Scripts squad, a squad
+ // whose Full attempt was refused, or any squad of a Full zone while Full is unavailable
+ // in this session. A squad neither mode can take stays awake with its reason.
+ bool SleepsInSimulation(EBG_CacheGroup record)
+ {
+  if (!record || !record.Zone)
+  {
+   return false;
+  }
+  if (EBG_ScriptedUnits.UsesSimulation(record) || record.FullFallback || (!EBG_TestFullMounted && HasMountedMember(record.Group)))
+  {
+   return true;
+  }
+  return !FullUnavailable(record.Zone).IsEmpty();
+ }
+ // Native fixture only: the static-seat Full wake matrix still Full caches seated gunners.
+ static bool EBG_TestFullMounted;
+ // A soldier sits in a seat (a static weapon). Full could cache him, but CDF cannot
+ // export a mounted Full survivor and refuses the whole save: Simulation keeps him seated.
+ static bool HasMountedMember(SCR_AIGroup group)
+ {
+  if (!group)
+  {
+   return false;
+  }
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character) continue;
+   CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+   if (access && access.IsInCompartment())
+   {
+    return true;
+   }
+  }
+  return false;
+ }
+ // Status of a Full zone's Simulation-cached squad: why it is not Full cached.
+ string SimulationFallbackNote(EBG_CacheGroup record)
+ {
+  if (EBG_ScriptedUnits.CountScripted(record.Group) > 0)
+  {
+   return EBG_ScriptedUnits.FALLBACK_NOTE;
+  }
+  if (HasMountedMember(record.Group))
+  {
+   return "Simulation cached instead of Full: a soldier sits in a static weapon (kept seated; CDF saves him)";
+  }
+  string unavailable = FullUnavailable(record.Zone);
+  if (!unavailable.IsEmpty())
+  {
+   return "Simulation cached instead of Full: Full cache unavailable in this session";
+  }
+  return "Simulation cached instead of Full: Full refused (" + record.LastCacheRejection + ")";
  }
  // Read once per scheduler tick; the loaded-addon list is only read for Full zones.
  protected float m_FullCheckedAt = -1;

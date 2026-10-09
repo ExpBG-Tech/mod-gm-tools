@@ -487,6 +487,8 @@ class EBG_SimulationAgent
  ref EBG_StaticEmplacement Emplacement;
  // EXPBG Unit Scripts state (Hold, Freeze, animation) of a scripted soldier, else null.
  ref EBG_ScriptedMember Script;
+ // A player had controlled him before he was paused (no possession while cached).
+ bool PlayerBefore;
  bool Restored;
  AIAgent Agent;
  SCR_ChimeraCharacter Character;
@@ -602,6 +604,15 @@ class EBG_SimulationCache
   }
   return "";
  }
+ // A player controls this character now (server: the player manager's controlled entity).
+ static bool PlayerNow(IEntity character)
+ {
+  if (!character || !GetGame() || !GetGame().GetPlayerManager())
+  {
+   return false;
+  }
+  return GetGame().GetPlayerManager().GetPlayerIdFromControlledEntity(character) > 0;
+ }
  static bool HasActiveOperation(CharacterControllerComponent controller)
  {
   if (!controller) return true;
@@ -615,7 +626,7 @@ class EBG_SimulationCache
   if (!character.EBG_HasSimulationInitialized()) return "Character initialization incomplete";
   if (character.EBG_IsSimulationCached()) return "Member already suspended";
   CharacterControllerComponent controller = character.GetCharacterController();
-  if (!controller || character.EBG_WasPlayerControlled()) return "Current/previous player or missing character controller";
+  if (!controller || PlayerNow(character)) return "Current player or missing character controller";
   if (controller.IsDead() || controller.IsUnconscious() || controller.IsFalling() || controller.IsSwimming() || controller.IsClimbing()) return "Unsupported life or movement state";
   string compartment = EBG_StaticEmplacement.Unsupported(character);
   if (!compartment.IsEmpty()) return compartment;
@@ -672,11 +683,9 @@ class EBG_SimulationCache
    SCR_ChimeraCharacter character = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
    reason = Unsupported(character);
    if (reason != "") return null;
-   EBG_CacheMember managed;
-   if (EBG_CacheManager.Instance) managed = EBG_CacheManager.Instance.FindMember(character);
-   if (managed && managed.WasPlayer) { reason = "Previously possessed member"; return null; }
    EBG_SimulationAgent member = new EBG_SimulationAgent();
    member.Capture(agent, character);
+   member.PlayerBefore = character.EBG_WasPlayerControlled();
    member.Devices = new EBG_SimulationDevices();
    member.Emplacement = new EBG_StaticEmplacement();
    if (!member.Emplacement.Capture(character)) { reason = "Compartment changed during Simulation capture"; return null; }
@@ -726,11 +735,13 @@ class EBG_SimulationCache
   {
    if (!member.Character) { complete = false; continue; }
    CharacterControllerComponent controller = member.Character.GetCharacterController();
-   // Never reactivate AI on a newly possessed character or resurrect a casualty.
-   bool changedOwner = member.Character.EBG_WasPlayerControlled() || !controller || controller.IsDead();
+   // Never reactivate AI on a character possessed while cached (or controlled now) or
+   // resurrect a casualty. One controlled before the pause wakes as ordinary AI.
+   bool possessed = PlayerNow(member.Character) || (member.Character.EBG_WasPlayerControlled() && !member.PlayerBefore);
+   bool changedOwner = possessed || !controller || controller.IsDead();
    if (!state.PreparationFailed && !member.Restored)
    {
-    if (member.Character.EBG_WasPlayerControlled()) member.RestorePossessed();
+    if (possessed) member.RestorePossessed();
     else if (controller && !controller.IsDead()) member.Restore();
     member.Character.EBG_SetSimulationCached(false);
     member.Restored = true;

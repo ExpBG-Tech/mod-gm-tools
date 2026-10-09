@@ -556,6 +556,18 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
   m_Survivors.Clear();
   m_State = EBG_FullGroupPhase.FAILED;
  }
+ // A survivor was captured in a static weapon seat: CDF cannot export this cache.
+ bool HasMountedSurvivor()
+ {
+  foreach (EBG_PrefabSurvivor row : m_Survivors)
+  {
+   if (row && row.Emplacement && row.Emplacement.HadMount)
+   {
+    return true;
+   }
+  }
+  return false;
+ }
  bool CanExport(out string reason)
  {
   reason = "Standalone retained-group caches require restoration before saving";
