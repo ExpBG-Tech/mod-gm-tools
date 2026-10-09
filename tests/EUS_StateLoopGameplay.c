@@ -43,10 +43,10 @@ class EXPG_GarrisonGameplay : GenericEntity
  SCR_ChimeraCharacter Smoker;
  SCR_ChimeraCharacter Stander;
  SCR_ChimeraCharacter Fresh;
- EUS_UnitControl HolderControl;
- EUS_UnitControl FrozenControl;
- EUS_UnitControl SmokerControl;
- EUS_UnitControl StanderControl;
+ ref EUS_UnitControl HolderControl;
+ ref EUS_UnitControl FrozenControl;
+ ref EUS_UnitControl SmokerControl;
+ ref EUS_UnitControl StanderControl;
  vector SmokerAnchor;
  vector StanderAnchor;
  vector HolderAnchor;
