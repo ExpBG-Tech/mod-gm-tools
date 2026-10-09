@@ -143,7 +143,8 @@ class EBG_MissionPersistence
 {
  static bool MayEnroll(SCR_ChimeraCharacter character)
  {
-  if (!character || character.EBG_WasPlayerControlled()) return false;
+  // A soldier a player controlled once may enroll again (Simulation; Full refuses him).
+  if (!character || EBG_SimulationCache.PlayerNow(character)) return false;
   PersistenceSystem system = PersistenceSystem.GetInstance();
   // Native load does not confer player ownership. Retain recorded exclusions
   // while allowing an otherwise eligible original AI to join a new zone.
