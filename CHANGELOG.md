@@ -1,5 +1,43 @@
 # EXPBG GM Tools changelog
 
+## 0.1.18
+
+- Ambient Civilians: every placed module now populates its own area. Until 0.1.17 a second module
+  was treated as a duplicate and spawned nobody. Each module brings its own radius, civilian limit,
+  neighbourhood limits, residents per house, theme and faction, while the first placed module runs
+  the shared scheduler and its activity, traffic, sound and diagnostic settings apply mission-wide.
+  The mission total is the sum of the module limits, at most 200; when modules ask for more, each
+  gets a proportional share and the log reports the area as capped. A full area no longer holds the
+  others back, and the console summary and GM overlay list each area's civilians and limit.
+- Unit Scripts: Freeze and Hold now hold until the Game Master releases them; damage,
+  unconsciousness and ragdoll no longer end them (corrections pause while the unit is down).
+  Ambient animations loop inside the same animation without the gap that let units step and drift,
+  and every restart begins on the held spot. Only entries that never start count as failed
+  attempts, and a Unit Caching pause no longer uses them up. Moving a unit held in a compartment
+  without an editable vehicle (for example ACE Captives helpers) no longer throws in the editor
+  transform. Running unit scripts are saved with native mission saves and restored on the saved spot
+  and heading; a versioned state API lets EXPBG CDF Compat do the same for CDF saves. Releases record
+  a precise reason, and Game Master replies say scripts are saved (night discipline stays
+  mission-only).
+- Unit Caching: Simulation zones now cache squads whose soldiers run Unit Scripts (Hold, Freeze,
+  ambient animations). They are paused and resumed in place with their script still bound; an
+  animation that ended while paused is started again at the same spot. Night discipline and other
+  modules' reservations still keep a squad awake. Full zones still refuse these squads (a Full cycle
+  would respawn the soldiers without their scripts); the zone note and the hold reason say so. The
+  hold reason "Unsupported vehicle, medical or movement state" is split to name the actual
+  compartment, medical or movement state.
+- AI Global Skills / AI Surrender: the squad and soldier settings now show for every AI squad and AI
+  soldier of any faction or mod (vanilla, RHS and others), with or without a module; in 0.1.17 they
+  stayed hidden until a module was placed. Squad values also show when you edit one of the squad's
+  soldiers, like the vanilla Group tab. New "AI skill (squad)" and "AI skill (soldier)" (Novice to
+  Expert) sit with the rules of engagement in the renamed "EXPBG AI Skill & ROE" tab; the soldier's
+  value wins over the squad's, and the squad's over the module. A squad's or soldier's own skill and
+  rules of engagement apply without a module too, and stay when the module is deleted. Skills are kept
+  by native saves, CDF saves, Unit Caching and Garrison caching; earlier saves load unchanged.
+  Surrender and interrogation chances read "Squad ..." and "Soldier ..."; they can be set before the
+  AI Surrender module is placed, but surrenders still need the module. Both modules also add these
+  settings in script, so another mod's attribute list override cannot hide them.
+
 ## 0.1.17
 
 - New entity browser art: every placed sound (28), both server racks, the USB

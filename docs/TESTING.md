@@ -535,7 +535,7 @@ Pending gates:
 Portable: `tests/Test-SquadOverrides.ps1` (run by `tests/Test-Tools.ps1`)
 checks the following:
 
-- the "EXPBG Surrender & Intel" and "EXPBG Rules of Engagement" categories, the
+- the "EXPBG Surrender & Intel" and "EXPBG AI Skill & ROE" categories, the
   eight AI Surrender override classes (one per slot and target) after Prisoners,
   the squad ROE moved to the new tab and the soldier ROE beside it;
 - attribute behaviour: spinbox entries (module, then 0-100 % in steps of 5),

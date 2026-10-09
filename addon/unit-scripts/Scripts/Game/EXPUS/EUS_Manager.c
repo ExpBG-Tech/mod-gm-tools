@@ -390,10 +390,23 @@ class EUS_Manager
   // Saved where the pose or a correction left him: back on the held spot when the
   // save put him near it, so the script holds exactly the saved spot and heading.
   vector origin = actor.GetOrigin();
-  if (vector.DistanceXZ(origin, state.Anchor) <= EUS_UnitState.RESTORE_RADIUS && Math.AbsFloat(origin[1] - state.Anchor[1]) <= EUS_UnitState.RESTORE_RADIUS) EUS_UnitControl.PlaceAt(actor, state.Anchor, state.Forward);
+  bool placed = vector.DistanceXZ(origin, state.Anchor) <= EUS_UnitState.RESTORE_RADIUS && Math.AbsFloat(origin[1] - state.Anchor[1]) <= EUS_UnitState.RESTORE_RADIUS;
+  if (placed) EUS_UnitControl.PlaceAt(actor, state.Anchor, state.Forward);
   EUS_Report report = new EUS_Report();
   if (ApplyUnit(actor, state.Code, report))
   {
+   // The teleport lands a frame later, so the bind read the old origin and heading:
+   // hold the saved spot and heading explicitly (the editor-move path settles first).
+   EUS_UnitControl bound = FindControl(actor);
+   if (placed && bound)
+   {
+    vector held[4];
+    held[0] = Vector(state.Forward[2], 0, -state.Forward[0]);
+    held[1] = Vector(0, 1, 0);
+    held[2] = state.Forward;
+    held[3] = state.Anchor;
+    bound.OnEditorMoved(held, now);
+   }
    return 1;
   }
   pending.LastReason = report.LastReason;

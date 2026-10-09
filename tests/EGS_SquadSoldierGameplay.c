@@ -182,9 +182,9 @@ class EXPG_GarrisonGameplay : GenericEntity
    Check(GetGame().GetPlayerManager().GetPlayerCount() == 0, "isolated server: no players");
    Check(!EGS_Module.HasAny() && ESR_SurrenderModule.ActiveCount() == 0 && !EGS_Manager.IsActive(), "no AI Global Skills and no AI Surrender module");
    CheckRegistration();
-   SCR_AIGroup vanilla = SpawnSquad(VANILLA_SQUAD, Origin);
-   if (!Check(vanilla != null, "vanilla US fire team spawned")) { Finish("setup"); return; }
-   Squads.Insert(vanilla);
+   SCR_AIGroup baseSquad = SpawnSquad(VANILLA_SQUAD, Origin);
+   if (!Check(baseSquad != null, "vanilla US fire team spawned")) { Finish("setup"); return; }
+   Squads.Insert(baseSquad);
    // Never load an RHS resource unless RHS is loaded: a missing one only logs errors.
    if (RhsLoaded())
    {

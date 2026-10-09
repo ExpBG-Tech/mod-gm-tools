@@ -157,7 +157,7 @@ Every new addon: own folder `addon/<name>/`, EXPBG label 157026, EXPBG prefix in
 
 ### F6 `ai-global-skills` (global module)
 - [ ] Per-faction tabs (auto-detected, works with RHS etc. without a compat mod): skill level and aim accuracy with overrides for **4 role groups: Rifleman, MG/LMG, Marksman, Leader** (user decision), defaults = vanilla.
-- [ ] Rules of engagement (also per squad and per soldier in the EXPBG Rules of Engagement tab): Return Fire Only / Fire on Sight / Warning Shots First (2-3 rounds near the player, 5 s pause, then lethal).
+- [ ] Rules of engagement (also per squad and per soldier in the EXPBG AI Skill & ROE tab): Return Fire Only / Fire on Sight / Warning Shots First (2-3 rounds near the player, 5 s pause, then lethal).
 - [ ] Ammunition: unlimited magazines or auto-refill x times when out of ammo (magazines only, no grenades).
 
 ### F7 `ambient-unrest` (Civil Protest Zone)
