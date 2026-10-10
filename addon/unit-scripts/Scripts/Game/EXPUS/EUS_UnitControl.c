@@ -76,6 +76,8 @@ class EUS_UnitControl
  static const float LOITER_PENDING_SECONDS = 15;
  // Pause after LOITER_ATTEMPTS entries the graph did not take; then a fresh allowance.
  static const float LOITER_BACKOFF_SECONDS = 30;
+ // Seconds his AI is kept out of its maximum LOD for one pose entry.
+ static const float LOITER_PIN_SECONDS = 15;
  // Horizontal drift put back by Freeze and Hold.
  static const float FREEZE_TOLERANCE = 0.35;
  static const float HOLD_TOLERANCE = 1.5;
@@ -823,6 +825,15 @@ class EUS_UnitControl
   m_Actor.GetWorldTransform(transform);
   m_LoiterAttempts++;
   m_NextLoiter = now + 6;
+  // Far from every player the server keeps his AI at its maximum LOD and the entry is
+  // never taken (production 2026-10-10): a short pin, as Ambient Civilians does; a
+  // cache's permanent LOD pin is left alone.
+  if (m_Agent && m_Agent.GetPermanentLOD() < 0)
+  {
+   m_Agent.PreventMaxLOD(LOITER_PIN_SECONDS);
+   m_Agent.SetLOD(0);
+   m_Agent.ActivateAI();
+  }
   // Owner-side vanilla entry; the command handler replicates it, including JIP.
   m_Controller.StartLoitering(null, type, EUS_AnimationCatalog.Holster(index), true, false, transform, true, EUS_AnimationCatalog.CreateData(index));
   // Log the first loiter and every genuine retry. A routine re-issue after a held

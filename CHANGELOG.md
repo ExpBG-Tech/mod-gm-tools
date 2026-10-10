@@ -1,5 +1,14 @@
 # EXPBG GM Tools changelog
 
+## 0.1.21
+
+- Unit Caching: the Hold/Freeze script and the Unit Dialog of a Full-cached soldier are now written
+  into the portable (CDF) Full snapshot ("eusScript", "eudDialog"), so a Full-cached squad keeps
+  them through a CDF save, a server restart and a load. Snapshots without them still load.
+- Unit Scripts: a pose entry keeps the soldier's AI out of its maximum LOD for 15 s (the same pin
+  Ambient Civilians uses), so a soldier far from every player starts his animation instead of
+  waiting for someone to come near.
+
 ## 0.1.20
 
 - New Mission Intro module (Systems): every player, late joiners too, sees it once when he first

@@ -2,8 +2,8 @@
 // them from their prefab. A survivor's dialog rides in the Unit Caching
 // survivor carry: copied on the server before deletion, then restored onto the
 // respawned character before it joins its group, so clients and late joiners
-// receive it through the replicated fields on stream-in. Session memory only:
-// portable (CDF) Full snapshots do not hold it; native saves wait for wake.
+// receive it through the replicated fields on stream-in. It also travels in the
+// portable (CDF) Full snapshot ("eudDialog"); native saves wait for wake.
 modded class EBG_SurvivorCarry
 {
  protected ref EUD_DialogRecord m_EUD_Dialog;
@@ -24,6 +24,25 @@ modded class EBG_SurvivorCarry
    return;
   }
   m_EUD_Dialog = record;
+ }
+
+ override bool Write(SaveContext context)
+ {
+  if (!super.Write(context)) return false;
+  if (!m_EUD_Dialog) return true;
+  return context.StartObject("eudDialog") && m_EUD_Dialog.Write(context) && context.EndObject();
+ }
+
+ override void Read(LoadContext context)
+ {
+  super.Read(context);
+  m_EUD_Dialog = null;
+  if (!context.StartObject("eudDialog")) return;
+  EUD_DialogRecord record = new EUD_DialogRecord();
+  bool read = record.Read(context);
+  context.EndObject();
+  if (read && record.Valid()) m_EUD_Dialog = record;
+  else Print("[EUD] Full cache snapshot: saved dialog dropped (unreadable or invalid)", LogLevel.WARNING);
  }
 
  override void Apply(SCR_ChimeraCharacter entity)

@@ -4,7 +4,9 @@
 // on the server before deletion and queued again on the respawned character, which
 // the manager binds once his AI is ready (the same path as native and CDF loads).
 // Squads with an animation stay in Simulation (EBG_ScriptedUnits.UsesSimulation),
-// so only Hold and Freeze come through here. Session memory only, like Unit Dialog.
+// so only Hold and Freeze come through here. The row also travels in the portable
+// (CDF) Full snapshot as "eusScript" (EUS_UnitState JSON), so a Full-cached squad keeps
+// its scripts through a save and a server restart.
 modded class EBG_SurvivorCarry
 {
  protected ref EUS_UnitState m_EUS_State;
@@ -21,6 +23,24 @@ modded class EBG_SurvivorCarry
    Print("[EUS] Full cache: survivor script failed validation and is not carried", LogLevel.WARNING);
    m_EUS_State = null;
   }
+ }
+
+ override bool Write(SaveContext context)
+ {
+  if (!super.Write(context)) return false;
+  if (!m_EUS_State) return true;
+  return context.WriteValue("eusScript", m_EUS_State.Encode());
+ }
+
+ override void Read(LoadContext context)
+ {
+  super.Read(context);
+  m_EUS_State = null;
+  string payload;
+  if (!context.ReadValue("eusScript", payload) || payload.IsEmpty()) return;
+  string reason;
+  m_EUS_State = EUS_UnitState.Decode(payload, reason);
+  if (!m_EUS_State) Print("[EUS] Full cache snapshot: saved script dropped: " + reason, LogLevel.WARNING);
  }
 
  override void Apply(SCR_ChimeraCharacter entity)

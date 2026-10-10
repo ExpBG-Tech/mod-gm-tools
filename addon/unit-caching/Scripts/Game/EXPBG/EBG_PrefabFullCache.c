@@ -12,6 +12,11 @@ class EBG_SurvivorCarry
  // Server, once, right after the survivor was respawned from its prefab and
  // before it joins the restored group or streams to any client.
  void Apply(SCR_ChimeraCharacter entity) {}
+ // Portable (CDF) Full snapshot, inside the survivor's object: optional keys, so a
+ // snapshot written before a module carried state still loads. A carry that does not
+ // read back is dropped with a warning; it never fails the snapshot.
+ bool Write(SaveContext context) { return true; }
+ void Read(LoadContext context) {}
 }
 class EBG_PrefabSurvivor
 {
@@ -608,7 +613,7 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
    EBG_PrefabSurvivor row = m_Survivors[i];
    array<vector> matrix = {};
    for (int axis = 0; axis < 4; axis++) matrix.Insert(row.Transform[axis]);
-   if (!context.StartObject("survivor" + i.ToString()) || !context.WriteValue("prefab", row.Prefab) || !context.WriteValue("matrix", matrix) || !row.Author.Write(context) || !context.EndObject()) return false;
+   if (!context.StartObject("survivor" + i.ToString()) || !context.WriteValue("prefab", row.Prefab) || !context.WriteValue("matrix", matrix) || !row.Author.Write(context) || !row.Carry.Write(context) || !context.EndObject()) return false;
   }
   return true;
  }
@@ -622,7 +627,9 @@ class EBG_PrefabFullCache : EBG_FullCacheGroup
   {
    EBG_CachePose pose = new EBG_CachePose();
    EBG_PrefabSurvivor row = new EBG_PrefabSurvivor();
-   if (!context.StartObject("survivor" + i.ToString()) || !pose.Read(context) || !pose.PrefabType(SCR_ChimeraCharacter) || !row.Author.Read(context) || !context.EndObject()) return false;
+   if (!context.StartObject("survivor" + i.ToString()) || !pose.Read(context) || !pose.PrefabType(SCR_ChimeraCharacter) || !row.Author.Read(context)) return false;
+   row.Carry.Read(context);
+   if (!context.EndObject()) return false;
    row.Prefab = pose.Prefab;
    pose.Transform(row.Transform);
    row.Emplacement = new EBG_StaticEmplacement();
