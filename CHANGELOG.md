@@ -1,5 +1,32 @@
 # EXPBG GM Tools changelog
 
+## 0.1.20
+
+- New Mission Intro module (Systems): every player, late joiners too, sees it once when he first
+  spawns in a game session. The screen is black, the title and a "time | date | location" line fade
+  in, then the view fades back in (Time Skip black screen). Title and location are set in its
+  attributes; empty uses the mission name and the map grid of the spawn. On and the text duration
+  are saved with CDF; the texts are session settings like the Time Skip text.
+- Unit Caching: Hold Position and Freeze soldiers now Full cache. Their script (code, held spot and
+  heading) rides the Full survivor carry and binds again on the respawned soldier, like Unit
+  Dialog. Only squads with a Unit Scripts animation still fall back to Simulation in a Full zone.
+- Unit Scripts: an animation the server does not start (production 2026-10-10: 14 poses far from
+  every player after a CDF load) is no longer dropped after 4 attempts. The soldier keeps his spot
+  and the pose is tried again every 30 s.
+- Unit Caching: new "Never cache this squad" switch in the EXPBG Unit Caching tab of a squad's or
+  soldier's Edit properties (saved with CDF). Squads in helicopters and planes are never cached;
+  ground vehicles and static weapons keep Simulation caching.
+- Global controller: zones paused by Prepare for save now count as disabled, and the action
+  description explains Prepare for save (pause, AI restored, zones resume with Enable) versus
+  Disable all zones.
+- AI Surrender: a soldier with his own surrender chance rolls it once when he first comes under
+  threat (danger or combat), whatever the size of his squad. A lone soldier at 100% now gives up
+  when fired at; squad breaks still roll as before.
+- Garrison: a squad added to a building whose spawn never reports complete within 45 s no longer
+  stays outside as a normal squad; the soldiers that exist take their posts.
+- Log noise: per-unit Unit Scripts lines, Prepare progress, AI Skills override lines, Garrison
+  status lines and settings-hold warnings print only while a cache zone has Debug messages on.
+
 ## 0.1.19
 
 - Unit Caching: a Full cache zone now falls back to Simulation for every squad Full cannot take,

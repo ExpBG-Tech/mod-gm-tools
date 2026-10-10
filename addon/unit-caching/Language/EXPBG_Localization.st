@@ -35,6 +35,14 @@ StringTable {
    Target_en_us "AI Cache Zone"
    Author "M.Pac and K.Edgar"
   }
+  CustomStringTableItem "{7A3E19C05B2D4F68}" {
+   Id "EXPBG-MissionIntro_Description"
+   Target_en_us "Each player sees a short intro once, when he first spawns in this game session (late joiners too): a black screen with the title, then the time, date and location, and the view fades back in. Set the title and location in its attributes; empty uses the mission name and the map grid. Place one; switch it off or delete it to stop new intros."
+  }
+  CustomStringTableItem "{2C8B6D41E09F3A57}" {
+   Id "EXPBG-MissionIntro_Name"
+   Target_en_us "Mission Intro"
+  }
   CustomStringTableItem "{B462AC315D908000}" {
    Id "EXPBG-OptimizerController_Description"
    Target_en_us "Global controls for Unit Caching zones only. Enable all, disable all, or safely prepare all AI for saving."

@@ -61,7 +61,8 @@ $releaseBy = Get-Body $control 'void\s+ReleaseBy\s*\(\s*EUS_EEndReason\s+end,\s*
 Assert ($releaseBy.Contains('if (m_End == EUS_EEndReason.NONE) m_End = end;') -and $releaseBy.Contains('Release(reason, fast);')) 'ReleaseBy keeps the first end code and releases'
 $release = Get-Body $control 'void\s+Release\s*\(\s*string\s+reason,\s*bool\s+fast\s*=\s*false\s*\)'
 Assert ($release.Contains('if (reason.IsEmpty()) m_End = EUS_EEndReason.SILENT;') -and $release.Contains('else m_End = EUS_EEndReason.GAME_MASTER;')) 'a plain Release is a Game Master release, or SILENT without a reason'
-foreach ($pair in @(@('m_End = EUS_EEndReason.LOITER_FAILED;', 'Release(string.Format("the animation could not be kept after %1 attempts", LOITER_ATTEMPTS));'), @('m_End = EUS_EEndReason.POSE_PUSHED;', 'Release(string.Format("pushed %1 m off its spot'), @('m_End = EUS_EEndReason.DAMAGE;', 'Release("the unit took damage", true);'))) {
+Assert (!$control.Contains('m_End = EUS_EEndReason.LOITER_FAILED;') -and $control.Contains('m_NextLoiter = now + LOITER_BACKOFF_SECONDS;')) 'a pose entry the graph does not take backs off and retries; the script is never dropped for it'
+foreach ($pair in @(@('m_End = EUS_EEndReason.POSE_PUSHED;', 'Release(string.Format("pushed %1 m off its spot'), @('m_End = EUS_EEndReason.DAMAGE;', 'Release("the unit took damage", true);'))) {
  $at = $control.IndexOf($pair[0])
  Assert ($at -ge 0 -and $control.IndexOf($pair[1], $at) -gt $at -and $control.IndexOf($pair[1], $at) - $at -lt 200) "end code set right before its release: $($pair[0])"
 }

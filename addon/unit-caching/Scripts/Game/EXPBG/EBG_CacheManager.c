@@ -679,6 +679,10 @@ class EBG_CacheManager
  // resumes the normal clear-delay rules. Read once per scheduler tick and record.
  string KeepAwakeReason(SCR_AIGroup group)
  {
+  // An enrolled squad that later boards a helicopter or plane, or is switched to
+  // Never cache, stays awake (Never cache also releases it, EBG_NeverCacheAttribute).
+  if (group && group.EBG_Exclude) return "Never cache";
+  if (HasAirMember(group)) return "in an air vehicle";
   return string.Empty;
  }
  // Published seam, text only: a module that caches a reserved squad itself (EXPBG
@@ -1009,7 +1013,8 @@ class EBG_CacheManager
    // zone's Unit Scripts squad that nothing else holds.
    if (skip.IsEmpty())
    {
-    if (group.EBG_Exclude) skip = "marked Exclude from EXPBG optimization";
+    if (group.EBG_Exclude) skip = "marked Exclude from EXPBG optimization (Never cache)";
+    else if (HasAirMember(group)) skip = "crew of a helicopter or plane (air vehicles are never cached)";
     else if (!group.EBG_HasCompletedInitialSpawn()) skip = "still spawning members";
     else if (group.GetPlayerCount() > 0) skip = "containing a player";
     else if (group.IsSlave() || group.GetMaster() || group.IsCreatedByCommander()) skip = "commanded by another group or the commander";
@@ -1837,10 +1842,37 @@ class EBG_CacheManager
   }
   return false;
  }
+ // A member seated in an air vehicle (helicopter simulation, or a plane by name): the
+ // squad is never cached. Ground vehicles and static weapons Simulation-cache instead.
+ static bool HasAirMember(SCR_AIGroup group)
+ {
+  if (!group)
+  {
+   return false;
+  }
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  foreach (AIAgent agent : agents)
+  {
+   ChimeraCharacter character = ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (!character) continue;
+   CompartmentAccessComponent access = character.GetCompartmentAccessComponent();
+   if (!access || !access.GetCompartment()) continue;
+   IEntity vehicle = access.GetCompartment().GetOwner();
+   if (vehicle) vehicle = vehicle.GetRootParent();
+   if (!vehicle) continue;
+   if (vehicle.FindComponent(VehicleHelicopterSimulation)) return true;
+   ResourceName prefab;
+   if (vehicle.GetPrefabData()) prefab = vehicle.GetPrefabData().GetPrefabName();
+   prefab.ToLower();
+   if (prefab.Contains("/vehicles/helicopters/") || prefab.Contains("/vehicles/air/") || prefab.Contains("/vehicles/planes/") || prefab.Contains("/vehicles/aircraft/")) return true;
+  }
+  return false;
+ }
  // Status of a Full zone's Simulation-cached squad: why it is not Full cached.
  string SimulationFallbackNote(EBG_CacheGroup record)
  {
-  if (EBG_ScriptedUnits.CountScripted(record.Group) > 0)
+  if (EBG_ScriptedUnits.CountAnimated(record.Group) > 0)
   {
    return EBG_ScriptedUnits.FALLBACK_NOTE;
   }

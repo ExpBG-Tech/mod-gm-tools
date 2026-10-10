@@ -13,6 +13,7 @@ class EBG_OptimizerControl
  // Player id of the GM whose controller command is executing (logging only).
  static int ActingPlayer;
  protected static string s_LastReport;
+ protected static int s_LastLoggedState = -1;
  protected static string s_LastBlocked;
  protected static ref array<EBG_CacheZone> s_PreparedZones;
  static void Reset()
@@ -129,7 +130,8 @@ class EBG_OptimizerControl
   foreach (EBG_CacheZone countedZone : EBG_CacheZone.Zones)
   {
    if (!countedZone) continue;
-   if (countedZone.Enabled) EnabledZones++;
+   // A zone paused for a save does not cache: it counts as disabled until Enable.
+   if (countedZone.Enabled && !(Preparing && countedZone.Editing)) EnabledZones++;
    else DisabledZones++;
   }
   if (!Preparing && !Disabling)
@@ -238,7 +240,10 @@ class EBG_OptimizerControl
   string report = string.Format("state=%1 enabled=%2 disabled=%3 pending=%4 blocked=%5 %6", State, EnabledZones, DisabledZones, Pending, Blocked, Message);
   if (report != s_LastReport)
   {
-   Print("[EBG GLOBAL] " + report);
+   // Prepare progress (one line per restored group) only with zone Debug messages on;
+   // every state change and command always prints.
+   if (State != s_LastLoggedState || EBG_CacheDebug.Verbose()) Print("[EBG GLOBAL] " + report);
+   s_LastLoggedState = State;
    s_LastReport = report;
   }
   foreach (EBG_OptimizerController controller : EBG_OptimizerController.Controllers)

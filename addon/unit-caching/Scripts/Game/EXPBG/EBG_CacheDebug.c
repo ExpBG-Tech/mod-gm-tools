@@ -25,6 +25,17 @@ class EBG_CacheDebug
   if (fps <= 0) { return "FPS unavailable"; }
   return string.Format("%1 FPS | %2 ms/frame", One(fps), One(1000 / fps));
  }
+ // Server: true while any cache zone has Debug messages on. Routine per-unit and
+ // progress log lines of the pack are printed only then; warnings and summaries
+ // always print.
+ static bool Verbose()
+ {
+  foreach (EBG_CacheZone zone : EBG_CacheZone.Zones)
+  {
+   if (zone && zone.DebugMessages > 0) return true;
+  }
+  return false;
+ }
  static string ServerSample()
  {
   Level = 0;

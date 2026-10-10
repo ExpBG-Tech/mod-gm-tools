@@ -1,0 +1,25 @@
+ETW_IntroModule {
+ ID "6B2D8E41A7C35F90"
+ components {
+  SCR_EditableEntityComponent "{832596D4BB053F64}" {
+   m_EntityType SYSTEM
+   m_UIInfo SCR_EditableEntityUIInfo "{91BF854C31FE0F98}" {
+    Name "#EXPBG-MissionIntro_Name"
+    Description "#EXPBG-MissionIntro_Description"
+    Icon "{C5A11E2DC4604AA0}UI/Textures/EXPBG/EXPBG_Badge_UI.edds"
+    m_Image "{E4C2BC10932DF14B}UI/Textures/EXPTW/ETW_TimeSkip_Card.edds"
+    m_aAuthoredLabels {
+     ENTITYTYPE_SYSTEM 157026
+    }
+   }
+   m_bAutoRegister ALWAYS
+   m_Flags HORIZONTAL
+  }
+  RplComponent "{9B23A1E8C838B33C}" {
+   SpatialRelevancy 0
+   Streamable Disabled
+  }
+  Hierarchy "{12D441DCF3493AA6}" {
+  }
+ }
+}

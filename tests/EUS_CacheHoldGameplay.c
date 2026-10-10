@@ -4,10 +4,12 @@
 // Real USSR rifle squad and Unit Caching zone prefab (Full mode, 5 s sleep delay). The
 // squad is enrolled first and only then scripted through the production EUS_Manager
 // entry points (the ones the context actions and attributes call); enrollment itself
-// already refuses scripted squads. While Hold, and then night discipline alone, runs,
-// the production scheduler must keep the record awake (no Full transaction, original
-// actors kept) well past the sleep delay. After the Game Master releases both, the
-// same record must Full-cache and wake again on injected presence. No players, no GM
+// already refuses scripted squads. While night discipline runs, the production scheduler
+// must keep the record awake (no Full transaction, original actors kept) well past the
+// sleep delay. Hold and Freeze no longer hold a squad awake since 0.1.20: they Full
+// cache and bind again on the respawned soldiers (EBG_FullScriptCarryGameplay.c). After
+// the Game Master releases the discipline, the same record must Full-cache and wake
+// again on injected presence. No players, no GM
 // UI, no save/load. Server log: "[EBG KEEP AWAKE] ... held: ..." on each hold change
 // and "[EBG KEEP AWAKE] ... released; normal sleep rules resume" after the release.
 class EXPG_GarrisonGameplayClass : GenericEntityClass {}
@@ -142,7 +144,7 @@ class EXPG_GarrisonGameplay : GenericEntity
    if (!Check(Holder != null, "squad member chosen for Hold")) { Finish("setup"); return; }
    HolderId = Holder.GetID();
    Manager = EUS_Manager.Get();
-   Check(Manager != null && Manager.ApplyUnit(Holder, EUS_Codes.HOLD, Report) && Holder.EUS_Script == EUS_Codes.HOLD, "Hold position bound on a member of the enrolled squad");
+   Check(Manager != null && Manager.SetDiscipline(Squad, EUS_Codes.DISCIPLINE_LIGHT, Report), "Light Discipline applied to the enrolled squad");
    string hookReason = EBG_CacheManager.Get().KeepAwakeReason(Squad);
    PrintFormat("[EUS CACHE HOLD APPLIED] record=%1 hook='%2' reason='%3'", Record.Id, hookReason, Record.Reason);
    Check(hookReason.StartsWith(HOLD_PREFIX), "Unit Caching sees the Unit Scripts hold through its published seam");
@@ -153,12 +155,12 @@ class EXPG_GarrisonGameplay : GenericEntity
   {
    if (Record.Full || Record.Simulation)
    {
-    Check(false, "scripted squad never starts a cache transition while Hold runs; reason='" + Record.Reason + "'");
+    Check(false, "squad never starts a cache transition while night discipline runs; reason='" + Record.Reason + "'");
     Finish("hold"); return;
    }
-   if (!Holder || Holder.EUS_Script != EUS_Codes.HOLD)
+   if (!Holder || !EUS_Manager.Reserves(Squad))
    {
-    Check(false, "held soldier and his Hold survive the hold window");
+    Check(false, "held squad and its discipline survive the hold window");
     Finish("hold"); return;
    }
    // The hold itself must be the scheduler's effective reason, not another blocker.
@@ -167,9 +169,10 @@ class EXPG_GarrisonGameplay : GenericEntity
    PrintFormat("[EUS CACHE HOLD WINDOW] stage=hold seconds=%1 keepAwake='%2' reason='%3' clearSince=%4", HOLD_SECONDS, Record.KeepAwake, Record.Reason, Record.ClearSince);
    Check(HoldSeen, "scheduler reports the record held awake by Unit Scripts");
    Check(Squad != null && Squad.GetAgentsCount() == 6 && Holder.GetID() == HolderId, "all six original members kept 20 s past the 5 s sleep delay");
-   Check(Manager.SetDiscipline(Squad, EUS_Codes.DISCIPLINE_LIGHT, Report), "Light Discipline applied to the held squad");
-   Check(Manager.ApplyUnit(Holder, EUS_Codes.NONE, Report) && Holder.EUS_Script == EUS_Codes.NONE, "Game Master release of Hold; night discipline alone remains");
-   Advance(22); return;
+   Check(Manager.SetDiscipline(Squad, EUS_Codes.DISCIPLINE_OFF, Report) && !EUS_Manager.Reserves(Squad), "night discipline released; squad no longer reserved");
+   string releasedHold = EBG_CacheManager.Get().KeepAwakeReason(Squad);
+   Check(releasedHold.IsEmpty(), "no Unit Scripts hold remains after the release");
+   Advance(23); return;
   }
   if (Phase == 22)
   {

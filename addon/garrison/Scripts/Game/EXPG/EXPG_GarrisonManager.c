@@ -301,7 +301,7 @@ class EXPG_GarrisonRecord
   group.GetOnWaypointAdded().Insert(OnWaypoint);
   group.EXPG_Changed();
   EXPG_GarrisonPersistence.KeepNewborn(group);
-  PrintFormat("[EXPG Garrison] group=%1 squad recreated for its Full restore", group);
+  if (EBG_CacheDebug.Verbose()) PrintFormat("[EXPG Garrison] group=%1 squad recreated for its Full restore", group);
  }
 
  // Durable Full sleep: the squad is about to be captured and deleted.
@@ -316,7 +316,7 @@ class EXPG_GarrisonRecord
   if (Status == message) { return; }
   Status = message;
   if (Group) { Group.EXPG_Status = message; Group.EXPG_Changed(); }
-  PrintFormat("[EXPG Garrison] group=%1 %2", Group, message);
+  if (EBG_CacheDebug.Verbose()) PrintFormat("[EXPG Garrison] group=%1 %2", Group, message);
  }
 
  // The only way to release a whole garrison: the reason is logged now and on the
@@ -1080,12 +1080,18 @@ class EXPG_GarrisonManager
   return false;
  }
 
- protected bool Initialize(EXPG_GarrisonRecord record)
+ protected bool Initialize(EXPG_GarrisonRecord record, bool spawnedOnly = false)
  {
   SCR_AIGroup group = record.Group;
-  if (!group.IsExpandComplete() || !group.EBG_HasCompletedInitialSpawn()) { return false; }
+  // spawnedOnly: the squad never reported a completed spawn (production 2026-10-10: a
+  // second squad added to a large building waited 45 s and was left standing outside);
+  // the members that do exist take their posts instead.
+  if (!spawnedOnly && (!group.IsExpandComplete() || !group.EBG_HasCompletedInitialSpawn())) { return false; }
   array<AIAgent> agents = {};
   group.GetAgents(agents);
+  if (spawnedOnly && agents.IsEmpty()) { return false; }
+  // A partial roster is taken as it stands: the fresh-roster count no longer applies.
+  if (spawnedOnly) { record.FreshRequested = 0; }
   if (record.FreshRequested > 0 && !group.EXPG_FreshRosterMatches(record.FreshRequested))
   { record.RequestRelease("Fresh squad membership changed; retained as normal AI"); return false; }
   // Every squad deploys in full and nobody is ever deleted to fit a building. The
@@ -2804,7 +2810,10 @@ class EXPG_GarrisonManager
   if (record.ReleaseRequested) { record.FinishRelease(); return; }
   if (!record.Ready)
   {
-   if (Now() - record.Created > 45) { record.RequestRelease("Squad initialization timed out; retained as a normal squad"); }
+   if (Now() - record.Created > 45)
+   {
+    if (!Initialize(record, true) && !record.ReleaseRequested) { record.RequestRelease("Squad initialization timed out; retained as a normal squad"); }
+   }
    else { Initialize(record); }
    return;
   }

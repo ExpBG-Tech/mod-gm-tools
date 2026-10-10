@@ -72,7 +72,7 @@ Get-Ordered $keep @('if (CountScripted(record.Group) == 0)', 'record.Group.EUS_D
 Assert ($manager.Contains('string keepAwake = EBG_ScriptedUnits.KeepAwake(record, KeepAwakeReason(record.Group));') -and ([regex]::Matches((Get-Code $manager), 'KeepAwakeReason\(record\.Group\)')).Count -eq 1) 'UpdateRecord reads the keep-awake reason through the Unit Scripts filter only'
 Assert ($scripted.Contains('static const string FALLBACK_NOTE = "Simulation cached instead of Full: Unit Scripts soldiers') -and !$scripted.Substring($scripted.IndexOf('FALLBACK_NOTE = ')).Split("`n")[0].Contains('scripted')) 'the Simulation fallback is named (and never says "scripted", which the cache-hold fixture reserves for the hold count)'
 $uses = Get-Body $scripted 'static\s+bool\s+UsesSimulation\s*\(\s*EBG_CacheGroup\s+record\s*\)'
-Assert ($uses.Contains('return record.Zone.Mode == 0 || CountScripted(record.Group) > 0;')) 'Simulation for a Simulation zone, and for a Full zone''s squad with Unit Scripts soldiers'
+Assert ($uses.Contains('return record.Zone.Mode == 0 || CountAnimated(record.Group) > 0;')) 'Simulation for a Simulation zone, and for a Full zone''s squad with a Unit Scripts animation (Hold and Freeze Full cache through the survivor carry)'
 Assert ($manager.Contains('if (SleepsInSimulation(record))') -and !$manager.Contains('if (zone.Mode == 0)')) 'the scheduler picks Simulation per record (Full zone fallback), not per zone'
 Assert ($manager.Contains('if (zone.Mode == 1) record.Reason = SimulationFallbackNote(record);') -and $manager.Contains('return EBG_ScriptedUnits.FALLBACK_NOTE;')) 'a Full zone''s Simulation-cached squad says why'
 Assert ($manager.Contains('owner.HasPendingSettings() || !SleepsInSimulation(dormant);') -and !$manager.Contains('owner.Mode != 0')) 'a Full zone keeps its Simulation-cached Unit Scripts squads asleep (only a squad that no longer uses Simulation wakes for Full)'
@@ -120,7 +120,7 @@ Assert ((Get-Body $eusManager 'override\s+bool\s+IsReserved\s*\(\s*SCR_AIGroup\s
 $apply = Get-Body $eusManager 'bool\s+ApplyUnit\s*\(\s*SCR_ChimeraCharacter\s+actor,\s*int\s+code,\s*EUS_Report\s+report\s*\)'
 Assert (!([regex]::IsMatch((Get-Code $apply), '(?<!if \(report\) )\breport\.'))) 'ApplyUnit accepts a null report (every report use is guarded)'
 foreach ($getter in 'bool IsBound()', 'int GetCode()', 'SCR_ChimeraCharacter GetActor()', 'string GetEndReason()', 'vector GetAnchor()') { Assert $eusControl.Contains($getter) "Unit Scripts control getter changed: $getter" }
-Assert ($eusControl.Contains('Release(string.Format("the animation could not be kept after %1 attempts", LOITER_ATTEMPTS));')) 'the only release Resume undoes is the loiter-retry release'
+Assert ($eusControl.Contains('m_NextLoiter = now + LOITER_BACKOFF_SECONDS;')) 'a pose that is not taken backs off (Resume still undoes a legacy loiter-retry release)'
 Assert ($eusControl.Contains('m_Actor.IsInVehicle()') -and $eusControl.Contains('m_Controller.StartLoitering(')) 'an animation is a loiter, and a bound script ends if he is ever in a vehicle'
 Assert ($eusRpl.Contains('[RplProp(), NonSerialized()] int EUS_Script;') -and $eusRpl.Contains('[RplProp(), NonSerialized()] int EUS_Scripted;') -and $eusRpl.Contains('[RplProp(), NonSerialized()] int EUS_Discipline;')) 'replicated Unit Scripts state fields'
 Assert ($eusCodes.Contains('static bool IsAnimation(int code)') -and $eusCodes.Contains('static const int DISCIPLINE_OFF = 0;')) 'Unit Scripts codes'

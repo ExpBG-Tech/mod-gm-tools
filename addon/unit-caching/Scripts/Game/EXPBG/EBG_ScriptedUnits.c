@@ -22,17 +22,37 @@
 // No per-frame work: everything runs inside the existing bounded cache scheduler.
 class EBG_ScriptedUnits
 {
- static const string FALLBACK_NOTE = "Simulation cached instead of Full: Unit Scripts soldiers (a Full cycle would respawn them without their Hold, Freeze or animation)";
+ static const string FALLBACK_NOTE = "Simulation cached instead of Full: Unit Scripts soldiers in an animation (a Full cycle would respawn them without their pose)";
 
- // Simulation for this record: a Simulation zone, or a Full zone's squad with Unit
- // Scripts soldiers (Full would drop their scripts).
+ // Simulation for this record: a Simulation zone, or a Full zone's squad with a Unit
+ // Scripts animation (Full would drop the pose). Hold and Freeze soldiers Full cache:
+ // their script rides the survivor carry (EUS_FullCacheCarry.c) and binds again on
+ // the respawned soldier.
  static bool UsesSimulation(EBG_CacheGroup record)
  {
   if (!record || !record.Zone)
   {
    return false;
   }
-  return record.Zone.Mode == 0 || CountScripted(record.Group) > 0;
+  return record.Zone.Mode == 0 || CountAnimated(record.Group) > 0;
+ }
+
+ // Living AI members of the squad running a Unit Scripts animation.
+ static int CountAnimated(SCR_AIGroup group)
+ {
+  if (!group)
+  {
+   return 0;
+  }
+  array<AIAgent> agents = {};
+  group.GetAgents(agents);
+  int animated;
+  foreach (AIAgent agent : agents)
+  {
+   SCR_ChimeraCharacter member = SCR_ChimeraCharacter.Cast(agent.GetControlledEntity());
+   if (member && EUS_Codes.IsAnimation(member.EUS_Script)) animated++;
+  }
+  return animated;
  }
 
  // Living AI members of the squad running a unit script (replicated EUS_Script).

@@ -189,7 +189,7 @@ $chances = @([regex]::Matches($esrList, 'Name "(?:Squad s|Soldier s|S)urrender c
 Assert ($chances.Count -eq 3) 'three surrender chance attributes (module, squad, soldier)'
 Assert ($chances[0] -match 'Squad casualty threshold' -and $chances[0] -match 'Nothing happens before that') 'module chance: nothing before the squad breaks'
 Assert ($chances[1] -match 'Nothing happens until the squad breaks' -and $chances[1] -match 'Squad casualty threshold' -and $chances[1] -match 'not on first contact') 'squad chance: threshold first, 100% is not on contact'
-Assert ($chances[2] -match 'Squad casualty threshold' -and $chances[2] -match 'not on first contact') 'soldier chance: threshold first'
+Assert ($chances[2] -match 'Squad casualty threshold' -and $chances[2] -match 'first comes under threat') 'soldier chance: rolled under threat, and again when his squad breaks'
 $evaluateSurrender = Get-Body $t.surrender 'protected\s+static\s+void\s+Evaluate\s*\('
 Assert ($evaluateSurrender -match '(?s)if \(EBG_CacheManager\.IsCacheHeld\(group\)\)\s*\{\s*record\.HeldRecheck = true;\s*ScheduleHeldRecheck\(\);' -and $evaluateSurrender -match 'record\.HeldRecheck = false;') 'a casualty skipped while the cache state is held is remembered'
 $recheck = Get-Body $t.surrender 'protected\s+static\s+void\s+RecheckHeld\s*\('

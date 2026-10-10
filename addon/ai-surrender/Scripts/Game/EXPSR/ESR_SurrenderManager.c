@@ -959,6 +959,28 @@ class ESR_SurrenderManager
   return key.Contains("USA") || key.Contains("USMC");
  }
 
+ // A soldier with his own surrender chance rolls it once, when he first comes under
+ // threat (danger or combat). No squad casualty threshold applies to an own chance (owner
+ // decision 2026-10-10): a lone soldier's squad can never "break", and a set chance is
+ // the Game Master's explicit wish for that soldier. His squad's later breaks still roll.
+ static void ThreatRoll(SCR_ChimeraCharacter character)
+ {
+  if (!Replication.IsServer() || !s_bListening || !character) return;
+  int own = character.ESR_GetOverride(ESR_Overrides.SURRENDER);
+  if (own < 0) return;
+  SCR_AIGroup group = GroupOf(character);
+  if (!IsCandidateSquad(group) || EBG_CacheManager.IsCacheHeld(group)) return;
+  CharacterControllerComponent controller = character.GetCharacterController();
+  if (!controller || controller.GetLifeState() != ECharacterLifeState.ALIVE || controller.IsUnconscious()) return;
+  if (own < 100 && Math.RandomFloat(0, 100) >= own)
+  {
+   Trace(string.Format("soldier %1 under threat: own chance %2 not rolled", character, own));
+   return;
+  }
+  bool surrendered = Surrender(character, group);
+  Trace(string.Format("soldier %1 under threat: own chance %2, surrendered=%3", character, own, surrendered));
+ }
+
  //------------------------------------------------------------------------------------------------
  // Surrender (server)
  //------------------------------------------------------------------------------------------------

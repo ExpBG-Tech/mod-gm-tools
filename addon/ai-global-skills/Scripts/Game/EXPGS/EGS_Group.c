@@ -236,7 +236,7 @@ modded class SCR_AIGroup
 	//! Server log line of the AI Global Skills group logic (bounded: one per event above).
 	void EGS_Log(string line)
 	{
-		PrintFormat("[EXPBG AI SKILLS] %1", line);
+		if (EBG_CacheDebug.Verbose()) PrintFormat("[EXPBG AI SKILLS] %1", line);
 	}
 
 	//------------------------------------------------------------------------------------------------

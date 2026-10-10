@@ -181,9 +181,9 @@ Assert ($traceSites -eq 2) "traces run only on a needed correction and for the c
 # Logs: three call sites in the unit control, every Note caller bounded.
 Assert ([regex]::Matches($controlCode, '\bPrint(Format)?\s*\(').Count -eq 4) 'EUS_UnitControl.c logs only at bind, through Note, through Log (save and restore summaries) and at release'
 Assert ((Get-Body $control 'static\s+void\s+Log\s*\(\s*string\s+text\s*\)').Trim() -eq 'Print("[EUS] " + text);') 'Log keeps the [EUS] prefix'
-Assert ((Get-Body $control 'protected\s+void\s+Note\s*\(\s*string\s+text\s*\)').Trim() -eq 'PrintFormat("[EUS] unit=%1 %2", m_Actor, text);') 'Note keeps the [EUS] unit= line format'
+Assert ((Get-Body $control 'protected\s+void\s+Note\s*\(\s*string\s+text\s*\)').Trim() -eq "if (!EBG_CacheDebug.Verbose()) return;`n  PrintFormat(`"[EUS] unit=%1 %2`", m_Actor, text);") 'Note keeps the [EUS] unit= line format, printed only with zone Debug messages on'
 $noteCallers = [regex]::Matches($controlCode, '\bNote\s*\(').Count - 1
-Assert ($noteCallers -eq 4) "Note callers: Game Master move, loiter attempt, occupied/dropped spot, held summary (found $noteCallers)"
+Assert ($noteCallers -eq 5) "Note callers: Game Master move, loiter attempt, loiter back-off, occupied/dropped spot, held summary (found $noteCallers)"
 $release = Get-Body $control 'void\s+Release\s*\(\s*string\s+reason,\s*bool\s+fast\s*=\s*false\s*\)'
 Assert ($release.Contains('PrintFormat("[EUS] released unit=%1 script=''%2'' reason=''%3''%4", m_Actor, EUS_Codes.Describe(m_Code), reason, held);') -and $release.Contains('if (reason.IsEmpty()) return;')) 'release keeps its line and adds how often he was put back'
 Assert ($release.IndexOf('if (reason.IsEmpty()) return;') -gt $release.IndexOf('m_Actor.EUS_SetScript(EUS_Codes.NONE);')) 'a silent release (destructor) still undoes every native effect first'

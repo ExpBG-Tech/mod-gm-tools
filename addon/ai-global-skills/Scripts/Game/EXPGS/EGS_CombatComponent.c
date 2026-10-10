@@ -144,7 +144,7 @@ modded class SCR_AICombatComponent
 		m_bEGS_UnitWarnEnded = false;
 		int previous = m_iEGS_UnitRoe;
 		m_iEGS_UnitRoe = roe;
-		PrintFormat("[EXPBG AI SKILLS] unit=%1 roe=%2 (was %3; -1 follows the squad)", GetOwner(), roe, previous);
+		if (EBG_CacheDebug.Verbose()) PrintFormat("[EXPBG AI SKILLS] unit=%1 roe=%2 (was %3; -1 follows the squad)", GetOwner(), roe, previous);
 	}
 
 	//------------------------------------------------------------------------------------------------
@@ -208,7 +208,7 @@ modded class SCR_AICombatComponent
 			window = EGS_Manager.WARNING_WINDOW_S;
 		}
 
-		PrintFormat("[EXPBG AI SKILLS] unit warning shots shooter=%1 target=%2", GetOwner(), target);
+		if (EBG_CacheDebug.Verbose()) PrintFormat("[EXPBG AI SKILLS] unit warning shots shooter=%1 target=%2", GetOwner(), target);
 		EGS_Manager.ScheduleUnit(this, EGS_Manager.TIMER_WARNING_END, window, token);
 	}
 

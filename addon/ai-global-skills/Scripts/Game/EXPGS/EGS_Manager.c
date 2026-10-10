@@ -299,7 +299,7 @@ class EGS_Manager
 		}
 
 		if (current != previous)
-			PrintFormat("[EXPBG AI SKILLS] group=%1 roeOverride=%2", group, current);
+			if (EBG_CacheDebug.Verbose()) PrintFormat("[EXPBG AI SKILLS] group=%1 roeOverride=%2", group, current);
 
 		ApplyGroup(group, true, gameMaster);
 	}
@@ -394,7 +394,7 @@ class EGS_Manager
 		}
 
 		if (current != previous)
-			PrintFormat("[EXPBG AI SKILLS] unit=%1 roeOverride=%2", soldier, current);
+			if (EBG_CacheDebug.Verbose()) PrintFormat("[EXPBG AI SKILLS] unit=%1 roeOverride=%2", soldier, current);
 
 		ApplyUnit(soldier);
 	}

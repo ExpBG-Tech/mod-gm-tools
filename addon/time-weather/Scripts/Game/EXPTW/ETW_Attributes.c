@@ -451,3 +451,93 @@ class ETW_TTextAttribute : EUD_TextAttribute
    Print(string.Format("[ETW] time skip text rejected: maximum %1 characters", GetLimit()), LogLevel.WARNING);
  }
 }
+
+//------------------------------------------------------------------------------------------------
+// Mission Intro: 0 On, 1 seconds (saved), title and location texts (session, EUD edit box).
+class ETW_IntroAttribute : ETW_Attribute
+{
+ //------------------------------------------------------------------------------------------------
+ override bool IsSerializable()
+ {
+  return m_Key == 0 || m_Key == 1;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ override SCR_BaseEditorAttributeVar ReadVariable(Managed item, SCR_AttributesManagerEditorComponent manager)
+ {
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
+  if (!editable)
+   return null;
+  ETW_IntroModule module = ETW_IntroModule.Cast(editable.GetOwner());
+  if (!module || !IsSerializable())
+   return null;
+  return MakeVar(module.GetValue(m_Key));
+ }
+
+ //------------------------------------------------------------------------------------------------
+ override void WriteVariable(Managed item, SCR_BaseEditorAttributeVar var, SCR_AttributesManagerEditorComponent manager, int playerID)
+ {
+  if (!var || !IsAllowedWrite(manager, playerID) || !IsSerializable())
+   return;
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
+  if (!editable)
+   return;
+  ETW_IntroModule module = ETW_IntroModule.Cast(editable.GetOwner());
+  if (module)
+   module.SetValue(m_Key, VarValue(var));
+ }
+}
+
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ETW_IOnAttribute : ETW_IntroAttribute {}
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ETW_IHoldAttribute : ETW_IntroAttribute {}
+
+//------------------------------------------------------------------------------------------------
+// Mission Intro title (m_Key 0) and location (m_Key 1): Unit Dialog edit box.
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ETW_ITextAttribute : EUD_TextAttribute
+{
+ [Attribute("0")]
+ protected int m_Key;
+
+ //------------------------------------------------------------------------------------------------
+ override int GetLimit()
+ {
+  return ETW_IntroModule.TEXT_LIMIT;
+ }
+
+ //------------------------------------------------------------------------------------------------
+ override SCR_BaseEditorAttributeVar ReadVariable(Managed item, SCR_AttributesManagerEditorComponent manager)
+ {
+  if (!manager)
+   return null;
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
+  if (!editable)
+   return null;
+  ETW_IntroModule module = ETW_IntroModule.Cast(editable.GetOwner());
+  if (!module)
+   return null;
+  if (m_Key == 0)
+   return SCR_BaseEditorAttributeVar.EUD_CreateText(module.GetTitle());
+  return SCR_BaseEditorAttributeVar.EUD_CreateText(module.GetLocation());
+ }
+
+ //------------------------------------------------------------------------------------------------
+ override void WriteVariable(Managed item, SCR_BaseEditorAttributeVar var, SCR_AttributesManagerEditorComponent manager, int playerID)
+ {
+  if (!var || !manager || !ETW_Attribute.IsAllowedWrite(manager, playerID))
+   return;
+  SCR_EditableEntityComponent editable = SCR_EditableEntityComponent.Cast(item);
+  if (!editable)
+   return;
+  ETW_IntroModule module = ETW_IntroModule.Cast(editable.GetOwner());
+  if (module && !module.SetText(m_Key, var.EUD_GetText()))
+   Print(string.Format("[ETW] intro text rejected: maximum %1 characters", GetLimit()), LogLevel.WARNING);
+ }
+}
+
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ETW_ITitleAttribute : ETW_ITextAttribute {}
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class ETW_ILocationAttribute : ETW_ITextAttribute {}

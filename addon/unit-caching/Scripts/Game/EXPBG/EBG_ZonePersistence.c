@@ -166,7 +166,9 @@ modded class EBG_CacheZone
   if (!m_EBG_HoldReported)
   {
    m_EBG_HoldReported = true;
-   Print(string.Format("[EBG SETTINGS HOLD] zone=%1 position=%2 held=%3 s gate='%4' reason='%5' pendingKeys=%6 sessionAttributes=%7", GetID(), GetOrigin(), Math.Round(held), gate, m_EBG_SettingsHoldReason, m_PendingKeys.Count(), m_EBG_SessionAttributes), LogLevel.WARNING);
+   // With CDF in charge native registration never arrives (vanilla persistence off):
+   // routine, so only with zone Debug messages on.
+   if (EBG_CacheDebug.Verbose()) Print(string.Format("[EBG SETTINGS HOLD] zone=%1 position=%2 held=%3 s gate='%4' reason='%5' pendingKeys=%6 sessionAttributes=%7", GetID(), GetOrigin(), Math.Round(held), gate, m_EBG_SettingsHoldReason, m_PendingKeys.Count(), m_EBG_SessionAttributes), LogLevel.WARNING);
   }
   if (!releasable || held < EBG_HOLD_RELEASE_SECONDS) return;
   // Same outcome as a mission without native saving: settings resume now, the
@@ -174,7 +176,7 @@ modded class EBG_CacheZone
   m_EBG_RegistrationPending = false;
   m_EBG_TrackingDeferred = true;
   m_EBG_HoldArmedAt = -1;
-  Print(string.Format("[EBG SETTINGS HOLD] zone=%1 released after %2 s: %3. Settings resume without native tracking until persistence is active.", GetID(), Math.Round(held), gate), LogLevel.WARNING);
+  if (EBG_CacheDebug.Verbose()) Print(string.Format("[EBG SETTINGS HOLD] zone=%1 released after %2 s: %3. Settings resume without native tracking until persistence is active.", GetID(), Math.Round(held), gate), LogLevel.WARNING);
   EBG_CacheManager.Get().Register(this);
   if (m_EBG_SessionAttributes)
   {

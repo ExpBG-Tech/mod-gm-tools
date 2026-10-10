@@ -74,6 +74,8 @@ class EUS_UnitControl
  static const float FREEZE_LOOK_DOT = 0.5;
  static const int LOITER_ATTEMPTS = 4;
  static const float LOITER_PENDING_SECONDS = 15;
+ // Pause after LOITER_ATTEMPTS entries the graph did not take; then a fresh allowance.
+ static const float LOITER_BACKOFF_SECONDS = 30;
  // Horizontal drift put back by Freeze and Hold.
  static const float FREEZE_TOLERANCE = 0.35;
  static const float HOLD_TOLERANCE = 1.5;
@@ -123,6 +125,7 @@ class EUS_UnitControl
  // Pose entries issued since the pose was last seen playing.
  protected int m_LoiterAttempts;
  protected bool m_LoiterLogged;
+ protected bool m_LoiterBackoffLogged;
  protected float m_NextLoiter;
  protected float m_PendingSince = -1;
  // Unit Caching pause (SetCachePaused), and whether the previous tick was paused
@@ -365,7 +368,7 @@ class EUS_UnitControl
    return false;
   }
   m_Actor.EUS_SetScript(code);
-  PrintFormat("[EUS] bound unit=%1 script='%2' anchor=%3", m_Actor, EUS_Codes.Describe(code), m_Anchor);
+  if (EBG_CacheDebug.Verbose()) PrintFormat("[EUS] bound unit=%1 script='%2' anchor=%3", m_Actor, EUS_Codes.Describe(code), m_Anchor);
   return true;
  }
 
@@ -713,6 +716,7 @@ class EUS_UnitControl
  // NOTE_SECONDS).
  protected void Note(string text)
  {
+  if (!EBG_CacheDebug.Verbose()) return;
   PrintFormat("[EUS] unit=%1 %2", m_Actor, text);
  }
 
@@ -840,6 +844,7 @@ class EUS_UnitControl
    // It plays: a later end is the pose's own end (or an interruption), never a
    // failed entry. Only entries that never start count against LOITER_ATTEMPTS.
    m_LoiterAttempts = 0;
+   m_LoiterBackoffLogged = false;
    return true;
   }
   SCR_ScriptedCharacterInputContext input = m_Controller.GetScrInputContext();
@@ -855,9 +860,18 @@ class EUS_UnitControl
   if (now < m_NextLoiter) return true;
   if (m_LoiterAttempts >= LOITER_ATTEMPTS)
   {
-   m_End = EUS_EEndReason.LOITER_FAILED;
-   Release(string.Format("the animation could not be kept after %1 attempts", LOITER_ATTEMPTS));
-   return false;
+   // The script is never dropped for an entry the graph did not take: far from every
+   // player the server may not run his animation graph (production 2026-10-10: 14
+   // poses released after a CDF load with nobody near them). He keeps his spot and
+   // the pose is tried again later with a fresh allowance.
+   if (!m_LoiterBackoffLogged)
+   {
+    Note(string.Format("animation entry not taken after %1 attempts; retrying every %2 s", LOITER_ATTEMPTS, LOITER_BACKOFF_SECONDS));
+    m_LoiterBackoffLogged = true;
+   }
+   m_LoiterAttempts = 0;
+   m_NextLoiter = now + LOITER_BACKOFF_SECONDS;
+   return true;
   }
   return StartLoiter(now);
  }
