@@ -59,6 +59,10 @@ class EBG_CacheZone : GenericEntity
  int MilitaryOnly;
  [Attribute("1", UIWidgets.CheckBox, "Show Full-cached group icons to Game Masters in GM", category: "EXPBG GM Optimizer"), RplProp()]
  int CachedGroupMarkers;
+ // Objects and effects (#39, OFF by default): the zone also caches its single props and its
+ // endless effect modules (fire, smoke...) while nobody is near (EBG_ObjectCache.c).
+ [Attribute("0", UIWidgets.CheckBox, "Objects and effects: also cache single props and endless effect modules", category: "EXPBG GM Optimizer"), RplProp()]
+ int CacheObjects;
  protected string m_DebugLast;
  protected float m_DebugNext;
  // Coalesce changing counters; diagnostics never drive cache or ownership decisions.
@@ -205,7 +209,7 @@ class EBG_CacheZone : GenericEntity
  {
   switch (key)
   {
-   case 0: case 1: case 2: case 15: case 22: case 23: return Math.Clamp(value, 0, 1);
+   case 0: case 1: case 2: case 15: case 22: case 23: case 24: return Math.Clamp(value, 0, 1);
    case 3: return Math.Clamp(value, 1, 5000);
    case 4:
     int wake = Math.Clamp(value, 1, 9999);
@@ -309,6 +313,7 @@ class EBG_CacheZone : GenericEntity
    case 21: return DebugMessages;
    case 22: return MilitaryOnly;
    case 23: return CachedGroupMarkers;
+   case 24: return CacheObjects;
   }
   return 0;
  }
@@ -401,6 +406,7 @@ class EBG_CacheZone : GenericEntity
    case 21: DebugMessages = Math.Clamp(value, 0, 2); break;
    case 22: MilitaryOnly = Math.Clamp(value, 0, 1); break;
    case 23: CachedGroupMarkers = Math.Clamp(value, 0, 1); break;
+   case 24: CacheObjects = Math.Clamp(value, 0, 1); break;
   }
   NormalizeSettings();
   if ((key >= 2 && key <= 12) || key == 15 || key == 16) ResetClearTimers();

@@ -182,6 +182,8 @@ class EBG_OptimizerControl
   {
    if (zone && (zone.HasPendingSettings() || zone.EBG_HasSettingsLoadHold())) Pending++;
   }
+  // Objects and effects still coming back count as pending work.
+  Pending += EBG_ObjectCache.CachedCount();
   if (!EBG_CacheManager.IsPortableWorldReady() || !EBG_MissionPersistence.Ready(manager)) Pending++;
   SaveGameManager saving = GetGame().GetSaveGameManager();
   if (saving && saving.IsBusy()) Pending++;

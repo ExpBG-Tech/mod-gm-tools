@@ -44,6 +44,7 @@ $PerFrameAllowed = [ordered]@{
 # G2: repeating CallLater that is sub-second, has an unresolved delay, or arms one timer per
 # component/entity instance. Key 'path|callback method'.
 $TimerAllowed = [ordered]@{
+ 'unit-caching/EXPBG/EBG_ObjectCache.c|Pump' = @(1, '250 ms, one shared static pump, armed only while cached objects come back (8 per pump)')
  'advanced-briefing-map/EXPBM/EBM_BriefingBoardComponent.c|ServerWatchdog' = @(1, '1 s, per board, armed once while a briefing is live')
  'advanced-briefing-map/EXPBM/EBM_BriefingBoardComponent.c|ClientProximityTick' = @(1, '1 s, per board on clients (pending review)')
  'advanced-briefing-map/EXPBM/EBM_BriefingClient.c|Tick' = @(1, '200 ms, briefer only')
@@ -73,6 +74,7 @@ $TimerAllowed = [ordered]@{
 # EBG_FullSaveGate reads loaded addons once per world (ReadLoadedAddons). EXPG_GarrisonManager keeps
 # 2: CdfLoaded() stays the CDF fallback fixture's override point; CdfWithoutCompanion() caches per mission.
 $WorldScanPins = [ordered]@{
+ 'unit-caching/EXPBG/EBG_ObjectCache.c|QueryEntitiesBySphere' = 1
  'ai-global-skills/EXPGS/EGS_Manager.c|GetAIAgents' = 1
  'ai-surrender/EXPSR/ESR_AceCaptives.c|GetLoadedAddons' = 1
  'ai-surrender/EXPSR/ESR_SurrenderManager.c|GetAIAgents' = 1
@@ -163,7 +165,8 @@ $PrintPins = [ordered]@{
  # Includes the rate-limited soldiers-only summary line (at most once per 300 s per zone).
  'unit-caching/EXPBG/EBG_CacheManager.c' = 19
  'unit-caching/EXPBG/EBG_CacheRegroup.c' = 4
- 'unit-caching/EXPBG/EBG_CacheSnapshot.c' = 7
+ 'unit-caching/EXPBG/EBG_CacheSnapshot.c' = 8
+ 'unit-caching/EXPBG/EBG_ObjectCache.c' = 3
  'unit-caching/EXPBG/EBG_CacheVisuals.c' = 5
  'unit-caching/EXPBG/EBG_CacheZone.c' = 1
  'unit-caching/EXPBG/EBG_DebugChecks.c' = 1

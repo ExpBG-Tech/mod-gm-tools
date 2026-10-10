@@ -163,6 +163,8 @@ class EBG_FullSaveGate
  {
   if (SCR_AIGroupSerializer.EBG_HasPendingMemberCallbacks()) return true;
   if (!manager || EBG_FullCacheGroup.IsNativeOperationBusy()) return true;
+  // Objects and effects removed by a zone are absent from the world like Full groups.
+  if (EBG_ObjectCache.CachedCount() > 0) return true;
   foreach (EBG_CacheGroup record : manager.Records)
    if (record.PersistentScalarRollbackPending || record.Full != null || record.Simulation != null || record.FullCleanup != null || !record.FullGroupId.IsNull() || !record.FullMemberIds.IsEmpty() || record.Recovery != "") return true;
   return false;

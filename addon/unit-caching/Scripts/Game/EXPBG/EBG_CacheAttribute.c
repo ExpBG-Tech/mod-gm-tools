@@ -111,6 +111,8 @@ class EBG_DebugMessagesAttribute : EBG_CacheAttribute {}
 class EBG_MilitaryOnlyAttribute : EBG_CacheAttribute {}
 [BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
 class EBG_CachedGroupMarkersAttribute : EBG_CacheAttribute {}
+[BaseContainerProps(), SCR_BaseEditorAttributeCustomTitle()]
+class EBG_CacheObjectsAttribute : EBG_CacheAttribute {}
 
 // Some mods expose global weather/vehicle attributes for every edited entity.
 // A cache-only selection exposes only its own settings, preserving registry/RPC

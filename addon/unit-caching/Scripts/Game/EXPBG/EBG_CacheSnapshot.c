@@ -796,6 +796,11 @@ class EBG_CacheSnapshot
    PrintFormat("[EBG SNAPSHOT EXPORT] group snapshot write failed index=%1", i);
    return false;
   }
+  if (!EBG_ObjectCache.WriteZone(zone, context))
+  {
+   Print("[EBG SNAPSHOT EXPORT] cached objects write failed", LogLevel.WARNING);
+   return false;
+  }
   if (!context.IsValid())
   {
    Print("[EBG SNAPSHOT EXPORT] JSON context invalid after writes", LogLevel.WARNING);
@@ -813,7 +818,7 @@ class EBG_CacheSnapshot
   int version, count, settingsVersion;
   array<int> settings = {}, pendingKeys = {};
   array<float> pendingValues = {};
-  if (!context.LoadFromString(json) || !context.ReadValue("ebgCacheVersion", version) || version != 1 || !context.ReadValue("ebgZoneVersion", settingsVersion) || (settingsVersion != 4 && settingsVersion != 5) || !context.ReadValue("settings", settings) || settings.Count() != settingsVersion + 19 || !context.ReadValue("pendingKeys", pendingKeys) || !context.ReadValue("pendingValues", pendingValues) || !pendingKeys.IsEmpty() || !pendingValues.IsEmpty() || !context.ReadValue("cachedGroups", count) || count < 0 || count > 2048) return false;
+  if (!context.LoadFromString(json) || !context.ReadValue("ebgCacheVersion", version) || version != 1 || !context.ReadValue("ebgZoneVersion", settingsVersion) || (settingsVersion != 4 && settingsVersion != 5 && settingsVersion != 6) || !context.ReadValue("settings", settings) || settings.Count() != settingsVersion + 19 || !context.ReadValue("pendingKeys", pendingKeys) || !context.ReadValue("pendingValues", pendingValues) || !pendingKeys.IsEmpty() || !pendingValues.IsEmpty() || !context.ReadValue("cachedGroups", count) || count < 0 || count > 2048) return false;
   array<int> tokens = {};
   for (int i = 0; i < count; i++)
   {
@@ -846,6 +851,8 @@ class EBG_CacheSnapshot
   if (!zone.EBG_ReadPersistentSettings(context)) return false;
   zone.EBG_CompletePortableSettingsLoad();
   foreach (EBG_PrefabFullCache full : groups) full.Import(manager, zone);
+  // Objects and effects the zone held at the save (optional key, #39).
+  EBG_ObjectCache.ReadZone(zone, context);
   zone.EBG_MarkImportedCacheSnapshot();
   manager.Register(zone);
   return true;

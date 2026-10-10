@@ -225,7 +225,7 @@ modded class EBG_CacheZone
  }
  void EBG_QueueSavedAttribute(int key, float value)
  {
-  if (!Replication.IsServer() || key < 0 || key > 23 || !EBG_MissionPersistence.Finite(value)) return;
+  if (!Replication.IsServer() || key < 0 || key > 24 || !EBG_MissionPersistence.Finite(value)) return;
   QueueSetting(key, value);
   m_EBG_SessionAttributes = true;
   m_EBG_SessionSettleUntil = GetGame().GetWorld().GetWorldTime() * 0.001 + 1;
@@ -242,7 +242,7 @@ modded class EBG_CacheZone
   // CDF invokes the whole attribute batch synchronously. Publish the final values
   // on the next frame, while activation remains held until extraction settles.
   array<int> values = {};
-  for (int key = 0; key < 24; key++) values.Insert(GetValue(key));
+  for (int key = 0; key < 25; key++) values.Insert(GetValue(key));
   for (int i = 0; i < m_PendingKeys.Count(); i++)
   {
    int canonical = EBG_PendingCanonicalKey(m_PendingKeys[i], false, Strategy);
@@ -278,8 +278,8 @@ modded class EBG_CacheZone
  bool EBG_WritePersistentSettings(SaveContext context)
  {
   array<int> values = {};
-  for (int key = 0; key < 24; key++) values.Insert(GetValue(key));
-  return context.WriteValue("ebgZoneVersion", 5) && context.WriteValue("settings", values) && context.WriteValue("pendingKeys", m_PendingKeys) && context.WriteValue("pendingValues", m_PendingValues);
+  for (int key = 0; key < 25; key++) values.Insert(GetValue(key));
+  return context.WriteValue("ebgZoneVersion", 6) && context.WriteValue("settings", values) && context.WriteValue("pendingKeys", m_PendingKeys) && context.WriteValue("pendingValues", m_PendingValues);
  }
  protected void EBG_AssignPersistentValues(array<int> values, bool legacy)
  {
@@ -307,6 +307,7 @@ modded class EBG_CacheZone
   DebugMessages = values[21];
   MilitaryOnly = values[22];
   CachedGroupMarkers = values[23];
+  CacheObjects = values[24];
   NormalizeSettings(legacy);
  }
  protected int EBG_PendingCanonicalKey(int key, bool legacy, int strategy)
@@ -337,7 +338,7 @@ modded class EBG_CacheZone
   int version;
   array<int> values = {}, keys = {};
   array<float> pending = {};
-  if (!context.ReadValue("ebgZoneVersion", version) || version < 1 || version > 5 || !context.ReadValue("settings", values) || ((version < 3 && values.Count() != 21) || (version >= 3 && values.Count() != version + 19)) || !context.ReadValue("pendingKeys", keys) || !context.ReadValue("pendingValues", pending) || keys.Count() != pending.Count() || keys.Count() > values.Count())
+  if (!context.ReadValue("ebgZoneVersion", version) || version < 1 || version > 6 || !context.ReadValue("settings", values) || ((version < 3 && values.Count() != 21) || (version >= 3 && values.Count() != version + 19)) || !context.ReadValue("pendingKeys", keys) || !context.ReadValue("pendingValues", pending) || keys.Count() != pending.Count() || keys.Count() > values.Count())
   {
    return false;
   }
@@ -356,11 +357,13 @@ modded class EBG_CacheZone
   if (version < 3) values.Insert(0);
   if (version < 4) values.Insert(1);
   if (version < 5) values.Insert(1);
+  // Objects and effects (version 6) start Off.
+  if (version < 6) values.Insert(0);
   // No live SetValue, registration, restore or capture occurs during migration.
   bool legacy = version == 1;
   EBG_AssignPersistentValues(values, legacy);
   array<int> baseline = {}, effective = {}, target = {}, requested = {};
-  for (int baseKey = 0; baseKey < 24; baseKey++) baseline.Insert(GetValue(baseKey));
+  for (int baseKey = 0; baseKey < 25; baseKey++) baseline.Insert(GetValue(baseKey));
   effective.Copy(values);
   int strategyIndex = keys.Find(2);
   if (strategyIndex >= 0) effective[2] = Math.Clamp(pending[strategyIndex], 0, 1);
@@ -378,7 +381,7 @@ modded class EBG_CacheZone
    else effective[canonical] = pending[queued];
   }
   EBG_AssignPersistentValues(effective, legacy);
-  for (int targetKey = 0; targetKey < 24; targetKey++) target.Insert(GetValue(targetKey));
+  for (int targetKey = 0; targetKey < 25; targetKey++) target.Insert(GetValue(targetKey));
   EBG_AssignPersistentValues(baseline, false);
   m_PendingKeys.Clear();
   m_PendingValues.Clear();
